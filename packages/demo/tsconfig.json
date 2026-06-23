@@ -1,0 +1,10 @@
+{
+    "extends": [
+        "@bomb.sh/tools/tsconfig.json"
+    ],
+    "compilerOptions": {
+        "types": [
+            "node"
+        ]
+    }
+}
