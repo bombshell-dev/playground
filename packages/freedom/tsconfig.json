@@ -1,0 +1,5 @@
+{
+    "extends": [
+        "@bomb.sh/tools/tsconfig.json"
+    ]
+}
