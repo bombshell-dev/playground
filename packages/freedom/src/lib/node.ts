@@ -1,3 +1,5 @@
+// oxlint-disable bombshell-dev/no-generic-error
+// oxlint-disable max-params
 import {
   type Channel,
   type Context,

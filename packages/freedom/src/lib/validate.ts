@@ -1,3 +1,4 @@
+// oxlint-disable bombshell-dev/no-generic-error
 import type { JsonValue } from "./types.ts";
 
 export function validateJsonValue(value: unknown): asserts value is JsonValue {

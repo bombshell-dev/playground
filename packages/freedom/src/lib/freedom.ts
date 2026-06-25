@@ -1,4 +1,5 @@
 // oxlint-disable require-yield
+// oxlint-disable bombshell-dev/no-generic-error
 import {
   type Api,
   type Operation,

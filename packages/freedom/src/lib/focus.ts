@@ -1,3 +1,5 @@
+// oxlint-disable bombshell-dev/no-generic-error
+// oxlint-disable max-params
 import type { Api, Operation } from "effection";
 import { createApi } from "effection/experimental";
 import type { Node } from "./types.ts";
