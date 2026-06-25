@@ -21,11 +21,11 @@ function findRoot(node: Node): Node {
 }
 
 function focusChain(node: Node): Node[] {
-  let result: Node[] = [];
+  const result: Node[] = [];
   if ("focused" in node.props) {
     result.push(node);
   }
-  for (let child of node.children) {
+  for (const child of node.children) {
     result.push(...focusChain(child));
   }
   return result;
@@ -45,39 +45,39 @@ function* setFocused(
 
 export const FocusApi: Api<Focus> = createApi<Focus>("freedom:focus", {
   *focusable() {
-    let node = yield* NodeContext.expect();
+    const node = yield* NodeContext.expect();
     if (!("focused" in node.props)) {
       yield* set("focused", false);
     }
   },
 
   *advance() {
-    let self = yield* NodeContext.expect();
-    let r = findRoot(self);
-    let nodes = focusChain(r);
+    const self = yield* NodeContext.expect();
+    const r = findRoot(self);
+    const nodes = focusChain(r);
     if (nodes.length <= 1) return;
 
-    let idx = nodes.findIndex((n) => n.props.focused === true);
+    const idx = nodes.findIndex((n) => n.props.focused === true);
     if (idx === -1) return;
 
-    let old = nodes[idx];
-    let next = nodes[(idx + 1) % nodes.length];
+    const old = nodes[idx];
+    const next = nodes[(idx + 1) % nodes.length];
 
     yield* setFocused(old, false, self);
     yield* setFocused(next, true, self);
   },
 
   *retreat() {
-    let self = yield* NodeContext.expect();
-    let r = findRoot(self);
-    let nodes = focusChain(r);
+    const self = yield* NodeContext.expect();
+    const r = findRoot(self);
+    const nodes = focusChain(r);
     if (nodes.length <= 1) return;
 
-    let idx = nodes.findIndex((n) => n.props.focused === true);
+    const idx = nodes.findIndex((n) => n.props.focused === true);
     if (idx === -1) return;
 
-    let old = nodes[idx];
-    let prev = nodes[(idx - 1 + nodes.length) % nodes.length];
+    const old = nodes[idx];
+    const prev = nodes[(idx - 1 + nodes.length) % nodes.length];
 
     yield* setFocused(old, false, self);
     yield* setFocused(prev, true, self);
@@ -89,10 +89,10 @@ export const FocusApi: Api<Focus> = createApi<Focus>("freedom:focus", {
     }
     if (target.props.focused === true) return;
 
-    let self = yield* NodeContext.expect();
-    let r = findRoot(target);
-    let nodes = focusChain(r);
-    let old = nodes.find((n) => n.props.focused === true);
+    const self = yield* NodeContext.expect();
+    const r = findRoot(target);
+    const nodes = focusChain(r);
+    const old = nodes.find((n) => n.props.focused === true);
 
     if (old) {
       yield* setFocused(old, false, self);
@@ -101,10 +101,10 @@ export const FocusApi: Api<Focus> = createApi<Focus>("freedom:focus", {
   },
 
   *current() {
-    let node = yield* NodeContext.expect();
-    let r = findRoot(node);
-    let nodes = focusChain(r);
-    let focused = nodes.find((n) => n.props.focused === true);
+    const node = yield* NodeContext.expect();
+    const r = findRoot(node);
+    const nodes = focusChain(r);
+    const focused = nodes.find((n) => n.props.focused === true);
     if (focused) {
       return focused;
     } else {

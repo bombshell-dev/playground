@@ -40,13 +40,13 @@ export function validateJsonValue(value: unknown): asserts value is JsonValue {
     throw new Error("RegExp instances are not valid JsonValues");
   }
   if (Array.isArray(value)) {
-    for (let item of value) {
+    for (const item of value) {
       validateJsonValue(item);
     }
     return;
   }
   if (typeof value === "object" && value !== null) {
-    for (let key of Object.keys(value)) {
+    for (const key of Object.keys(value)) {
       validateJsonValue((value as Record<string, unknown>)[key]);
     }
     return;

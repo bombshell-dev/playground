@@ -14,11 +14,11 @@ import { FreedomApi } from "./freedom.ts";
 
 export function useTree(root: Component): Operation<Tree> {
   return resource<Tree>(function* (provide) {
-    let output = createSignal<void, never>();
-    let events = createSignal<unknown, void>();
+    const output = createSignal<void, never>();
+    const events = createSignal<unknown, void>();
 
     let counter = 0;
-    let state: TreeState = {
+    const state: TreeState = {
       dirty: false,
       output,
       events,
@@ -33,11 +33,11 @@ export function useTree(root: Component): Operation<Tree> {
 
     yield* TreeContext.set(state);
 
-    let rootNode = new NodeImpl(state.nextId(), "", undefined);
+    const rootNode = new NodeImpl(state.nextId(), "", undefined);
     rootNode.remove = () => FreedomApi.operations.remove(rootNode);
     state.nodes.set(rootNode.id, rootNode);
 
-    let ready = withResolvers<void>();
+    const ready = withResolvers<void>();
 
     // Spawn root node scope
     yield* spawn(function* () {
@@ -58,7 +58,7 @@ export function useTree(root: Component): Operation<Tree> {
           state.markDirty();
         },
         *append(args, next) {
-          let node = yield* next(...args);
+          const node = yield* next(...args);
           state.markDirty();
           return node;
         },
@@ -75,14 +75,14 @@ export function useTree(root: Component): Operation<Tree> {
       yield* spawnEvalLoop(rootNode._channel);
 
       // Subscribe to events, then spawn the event loop
-      let sub = yield* events;
+      const sub = yield* events;
       yield* spawn(function* () {
         while (true) {
-          let next = yield* sub.next();
+          const next = yield* sub.next();
           if (next.done) {
             break;
           }
-          let event = next.value;
+          const event = next.value;
           state.dirty = false;
           yield* rootNode.eval(() => DispatchApi.operations.dispatch(event));
           if (state.dirty) {
@@ -99,7 +99,7 @@ export function useTree(root: Component): Operation<Tree> {
 
     yield* ready.operation;
 
-    let tree: Tree = {
+    const tree: Tree = {
       dispatch(event: unknown) {
         events.send(event);
       },

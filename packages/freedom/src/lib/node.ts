@@ -25,7 +25,7 @@ class NodeDataImpl implements NodeData {
   }
 
   expect<T>(key: NodeDataKey<T>): T {
-    let val = this._map.get(key.symbol);
+    const val = this._map.get(key.symbol);
     if (val !== undefined) {
       return val as T;
     } else if (key.defaultValue !== undefined) {
@@ -72,10 +72,10 @@ export class NodeImpl implements Node {
 
   get children(): Iterable<Node> {
     if (this._sortFn) {
-      let fn = this._sortFn;
-      let indexed = [...this._children].map((c, i) => [c, i] as const);
+      const fn = this._sortFn;
+      const indexed = [...this._children].map((c, i) => [c, i] as const);
       indexed.sort(([a, ai], [b, bi]) => {
-        let result = fn(a, b);
+        const result = fn(a, b);
         if (result !== 0) {
           return result;
         } else {
@@ -93,7 +93,7 @@ export class NodeImpl implements Node {
   }
 
   *eval<T>(op: () => Operation<T>): Operation<Result<T>> {
-    let resolver = withResolvers<Result<T>>();
+    const resolver = withResolvers<Result<T>>();
     yield* this._channel.send({
       resolve: resolver.resolve as (result: Result<unknown>) => void,
       operation: op as () => Operation<unknown>,
@@ -109,19 +109,19 @@ export class NodeImpl implements Node {
 export function* spawnEvalLoop(
   channel: Channel<CallEval, never>,
 ): Operation<void> {
-  let ready = withResolvers<void>();
+  const ready = withResolvers<void>();
 
   yield* spawn(function* () {
-    let sub = yield* channel as Stream<CallEval, never>;
+    const sub = yield* channel as Stream<CallEval, never>;
     ready.resolve();
 
     while (true) {
-      let next = yield* sub.next();
+      const next = yield* sub.next();
       if (next.done) {
         break;
       }
-      let call = next.value;
-      let result = yield* box(call.operation);
+      const call = next.value;
+      const result = yield* box(call.operation);
       call.resolve(result);
     }
   });

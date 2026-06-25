@@ -1,3 +1,4 @@
+// oxlint-disable require-yield
 import type { Api, Operation, Result } from "effection";
 import { createApi } from "effection/experimental";
 import type { Node } from "./types.ts";
@@ -16,7 +17,7 @@ export const DispatchApi: Api<Dispatch> = createApi<Dispatch>(
     },
 
     *getNodeById(id: string): Operation<Node | undefined> {
-      let tree = yield* TreeContext.expect();
+      const tree = yield* TreeContext.expect();
       return tree.nodes.get(id);
     },
   },

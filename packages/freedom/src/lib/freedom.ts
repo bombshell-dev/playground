@@ -1,3 +1,4 @@
+// oxlint-disable require-yield
 import {
   type Api,
   type Operation,
@@ -41,38 +42,38 @@ export const FreedomApi: Api<Freedom> = createApi<Freedom>("freedom:node", {
   useNode: () => NodeContext.expect(),
 
   *get(key: string): Operation<JsonValue | undefined> {
-    let node = yield* NodeContext.expect();
+    const node = yield* NodeContext.expect();
     return node._props[key];
   },
 
   *set(key: string, value: JsonValue) {
     validateJsonValue(value);
-    let node = yield* NodeContext.expect();
+    const node = yield* NodeContext.expect();
     node._props[key] = value;
   },
 
   *update(key: string, fn: (prev: JsonValue | undefined) => JsonValue) {
-    let node = yield* NodeContext.expect();
-    let prev = node._props[key];
-    let next = fn(prev);
+    const node = yield* NodeContext.expect();
+    const prev = node._props[key];
+    const next = fn(prev);
     validateJsonValue(next);
     node._props[key] = next;
   },
 
   *unset(key: string) {
-    let node = yield* NodeContext.expect();
+    const node = yield* NodeContext.expect();
     if (key in node._props) {
       delete node._props[key];
     }
   },
 
   *append(name: string, component: Component): Operation<Node> {
-    let parent = yield* NodeContext.expect();
-    let tree = yield* TreeContext.expect();
-    let child = new NodeImpl(tree.nextId(), name, parent);
-    let ready = withResolvers<void>();
+    const parent = yield* NodeContext.expect();
+    const tree = yield* TreeContext.expect();
+    const child = new NodeImpl(tree.nextId(), name, parent);
+    const ready = withResolvers<void>();
 
-    let task = yield* spawn(function* () {
+    const task = yield* spawn(function* () {
       parent._children.add(child);
       tree.nodes.set(child.id, child);
       yield* NodeContext.set(child);
@@ -95,12 +96,12 @@ export const FreedomApi: Api<Freedom> = createApi<Freedom>("freedom:node", {
   },
 
   *remove(node: Node) {
-    let halt = node.data.expect(Halt);
+    const halt = node.data.expect(Halt);
     yield* halt();
   },
 
   *sort(fn: ((a: Node, b: Node) => number) | undefined) {
-    let node = yield* NodeContext.expect();
+    const node = yield* NodeContext.expect();
     node._sortFn = fn;
   },
 });
