@@ -11,7 +11,7 @@ import {
   set,
   useFocus,
   useTree,
-} from "../mod.ts";
+} from "../src/index.ts";
 
 describe("Focus installation", () => {
   it("FI1-FI3: useFocus sets root as focused", async () => {

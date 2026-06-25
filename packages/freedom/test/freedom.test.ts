@@ -11,7 +11,7 @@ import {
   update,
   useNode,
   useTree,
-} from "../mod.ts";
+} from "../src/index.ts";
 
 describe("JsonValue validation", () => {
   it("JV1-JV12: accepts valid JsonValues", async () => {
