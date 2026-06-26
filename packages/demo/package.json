@@ -23,6 +23,7 @@
         "test": "bsh test"
     },
     "dependencies": {
+        "@bomb.sh/freedom": "workspace:*",
         "@bomb.sh/tty": "latest",
         "@types/node": "^26.0.0"
     },
