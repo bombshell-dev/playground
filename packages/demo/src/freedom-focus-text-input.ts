@@ -1,4 +1,5 @@
 // oxlint-disable require-yield
+// oxlint-disable bombshell-dev/no-generic-error
 import { each, ensure, main, type Operation, spawn, until } from "effection";
 import { createApi } from "effection/experimental";
 import {
@@ -107,6 +108,10 @@ function* useTextInput(): Operation<void> {
 }
 
 await main(function* () {
+  if (!stdin.isTTY) {
+    throw new Error("freedom demo requires an interactive TTY");
+  }
+
   const tree = yield* useTree(function* () {
     yield* useFocus();
     yield* layout(({ node, children }) => {

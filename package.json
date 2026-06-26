@@ -24,7 +24,8 @@
         "build": "bsh build",
         "format": "bsh format",
         "lint": "bsh lint",
-        "test": "bsh test"
+        "test": "bsh test",
+        "demo": "node scripts/demo.mjs"
     },
     "devDependencies": {
         "@bomb.sh/tools": "latest"
