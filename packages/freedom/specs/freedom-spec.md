@@ -648,6 +648,43 @@ The helper is better than raw middleware because:
 - The `keyboard` API reference is encapsulated — the consumer does not need to
   know which API object to call `around()` on.
 
+### 7.5 Eval Events
+
+E14. `DispatchEvent` is a value type Freedom defines for deferred, cross-node
+evaluation:
+
+    class DispatchEvent<T, TArgs extends unknown[]> {
+      target: Node;
+      method: (...args: TArgs) => Operation<T>;
+      args: TArgs;
+      callback?: (result: Result<T>) => Operation<void>;
+    }
+
+E15. A bundled extension — always installed by `useTree`, but using the same
+dispatch-middleware mechanism as any other extension — recognizes a
+`DispatchEvent` on the dispatch chain, runs
+`const result = yield* target.eval(() => method(...args))`, then, if a
+`callback` is present, runs `yield* callback(result)`. The handler returns
+`{ ok: true, value: true }` on success or `{ ok: false, error }` on failure.
+Events that are not `DispatchEvent` instances pass through to `next`.
+
+E16. Because an eval-event is drained in its own later dispatch cycle (E7), the
+target's eval loop is idle when it runs, so the evaluation cannot deadlock
+against a busy loop. This is the sanctioned mechanism for mutating a node from
+within a dispatch.
+
+E17. This does not weaken §2.2 event-agnosticism: `dispatch` remains
+`(event: unknown)`; `DispatchEvent` is one structural event type handled by a
+bundled extension exactly as application vocabularies are handled (§7.3).
+
+E18. `dispatch(target, event)` is an operation usable in any node scope that
+enqueues an eval-event via the tree's queue:
+`tree.dispatch(new DispatchEvent({ ...event, target }))`.
+
+E19. `node.eval()` is now an internal primitive. It remains public and the
+N-eval clauses (§5.3) hold, but extensions SHOULD prefer dispatching eval-events
+for cross-node work; direct `node.eval()` is reserved for same-loop/self use.
+
 ---
 
 ## 8. Tree and Notification

@@ -96,17 +96,30 @@ from becoming focusable.
 
 **advance**
 
-F4. `advance()` moves focus to the next focusable node in the focus chain (§5).
+F4. `advance()` *requests* a move to the next focusable node in the focus chain
+(§5) by enqueuing an eval-event (Freedom spec §7.5). The move is applied when
+that event is drained, on a subsequent dispatch cycle; when the eval-event
+completes successfully (observable via its `callback`), focus has moved.
 
 F5. If the currently focused node is the last in the focus chain, `advance()`
 wraps to the first focusable node.
 
-F6. Focus movement sets the old node's `focused` property to `false` and the new
-node's `focused` property to `true`, using `node.eval()` to run property
-operations in each node's scope (§6.2).
+F6. Focus movement is performed by the eval-event handler, which runs the
+`FocusApi` operation in the target node's scope, setting the old node's
+`focused` property to `false` and the new node's to `true`. Because the handler
+runs in its own idle cycle, these writes use the target nodes' free eval loops
+without deadlock.
 
 F7. If the focus chain contains only one focusable node (including root),
 `advance()` is a no-op.
+
+F7a. `advance`, `retreat`, and `focus` are **deferred**: each resolves once its
+eval-event is *enqueued*, not once focus has moved. The move itself is observable
+via the eval-event `callback` — a `callback` receiving `{ ok: true }` means focus
+has moved; an `{ ok: false }` means it did not (e.g. a non-focusable target).
+`current()` and `focusable()` remain synchronous. Awaiting completion from
+*inside* the triggering dispatch is impossible by construction (it would re-create
+the deadlock the deferral exists to avoid), so the public ops resolve on enqueue.
 
 **retreat**
 
@@ -227,29 +240,33 @@ occur within the same dispatch cycle.
 
 ### 6.3 Focused node removal
 
-FL7. `useFocus()` installs middleware on the `remove` context API operation that
-advances focus before a focused node is destroyed:
+FL7. `useFocus()` installs middleware on the `remove` context API operation
+that, when the node being removed is focused, computes its successor in the focus
+chain **synchronously (before teardown)** and enqueues `focus(successor)`, then
+calls `next(node)`:
 
     ```ts
     yield* FreedomApi.around({
       *remove([node], next) {
-        let focused = yield* node.eval(() => get("focused"));
-        if (focused === true) {
-          yield* FocusApi.operations.advance();
+        if (node.props.focused === true) {
+          let successor = successorOf(node); // sync chain walk, excludes node
+          if (successor && successor !== node) {
+            yield* focus(successor);          // deferred eval-event
+          }
         }
         yield* next(node);
       },
     });
     ```
 
-FL8. If the removed node is the only focusable node (i.e., it is the root),
-`advance()` is a no-op (F7) and focus remains on root. This case should not
-arise in practice because `remove` on the root is an error (C-rm3).
+FL8. If the only focusable node is root, there is no successor and no focus event
+is enqueued. This case should not arise in practice because `remove` on the root
+is an error (C-rm3).
 
-FL9. Focus is advanced before `next(node)` is called, so the focus chain is
-walked while the node is still in the tree. After `next(node)` completes, the
-node's scope is destroyed and it leaves the focus chain naturally (its props,
-including `focused`, are gone).
+FL9. Because the successor is computed before `next(node)`, the focus chain still
+contains the removed node during the computation. The deferred `focus(successor)`
+applies on a later cycle, by which point teardown is complete and the removed
+node has left the chain naturally (its props, including `focused`, are gone).
 
 ---
 
