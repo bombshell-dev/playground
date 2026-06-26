@@ -298,6 +298,28 @@ describe("Node.eval", () => {
       }
     });
   });
+
+  it("re-entrant eval on the current node runs inline without deadlock", async () => {
+    await run(function* () {
+      let tree = yield* useTree(function* () {});
+
+      let result = yield* tree.root.eval(function* () {
+        // Re-entrant: eval the current node from inside its own eval loop.
+        // Routing through the channel here would deadlock.
+        let inner = yield* tree.root.eval(function* () {
+          yield* set("inner", true);
+          return "nested";
+        });
+        return inner;
+      });
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value).toEqual({ ok: true, value: "nested" });
+      }
+      expect(tree.root.props["inner"]).toEqual(true);
+    });
+  });
 });
 
 describe("Tree and notification", () => {

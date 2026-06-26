@@ -72,7 +72,7 @@ export function useTree(root: Component): Operation<Tree> {
         },
       });
 
-      yield* spawnEvalLoop(rootNode._channel);
+      yield* spawnEvalLoop(rootNode);
 
       // Subscribe to events, then spawn the event loop
       const sub = yield* events;

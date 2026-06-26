@@ -78,7 +78,7 @@ export const FreedomApi: Api<Freedom> = createApi<Freedom>("freedom:node", {
       parent._children.add(child);
       tree.nodes.set(child.id, child);
       yield* NodeContext.set(child);
-      yield* spawnEvalLoop(child._channel);
+      yield* spawnEvalLoop(child);
       ready.resolve();
       try {
         yield* component();

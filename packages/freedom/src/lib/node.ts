@@ -95,6 +95,12 @@ export class NodeImpl implements Node {
   }
 
   *eval<T>(op: () => Operation<T>): Operation<Result<T>> {
+    // Re-entrant call from inside this node's own eval loop: running through
+    // the channel would deadlock (the loop is busy awaiting us), so run inline.
+    const owner = yield* EvalOwner.get();
+    if (owner === this) {
+      return yield* box(op);
+    }
     const resolver = withResolvers<Result<T>>();
     yield* this._channel.send({
       resolve: resolver.resolve as (result: Result<unknown>) => void,
@@ -108,13 +114,14 @@ export class NodeImpl implements Node {
   }
 }
 
-export function* spawnEvalLoop(
-  channel: Channel<CallEval, never>,
-): Operation<void> {
+export function* spawnEvalLoop(node: NodeImpl): Operation<void> {
   const ready = withResolvers<void>();
 
   yield* spawn(function* () {
-    const sub = yield* channel as Stream<CallEval, never>;
+    const sub = yield* node._channel as Stream<CallEval, never>;
+    // Mark this task's scope as the owner of node's eval loop, so a re-entrant
+    // node.eval() running within it short-circuits inline instead of deadlocking.
+    yield* EvalOwner.set(node);
     ready.resolve();
 
     while (true) {
@@ -133,4 +140,9 @@ export function* spawnEvalLoop(
 
 export const NodeContext: Context<NodeImpl> = createContext<NodeImpl>(
   "freedom:current-node",
+);
+
+// Set within a node's eval loop to identify re-entrant self-eval calls.
+const EvalOwner: Context<NodeImpl> = createContext<NodeImpl>(
+  "freedom:eval-owner",
 );
