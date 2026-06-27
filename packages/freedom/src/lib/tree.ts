@@ -4,10 +4,11 @@ import {
   resource,
   spawn,
   suspend,
+  useScope,
   withResolvers,
 } from "effection";
 import type { Component, Tree } from "./types.ts";
-import { NodeContext, NodeImpl, spawnEvalLoop } from "./node.ts";
+import { NodeContext, NodeImpl } from "./node.ts";
 import { TreeContext, type TreeState } from "./state.ts";
 import { DispatchApi } from "./dispatch.ts";
 import { FreedomApi } from "./freedom.ts";
@@ -41,6 +42,7 @@ export function useTree(root: Component): Operation<Tree> {
 
     // Spawn root node scope
     yield* spawn(function* () {
+      rootNode.scope = yield* useScope();
       yield* NodeContext.set(rootNode);
 
       // Mark dirty after every mutation
@@ -71,8 +73,6 @@ export function useTree(root: Component): Operation<Tree> {
           state.markDirty();
         },
       });
-
-      yield* spawnEvalLoop(rootNode);
 
       // Subscribe to events, then spawn the event loop
       const sub = yield* events;

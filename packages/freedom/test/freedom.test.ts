@@ -537,6 +537,7 @@ describe("get operation", () => {
           },
         });
       });
+      yield* sleep(0);
       let result = yield* tree.root.eval(function* () {
         return yield* get("k");
       });

@@ -1,17 +1,13 @@
 // oxlint-disable bombshell-dev/no-generic-error
 // oxlint-disable max-params
 import {
-  type Channel,
   type Context,
-  createChannel,
   createContext,
   Err,
   Ok,
   type Operation,
   type Result,
-  spawn,
-  type Stream,
-  withResolvers,
+  type Scope,
 } from "effection";
 import type { JsonValue, Node, NodeData, NodeDataKey } from "./types.ts";
 
@@ -38,29 +34,12 @@ class NodeDataImpl implements NodeData {
   }
 }
 
-interface CallEval {
-  operation: () => Operation<unknown>;
-  resolve: (result: Result<unknown>) => void;
-}
-
-function box<T>(op: () => Operation<T>): Operation<Result<T>> {
-  return {
-    *[Symbol.iterator]() {
-      try {
-        return Ok(yield* op());
-      } catch (error) {
-        return Err(error as Error);
-      }
-    },
-  };
-}
-
 export class NodeImpl implements Node {
   _props: Record<string, JsonValue> = {};
   _children: Set<NodeImpl> = new Set();
   _sortFn: ((a: Node, b: Node) => number) | undefined = undefined;
-  _channel: Channel<CallEval, never> = createChannel<CallEval, never>();
   data: NodeData = new NodeDataImpl();
+  scope!: Scope;
 
   constructor(
     readonly id: string,
@@ -95,18 +74,30 @@ export class NodeImpl implements Node {
   }
 
   *eval<T>(op: () => Operation<T>): Operation<Result<T>> {
-    // Re-entrant call from inside this node's own eval loop: running through
-    // the channel would deadlock (the loop is busy awaiting us), so run inline.
-    const owner = yield* EvalOwner.get();
-    if (owner === this) {
-      return yield* box(op);
+    // Run `op` inline with the current routine's scope temporarily repointed at
+    // this node's scope, so the op sees this node's contexts/middleware.
+    const restore = (yield {
+      description: "freedom: enter node scope",
+      enter: (
+        resolve: (result: Result<() => void>) => void,
+        routine: { scope: Scope },
+      ) => {
+        const original = routine.scope;
+        routine.scope = this.scope;
+        resolve(Ok(() => {
+          routine.scope = original;
+        }));
+        return (resolveExit: (result: Result<void>) => void) =>
+          resolveExit(Ok());
+      },
+    }) as () => void;
+    try {
+      return Ok(yield* op());
+    } catch (error) {
+      return Err(error as Error);
+    } finally {
+      restore();
     }
-    const resolver = withResolvers<Result<T>>();
-    yield* this._channel.send({
-      resolve: resolver.resolve as (result: Result<unknown>) => void,
-      operation: op as () => Operation<unknown>,
-    });
-    return yield* resolver.operation;
   }
 
   remove(): Operation<void> {
@@ -114,35 +105,6 @@ export class NodeImpl implements Node {
   }
 }
 
-export function* spawnEvalLoop(node: NodeImpl): Operation<void> {
-  const ready = withResolvers<void>();
-
-  yield* spawn(function* () {
-    const sub = yield* node._channel as Stream<CallEval, never>;
-    // Mark this task's scope as the owner of node's eval loop, so a re-entrant
-    // node.eval() running within it short-circuits inline instead of deadlocking.
-    yield* EvalOwner.set(node);
-    ready.resolve();
-
-    while (true) {
-      const next = yield* sub.next();
-      if (next.done) {
-        break;
-      }
-      const call = next.value;
-      const result = yield* box(call.operation);
-      call.resolve(result);
-    }
-  });
-
-  yield* ready.operation;
-}
-
 export const NodeContext: Context<NodeImpl> = createContext<NodeImpl>(
   "freedom:current-node",
-);
-
-// Set within a node's eval loop to identify re-entrant self-eval calls.
-const EvalOwner: Context<NodeImpl> = createContext<NodeImpl>(
-  "freedom:eval-owner",
 );

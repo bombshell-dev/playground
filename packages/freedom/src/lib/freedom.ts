@@ -5,6 +5,7 @@ import {
   type Operation,
   spawn,
   suspend,
+  useScope,
   withResolvers,
 } from "effection";
 import { createApi } from "effection/experimental";
@@ -14,7 +15,7 @@ import {
   type JsonValue,
   type Node,
 } from "./types.ts";
-import { NodeContext, NodeImpl, spawnEvalLoop } from "./node.ts";
+import { NodeContext, NodeImpl } from "./node.ts";
 import { TreeContext } from "./state.ts";
 import { validateJsonValue } from "./validate.ts";
 
@@ -78,7 +79,7 @@ export const FreedomApi: Api<Freedom> = createApi<Freedom>("freedom:node", {
       parent._children.add(child);
       tree.nodes.set(child.id, child);
       yield* NodeContext.set(child);
-      yield* spawnEvalLoop(child);
+      child.scope = yield* useScope();
       ready.resolve();
       try {
         yield* component();
