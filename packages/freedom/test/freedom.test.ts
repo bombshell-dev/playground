@@ -3,6 +3,7 @@ import { run, sleep } from "effection";
 import {
   append,
   DispatchApi,
+  DispatchEvent,
   FreedomApi,
   get,
   set,
@@ -676,6 +677,72 @@ describe("useNode operation", () => {
         });
       });
       expect(intercepted).toBe(true);
+    });
+  });
+});
+
+describe("eval events", () => {
+  it("DE1: runs method in the target node's scope on a later cycle", async () => {
+    await run(function* () {
+      let ran = false;
+      let tree = yield* useTree(function* () {});
+
+      let sub = yield* tree;
+      tree.dispatch(new DispatchEvent({
+        target: tree.root,
+        method: function* () {
+          ran = true;
+          yield* set("touched", true);
+        },
+        args: [],
+      }));
+      yield* sub.next();
+
+      expect(ran).toBe(true);
+      expect(tree.root.props["touched"]).toBe(true);
+    });
+  });
+
+  it("DE2: fires callback with the result after the cycle", async () => {
+    await run(function* () {
+      let got: unknown = undefined;
+      let tree = yield* useTree(function* () {});
+
+      let sub = yield* tree;
+      tree.dispatch(new DispatchEvent({
+        target: tree.root,
+        method: function* () {
+          yield* set("x", 1);
+          return 42;
+        },
+        args: [],
+        callback: function* (r) {
+          got = r;
+        },
+      }));
+      yield* sub.next();
+
+      expect(got).toEqual({ ok: true, value: 42 });
+    });
+  });
+
+  it("DE3: passes through non-DispatchEvent events", async () => {
+    await run(function* () {
+      let seen = false;
+      let tree = yield* useTree(function* () {
+        yield* DispatchApi.around({
+          *dispatch([event], next) {
+            if (event === "ping") {
+              seen = true;
+              return { ok: true as const, value: true as const };
+            }
+            return yield* next(event);
+          },
+        });
+      });
+      tree.dispatch("ping");
+      yield* sleep(0);
+      expect(seen).toBe(true);
     });
   });
 });

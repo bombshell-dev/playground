@@ -8,6 +8,7 @@ export interface TreeState {
   nodes: Map<string, NodeImpl>;
   nextId(): string;
   markDirty(): void;
+  dispatch(event: unknown): void;
 }
 
 export const TreeContext = createContext<TreeState>("freedom:tree");

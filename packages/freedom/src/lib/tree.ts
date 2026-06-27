@@ -9,7 +9,7 @@ import {
 import type { Component, Tree } from "./types.ts";
 import { NodeContext, NodeImpl, spawnEvalLoop } from "./node.ts";
 import { TreeContext, type TreeState } from "./state.ts";
-import { DispatchApi } from "./dispatch.ts";
+import { DispatchApi, useDispatch } from "./dispatch.ts";
 import { FreedomApi } from "./freedom.ts";
 
 export function useTree(root: Component): Operation<Tree> {
@@ -28,6 +28,9 @@ export function useTree(root: Component): Operation<Tree> {
       },
       markDirty() {
         state.dirty = true;
+      },
+      dispatch(event) {
+        events.send(event);
       },
     };
 
@@ -72,6 +75,8 @@ export function useTree(root: Component): Operation<Tree> {
         },
       });
 
+      yield* useDispatch();
+
       yield* spawnEvalLoop(rootNode);
 
       // Subscribe to events, then spawn the event loop
@@ -100,9 +105,7 @@ export function useTree(root: Component): Operation<Tree> {
     yield* ready.operation;
 
     const tree: Tree = {
-      dispatch(event: unknown) {
-        events.send(event);
-      },
+      dispatch: state.dispatch,
       root: rootNode,
       [Symbol.iterator]: output[Symbol.iterator],
     };
