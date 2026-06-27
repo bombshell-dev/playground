@@ -96,10 +96,10 @@ framework-assigned unique `id`, an optional name, a property bag, an ordered
 list of children, and a parent (except the root). A node's in-memory identity is
 its object reference; its externalizable identity is its `id`. The Node's data
 fields are read-only — all property mutations go through the context API. Each
-node maintains an eval loop that accepts operations via `node.eval()`, enabling
-scoped execution. `node.remove()` delegates to the `remove` context API
-operation, which halts the node's scope and tears down all descendants.
-Middleware on `remove` participates in teardown.
+node owns an Effection scope; `node.eval()` runs operations inline in that scope.
+`node.remove()` delegates to the `remove` context API operation, which halts the
+node's scope and tears down all descendants. Middleware on `remove` participates
+in teardown.
 
 **Component.** A generator function of type `() => Operation<void>` that runs
 within a node's Effection scope for the node's entire lifetime. Components
@@ -240,11 +240,10 @@ uniqueness, or reconciliation.
 
 ### 5.3 Scoped Evaluation
 
-Each node maintains an **eval loop** — a spawned child task within the node's
-scope that accepts and executes operations submitted via `node.eval()`. The eval
-loop uses a channel- based "fire and await" pattern: the caller submits an
-operation and waits for its result; the eval loop executes the operation in the
-node's scope and resolves the result.
+Each node owns an Effection **scope** (captured when its component task starts).
+`node.eval(op)` runs `op` **inline** in the caller's routine with the routine's
+scope temporarily repointed at the node's scope, then restored. There is no eval
+loop and no channel.
 
 N-eval1. `node.eval(op)` runs `op` within the node's Effection scope and returns
 `Result<T>`. If `op` completes successfully, the result is
@@ -253,22 +252,25 @@ N-eval1. `node.eval(op)` runs `op` within the node's Effection scope and returns
 N-eval2. Operations yielded inside `op` see the node's scope context — including
 all middleware installed in the node's scope and its ancestors.
 
-N-eval3. The eval loop executes operations sequentially. If multiple callers
-submit operations concurrently, they are processed in order.
+N-eval3. `eval` is immediate — it runs `op` synchronously inline — and
+non-serial: it does not queue. Re-entrant and concurrent `eval` calls nest, each
+restoring the previous scope when it completes. The only serialization point in
+the system is the tree's dispatch queue (§7).
 
-N-eval4. The eval loop is spawned as a child of the node's scope. It runs
-alongside the component and shares the same parent scope, so middleware
-installed by the component is visible to operations executed via `eval`.
+N-eval4. Because `op` runs with the node's scope as the current scope, middleware
+installed by the node's component is visible to operations executed via `eval`.
 
 ### 5.4 Lifecycle
 
-N7. A node is created by `append()`, which spawns a new Effection child scope
-within the parent node's scope and runs the component within it.
+N7. A node is created by `append()`, which spawns a task within the parent node's
+scope and runs the component within it. The task captures its scope
+(`useScope()`) as the node's scope, so the node's scope inherits the parent's
+contexts.
 
 N8. A node is destroyed by `node.remove()`, which halts the node's spawned task.
-This triggers structured teardown of the component, the eval loop, all
-middleware installed in the scope, and all descendant nodes. `remove()` does not
-return until teardown is complete.
+This triggers structured teardown of the component, all middleware installed in
+the scope, and all descendant nodes. `remove()` does not return until teardown is
+complete.
 
 N9. When a node is destroyed, its middleware disappears automatically because
 the Effection scope is destroyed.
