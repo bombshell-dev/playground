@@ -4,11 +4,13 @@ export type {
   Node,
   NodeData,
   NodeDataKey,
+  Root,
   Tree,
 } from "./types.ts";
 
 export { createNodeData } from "./types.ts";
 
+export { createRoot } from "./root.ts";
 export { useTree } from "./tree.ts";
 
 export {

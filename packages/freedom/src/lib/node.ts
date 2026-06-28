@@ -3,6 +3,7 @@
 import {
   type Context,
   createContext,
+  createScope,
   Err,
   Ok,
   type Operation,
@@ -10,6 +11,8 @@ import {
   type Scope,
 } from "effection";
 import type { JsonValue, Node, NodeData, NodeDataKey } from "./types.ts";
+import { TreeContext } from "./state.ts";
+import { validateJsonValue } from "./validate.ts";
 
 class NodeDataImpl implements NodeData {
   _map: Map<symbol, unknown> = new Map();
@@ -39,13 +42,19 @@ export class NodeImpl implements Node {
   _children: Set<NodeImpl> = new Set();
   _sortFn: ((a: Node, b: Node) => number) | undefined = undefined;
   data: NodeData = new NodeDataImpl();
-  scope!: Scope;
+  scope: Scope;
+  #dispose: () => Promise<void>;
 
   constructor(
     readonly id: string,
     readonly name: string,
     readonly _parent: NodeImpl | undefined,
-  ) {}
+  ) {
+    const [scope, dispose] = createScope(_parent?.scope);
+    this.scope = scope;
+    this.#dispose = dispose;
+    scope.set(NodeContext, this);
+  }
 
   get props(): Record<string, JsonValue> {
     return Object.freeze({ ...this._props });
@@ -98,6 +107,48 @@ export class NodeImpl implements Node {
     } finally {
       restore();
     }
+  }
+
+  get(key: string): JsonValue | undefined {
+    return this._props[key];
+  }
+
+  set(key: string, value: JsonValue): void {
+    validateJsonValue(value);
+    this._props[key] = value;
+    this.scope.expect(TreeContext).markDirty();
+  }
+
+  update(key: string, fn: (prev: JsonValue | undefined) => JsonValue): void {
+    const value = fn(this._props[key]);
+    validateJsonValue(value);
+    this._props[key] = value;
+    this.scope.expect(TreeContext).markDirty();
+  }
+
+  unset(key: string): void {
+    if (key in this._props) {
+      delete this._props[key];
+      this.scope.expect(TreeContext).markDirty();
+    }
+  }
+
+  createChild(name = ""): Node {
+    const state = this.scope.expect(TreeContext);
+    const child = new NodeImpl(state.nextId(), name, this);
+    this._children.add(child);
+    state.nodes.set(child.id, child);
+    state.markDirty();
+    return child;
+  }
+
+  sort(fn?: (a: Node, b: Node) => number): void {
+    this._sortFn = fn;
+    this.scope.expect(TreeContext).markDirty();
+  }
+
+  destroy(): Promise<void> {
+    return this.#dispose();
   }
 
   remove(): Operation<void> {
