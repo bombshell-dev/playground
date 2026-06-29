@@ -108,6 +108,47 @@ describe("Children and ordering", () => {
     root.destroy();
   });
 
+  it("createChild inserts before a sibling", () => {
+    const root = createRoot();
+    root.node.createChild("A");
+    const c = root.node.createChild("C");
+    root.node.createChild("B", { before: c });
+    expect([...root.node.children].map((n) => n.name)).toEqual(["A", "B", "C"]);
+    root.destroy();
+  });
+
+  it("createChild before the first child inserts at the front", () => {
+    const root = createRoot();
+    const a = root.node.createChild("A");
+    root.node.createChild("Z", { before: a });
+    expect([...root.node.children].map((n) => n.name)).toEqual(["Z", "A"]);
+    root.destroy();
+  });
+
+  it("createChild throws when before is not a child", () => {
+    const root = createRoot();
+    const a = root.node.createChild("A");
+    const stranger = root.node.createChild("B").createChild("nested");
+    expect(() => a.createChild("x", { before: stranger })).toThrow();
+    root.destroy();
+  });
+
+  it("before sets insertion order under an active sort tiebreaker", () => {
+    const root = createRoot();
+    const a = root.node.createChild("A");
+    const c = root.node.createChild("C");
+    const b = root.node.createChild("B", { before: c });
+    for (const n of [a, b, c]) {
+      n.set("priority", 1);
+    }
+    root.node.sort((x, y) =>
+      (x.props["priority"] as number) - (y.props["priority"] as number)
+    );
+    // all equal -> insertion order (with B spliced before C) is the tiebreaker
+    expect([...root.node.children].map((n) => n.name)).toEqual(["A", "B", "C"]);
+    root.destroy();
+  });
+
   it("custom sort reorders children", () => {
     const root = createRoot();
     const a = root.node.createChild("A");

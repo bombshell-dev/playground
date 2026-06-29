@@ -197,7 +197,7 @@ interface Node {
   set(key: string, value: JsonValue): void;
   update(key: string, fn: (prev: JsonValue | undefined) => JsonValue): void;
   unset(key: string): void;
-  createChild(name?: string): Node;
+  createChild(name?: string, options?: { before?: Node }): Node;
   sort(fn?: (a: Node, b: Node) => number): void;
   remove(): Promise<void>;
   destroy(): Promise<void>;
@@ -250,9 +250,11 @@ visible to mutations on this node and its descendants, via context inheritance.
 
 ### 5.4 Lifecycle
 
-N7. A node is created by `parent.createChild(name?)`: the constructor creates the
-child's scope (a child of the parent's), the child is attached to the parent's
-children, and it is returned synchronously.
+N7. A node is created by `parent.createChild(name?, options?)`: the constructor
+creates the child's scope (a child of the parent's), the child is attached to the
+parent's children, and it is returned synchronously. If `options.before` is
+given, the child is inserted immediately before that sibling in insertion order
+instead of being appended (C14).
 
 N8. A node is destroyed by `node.remove()` (detach + teardown) or directly by
 `node.destroy()`, which disposes the node's scope — halting all descendant node
@@ -305,6 +307,11 @@ fresh because it runs against current property values at iteration time.
 
 N21. Installing or clearing a sort function via `sort()` MUST emit a
 notification (§8), because the iteration order of children may have changed.
+
+N22. A child MAY be inserted at a specific position via
+`createChild(name, { before })` (C14). This sets its position in **insertion
+order**; it does not bypass an active sort function (N20). The `options` object
+is the extension point for future positioning hints (e.g. `after`, `at`).
 
 ### 5.7 Node Data
 
@@ -366,7 +373,7 @@ interface Node {
   set(key: string, value: JsonValue): void;
   update(key: string, fn: (prev: JsonValue | undefined) => JsonValue): void;
   unset(key: string): void;
-  createChild(name?: string): Node;
+  createChild(name?: string, options?: { before?: Node }): Node;
   sort(fn?: (a: Node, b: Node) => number): void;
   remove(): Promise<void>;
   destroy(): Promise<void>;
@@ -388,7 +395,7 @@ node.get(key): JsonValue | undefined
 node.set(key, value): void
 node.update(key, fn: (prev: JsonValue | undefined) => JsonValue): void
 node.unset(key): void
-node.createChild(name?): Node
+node.createChild(name?, options?: { before?: Node }): Node
 node.sort(fn?: (a: Node, b: Node) => number): void
 node.remove(): Promise<void>
 node.destroy(): Promise<void>
@@ -447,6 +454,16 @@ C12. `createChild` attaches the child to this node's children and returns it
 **synchronously**.
 
 C13. `createChild` marks the tree dirty (§8).
+
+C14. `createChild(name?, options?)`: if `options.before` is provided, it MUST be a
+current child of this node; the new child is inserted **immediately before** it in
+insertion order. If `before` is not a current child, `createChild` throws. If
+`before` is omitted, the child is appended.
+
+C15. The `before` position sets the child's place in **insertion order**. An
+active sort function (N18) still reorders at read time, with insertion order as
+the equal-compare tiebreaker (N20). `options` is an open object reserved for
+future positioning hints (e.g. `after`, `at`).
 
 **sort**
 

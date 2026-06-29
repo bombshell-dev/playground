@@ -7,7 +7,13 @@ import {
   type Scope,
 } from "effection";
 import { createApi } from "effection/experimental";
-import type { JsonValue, Node, NodeData, NodeDataKey } from "./types.ts";
+import type {
+  CreateChildOptions,
+  JsonValue,
+  Node,
+  NodeData,
+  NodeDataKey,
+} from "./types.ts";
 import { TreeContext } from "./state.ts";
 import { validateJsonValue } from "./validate.ts";
 
@@ -95,8 +101,8 @@ export class NodeImpl implements Node {
     NodeApi.invoke(this.scope, "unset", [this, key]);
   }
 
-  createChild(name = ""): Node {
-    return NodeApi.invoke(this.scope, "createChild", [this, name]);
+  createChild(name = "", options?: CreateChildOptions): Node {
+    return NodeApi.invoke(this.scope, "createChild", [this, name, options]);
   }
 
   sort(fn?: (a: Node, b: Node) => number): void {
@@ -139,10 +145,26 @@ export const NodeApi = createApi("freedom:node", {
       node.scope.expect(TreeContext).markDirty();
     }
   },
-  createChild(node: NodeImpl, name: string): Node {
+  createChild(node: NodeImpl, name: string, options?: CreateChildOptions): Node {
     const state = node.scope.expect(TreeContext);
     const child = new NodeImpl(state.nextId(), name, node);
-    node._children.add(child);
+    const before = options?.before;
+    if (before) {
+      if (!node._children.has(before as NodeImpl)) {
+        throw new Error("createChild: `before` is not a child of this node");
+      }
+      // Set has no positional insert, so rebuild it with `child` spliced in.
+      const reordered = new Set<NodeImpl>();
+      for (const existing of node._children) {
+        if (existing === before) {
+          reordered.add(child);
+        }
+        reordered.add(existing);
+      }
+      node._children = reordered;
+    } else {
+      node._children.add(child);
+    }
     state.nodes.set(child.id, child);
     state.markDirty();
     return child;
