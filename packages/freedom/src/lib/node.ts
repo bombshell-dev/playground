@@ -4,10 +4,6 @@ import {
   type Context,
   createContext,
   createScope,
-  Err,
-  Ok,
-  type Operation,
-  type Result,
   type Scope,
 } from "effection";
 import { createApi } from "effection/experimental";
@@ -83,33 +79,6 @@ export class NodeImpl implements Node {
     return this._parent;
   }
 
-  *eval<T>(op: () => Operation<T>): Operation<Result<T>> {
-    // Run `op` inline with the current routine's scope temporarily repointed at
-    // this node's scope, so the op sees this node's contexts/middleware.
-    const restore = (yield {
-      description: "freedom: enter node scope",
-      enter: (
-        resolve: (result: Result<() => void>) => void,
-        routine: { scope: Scope },
-      ) => {
-        const original = routine.scope;
-        routine.scope = this.scope;
-        resolve(Ok(() => {
-          routine.scope = original;
-        }));
-        return (resolveExit: (result: Result<void>) => void) =>
-          resolveExit(Ok());
-      },
-    }) as () => void;
-    try {
-      return Ok(yield* op());
-    } catch (error) {
-      return Err(error as Error);
-    } finally {
-      restore();
-    }
-  }
-
   get(key: string): JsonValue | undefined {
     return NodeApi.invoke(this.scope, "get", [this, key]);
   }
@@ -138,8 +107,8 @@ export class NodeImpl implements Node {
     return this.#dispose();
   }
 
-  remove(): Operation<void> {
-    throw new Error("Cannot remove root node");
+  remove(): Promise<void> {
+    return NodeApi.invoke(this.scope, "remove", [this]);
   }
 }
 
@@ -181,6 +150,16 @@ export const NodeApi = createApi("freedom:node", {
   sort(node: NodeImpl, fn: ((a: Node, b: Node) => number) | undefined): void {
     node._sortFn = fn;
     node.scope.expect(TreeContext).markDirty();
+  },
+  remove(node: NodeImpl): Promise<void> {
+    if (!node._parent) {
+      throw new Error("Cannot remove root node");
+    }
+    const state = node.scope.expect(TreeContext);
+    node._parent._children.delete(node);
+    state.nodes.delete(node.id);
+    state.markDirty();
+    return node.destroy();
   },
 });
 

@@ -1,4 +1,4 @@
-import type { Operation, Result, Scope, Stream } from "effection";
+import type { Scope, Stream } from "effection";
 
 export type JsonValue =
   | string
@@ -7,8 +7,6 @@ export type JsonValue =
   | null
   | JsonValue[]
   | { [key: string]: JsonValue };
-
-export type Component = () => Operation<void>;
 
 export interface NodeDataKey<T> {
   readonly symbol: symbol;
@@ -43,13 +41,7 @@ export interface Node {
   createChild(name?: string): Node;
   sort(fn?: (a: Node, b: Node) => number): void;
   destroy(): Promise<void>;
-  eval<T>(op: () => Operation<T>): Operation<Result<T>>;
-  remove(): Operation<void>;
-}
-
-export interface Tree extends Stream<void, never> {
-  dispatch(event: unknown): void;
-  root: Node;
+  remove(): Promise<void>;
 }
 
 export interface Root extends Stream<void, never> {
