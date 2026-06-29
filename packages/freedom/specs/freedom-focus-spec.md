@@ -41,9 +41,10 @@ notification. No special subscription mechanism is needed.
 
 ### 2.4 Built on Freedom APIs
 
-All focus operations use Freedom's context APIs. Focus movement uses
-`node.eval()` to run `set` and `unset` in the correct node scopes. Focus cleanup
-uses middleware on `remove`. No internal state is accessed directly.
+Focus operations are **synchronous functions** that take a node and use the
+node's synchronous methods. Focus movement calls `node.set("focused", …)`
+directly. Focus cleanup installs a synchronous interceptor on `remove` via
+`node.scope.around(NodeApi, …)`. No internal state is accessed directly.
 
 ---
 
@@ -68,17 +69,21 @@ stored.
 
 ### 4.1 API Definition
 
-The focus API is an Effection API created with `createApi`:
+Focus is a set of **synchronous functions** that take a `Node` (used to locate
+the tree root), plus `useFocus` to install it:
 
 ```
-createApi("freedom:focus", {
-  *focusable(): Operation<void>,
-  *advance(): Operation<void>,
-  *retreat(): Operation<void>,
-  *focus(node: Node): Operation<void>,
-  *current(): Operation<Node>,
-})
+focusable(node: Node): void
+advance(node: Node): void
+retreat(node: Node): void
+focus(target: Node): void
+current(node: Node): Node
+useFocus(node: Node): void
 ```
+
+These are plain functions (not `createApi` operations) and are not
+middleware-interceptable in this version; focus trapping and the like remain
+deferred (§9). Focus movement is performed with `node.set("focused", …)`.
 
 ### 4.2 Operations
 
@@ -193,63 +198,52 @@ position in the chain.
 
 ### 6.1 Installation
 
-FL1. Focus is installed by calling `yield* useFocus()` in the root component:
+FL1. Focus is installed by calling `useFocus(root.node)`:
 
     ```ts
-    function* app(): Operation<void> {
-      yield* useFocus();
-      // ... rest of app
-    }
+    const root = createRoot();
+    useFocus(root.node);
     ```
 
-FL2. `useFocus()` performs two actions: 1. Sets `focused: true` on the root
-node, making it the initial focus target. 2. Installs middleware on
-`freedom:node`'s `remove` operation to handle focused node removal (§6.3).
-
-FL3. `useFocus()` is an Effection resource operation. It runs within the root
-node's scope, so its middleware is visible to all descendants.
+FL2. `useFocus(node)` performs two actions: 1. Sets `focused: true` on the node,
+making it the initial focus target. 2. Installs a synchronous `remove`
+interceptor on the node's scope (`node.scope.around(NodeApi, …)`) to handle
+focused-node removal (§6.3). Because it is installed on the node's scope, the
+interceptor applies to all descendants.
 
 ### 6.2 Focus movement
 
-FL4. When focus moves from node A to node B, the focus system executes:
+FL4. When focus moves from node A to node B, the focus system calls
+`A.set("focused", false)` and `B.set("focused", true)` — synchronous mutations.
 
-    ```ts
-    yield* oldNode.eval(() => set("focused", false));
-    yield* newNode.eval(() => set("focused", true));
-    ```
+FL5. Both changes go through `NodeApi`. Interceptors on `set` see focus changes
+and may react to or redirect them.
 
-FL5. Both property changes go through the `freedom:node` context API. Middleware
-on `set` sees focus changes and can react to or redirect them.
-
-FL6. Both property changes trigger `markDirty()` via Freedom's existing
-notification middleware. The changes coalesce into a single notification if they
-occur within the same dispatch cycle.
+FL6. Both changes mark the tree dirty; they coalesce into a single notification
+if they occur within the same dispatch cycle.
 
 ### 6.3 Focused node removal
 
-FL7. `useFocus()` installs middleware on the `remove` context API operation that
-advances focus before a focused node is destroyed:
+FL7. `useFocus` installs a synchronous `remove` interceptor that, when the node
+being removed is focused, moves focus to its successor before teardown:
 
     ```ts
-    yield* FreedomApi.around({
-      *remove([node], next) {
-        let focused = yield* node.eval(() => get("focused"));
-        if (focused === true) {
-          yield* FocusApi.operations.advance();
+    node.scope.around(NodeApi, {
+      remove([target], next) {
+        if (target.props.focused === true) {
+          const successor = successorOf(target);
+          if (successor && successor !== target) focus(successor);
         }
-        yield* next(node);
+        return next(target);
       },
     });
     ```
 
-FL8. If the removed node is the only focusable node (i.e., it is the root),
-`advance()` is a no-op (F7) and focus remains on root. This case should not
-arise in practice because `remove` on the root is an error (C-rm3).
+FL8. If the only focusable node is root, there is no successor and focus is left
+unchanged. (Removing root is an error, C-rm3.)
 
-FL9. Focus is advanced before `next(node)` is called, so the focus chain is
-walked while the node is still in the tree. After `next(node)` completes, the
-node's scope is destroyed and it leaves the focus chain naturally (its props,
-including `focused`, are gone).
+FL9. The successor is focused before `next(target)` tears the node down, so focus
+never lands on a destroyed node.
 
 ---
 

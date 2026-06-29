@@ -199,7 +199,7 @@ interface Node {
   unset(key: string): void;
   createChild(name?: string): Node;
   sort(fn?: (a: Node, b: Node) => number): void;
-  remove(): void;
+  remove(): Promise<void>;
   destroy(): Promise<void>;
 }
 ```
@@ -368,7 +368,7 @@ interface Node {
   unset(key: string): void;
   createChild(name?: string): Node;
   sort(fn?: (a: Node, b: Node) => number): void;
-  remove(): void;
+  remove(): Promise<void>;
   destroy(): Promise<void>;
 }
 ```
@@ -390,7 +390,7 @@ node.update(key, fn: (prev: JsonValue | undefined) => JsonValue): void
 node.unset(key): void
 node.createChild(name?): Node
 node.sort(fn?: (a: Node, b: Node) => number): void
-node.remove(): void
+node.remove(): Promise<void>
 node.destroy(): Promise<void>
 ```
 
@@ -459,9 +459,10 @@ C20. `sort` marks the tree dirty (§8) (N19).
 
 **remove**
 
-C-rm1. `remove()` detaches the node from its parent and tears down the node's
-scope (and all descendant nodes) via `destroy()`. Detach is synchronous;
-`destroy()` is the async scope dispose `remove` builds on.
+C-rm1. `remove()` detaches the node from its parent (synchronously) and tears
+down its scope and all descendants via `destroy()`. It **returns the teardown
+`Promise`** (the result of `destroy()`); callers MAY await it or ignore it — the
+teardown is initiated regardless.
 
 C-rm3. `remove()` on the root node is an error.
 
