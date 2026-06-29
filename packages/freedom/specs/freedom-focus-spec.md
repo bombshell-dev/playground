@@ -9,7 +9,8 @@
 ## 1. Purpose
 
 Focus tracks which node in the tree is currently receiving input. At any point
-in time, exactly one node is focused. The focus system provides structured,
+in time at most one node is focused; while at least one focusable node exists,
+exactly one is. The focus system provides structured,
 linear navigation through focusable nodes and exposes focus state as an
 observable node property.
 
@@ -55,8 +56,10 @@ value is `true` (this node has focus) or `false` (this node can receive focus
 but does not currently have it). A node without a `"focused"` property is not
 focusable.
 
-**Focused node.** The unique node whose `focused` property is `true`. There is
-always exactly one focused node when the focus system is installed.
+**Focused node.** The unique node whose `focused` property is `true`. When the
+focus system is installed and the container has at least one focusable
+descendant, exactly one node is focused. With no focusable descendants, no node
+is focused and `current()` falls back to the container (§4.2 F17).
 
 **Focus chain.** The ordered sequence of all focusable nodes in the tree,
 computed by depth-first traversal. The focus chain determines the order in which
@@ -142,9 +145,10 @@ F15. If the target node is already focused, `focus()` is a no-op.
 F16. `current()` returns the currently focused node — the node whose `focused`
 property is `true`.
 
-F17. `current()` always returns a `Node`. It never returns `undefined`, because
-the root node is always focusable and the focus system guarantees exactly one
-focused node exists (§7).
+F17. `current()` always returns a `Node`. It never returns `undefined`: it
+returns the focused node, or — when no node is focused — falls back to the
+container (the focus root). Never-null is guaranteed by the fallback, not by
+making the container a member of the focus chain.
 
 F18. `current()` is a `createApi` operation and can be intercepted by
 middleware. This enables future extensions (e.g., focus scoping) to override
@@ -205,11 +209,18 @@ FL1. Focus is installed by calling `useFocus(root.node)`:
     useFocus(root.node);
     ```
 
-FL2. `useFocus(node)` performs two actions: 1. Sets `focused: true` on the node,
-making it the initial focus target. 2. Installs a synchronous `remove`
-interceptor on the node's scope (`node.scope.around(NodeApi, …)`) to handle
-focused-node removal (§6.3). Because it is installed on the node's scope, the
-interceptor applies to all descendants.
+FL2. `useFocus(node)` performs two actions: 1. Seeds initial focus on the first
+focusable descendant in chain order (§5), if any. The container node itself is
+not focused and is not added to the focus chain. If there are no focusable
+descendants, nothing is focused and `current()` falls back to the container. 2.
+Installs a synchronous `remove` interceptor on the node's scope
+(`node.scope.around(NodeApi, …)`) to handle focused-node removal (§6.3). Because
+it is installed on the node's scope, the interceptor applies to all descendants.
+
+FL3. Seeding is one-shot: it happens only at the `useFocus` call. A focusable
+descendant added later does not become focused automatically. Maintaining "one
+focused descendant whenever any focusable descendant exists" is deferred to the
+focus-container extension (§9).
 
 ### 6.2 Focus movement
 
@@ -239,8 +250,9 @@ being removed is focused, moves focus to its successor before teardown:
     });
     ```
 
-FL8. If the only focusable node is root, there is no successor and focus is left
-unchanged. (Removing root is an error, C-rm3.)
+FL8. If the removed node is the only focusable node, there is no successor; after
+removal nothing is focused and `current()` falls back to the container.
+(Removing root is an error, C-rm3.)
 
 FL9. The successor is focused before `next(target)` tears the node down, so focus
 never lands on a destroyed node.
@@ -268,16 +280,20 @@ notification, the same way they read any other property.
 ## 8. Invariants
 
 FI1. **Singleton focus.** At most one node in the tree has `focused: true` at
-any time. When the focus system is installed, exactly one node has
-`focused: true`.
+any time. When the focus system is installed and at least one focusable
+descendant exists, exactly one node has `focused: true`; with no focusable
+descendants, none does.
 
 FI2. **Focus chain consistency.** The focus chain is always derivable from the
 current tree state by depth-first traversal. No external data structure is
 needed.
 
-FI3. **Root always focusable.** After `useFocus()` is called, the root node
-always has a `focused` property (`true` or `false`). Root is always in the focus
-chain and serves as the last-resort focus target.
+FI3. **Root is a non-participating container.** By default the root node is not
+enrolled in the focus chain (it has no `focused` property), so `advance`/
+`retreat` ring only over its focusable descendants — root is never a focus stop.
+Root serves as the last-resort focus target through `current()`'s fallback, not
+through chain membership. Escape hatch: explicitly calling `focusable(root)`
+enrolls root into the ring like any other node.
 
 FI4. **Cleanup on removal.** When a focused node is removed, focus advances to
 the next node in the chain before the node is destroyed. This is guaranteed by
