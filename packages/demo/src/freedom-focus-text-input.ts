@@ -1,22 +1,16 @@
-// oxlint-disable require-yield
 // oxlint-disable bombshell-dev/no-generic-error
-import { each, ensure, main, type Operation, spawn, until } from "effection";
+import { each, ensure, main, spawn, until } from "effection";
 import { createApi } from "effection/experimental";
 import {
   advance,
-  append,
   createNodeData,
+  createRoot,
   current,
   DispatchApi,
   focusable,
   type Node,
   retreat,
-  set,
-  type Tree,
-  update,
   useFocus,
-  useNode,
-  useTree,
 } from "@bomb.sh/freedom";
 import {
   alternateBuffer,
@@ -25,10 +19,7 @@ import {
   cursor,
   fit,
   grow,
-  type KeyDown,
   type KeyEvent,
-  type KeyRepeat,
-  type KeyUp,
   type Op,
   open,
   percent,
@@ -42,38 +33,13 @@ import { useStdin } from "./use-stdin.ts";
 
 const GRAY = rgba(100, 100, 100);
 
+// Synchronous input API. Core methods are no-ops; behavior is installed by
+// interceptors on each node's scope and invoked at the focused node.
 const InputApi = createApi("demo:input", {
-  *keydown(event: KeyDown): Operation<void> {
-    if (event.code === "Tab") {
-      yield* advance();
-    } else if (event.code === "Backtab") {
-      yield* retreat();
-    }
-  },
-  *keyup(_event: KeyUp): Operation<void> {
-    // no-op
-  },
-  *keyrepeat(event: KeyRepeat): Operation<void> {
-    if (event.code === "Tab") {
-      yield* advance();
-    } else if (event.code === "Backtab") {
-      yield* retreat();
-    }
-  },
+  keydown(_event: KeyEvent): void {},
+  keyup(_event: KeyEvent): void {},
+  keyrepeat(_event: KeyEvent): void {},
 });
-
-function onkeydown(
-  handler: (
-    event: KeyDown,
-    next: (event: KeyDown) => Operation<void>,
-  ) => Operation<void>,
-): Operation<void> {
-  return InputApi.around({
-    keydown([event], next) {
-      return handler(event, next);
-    },
-  });
-}
 
 interface LayoutOptions {
   node: Node;
@@ -85,26 +51,78 @@ const layoutKey = createNodeData<(options: LayoutOptions) => Op[]>(
   () => [],
 );
 
-function* layout(body: (props: LayoutOptions) => Op[]): Operation<void> {
-  const node = yield* useNode();
+function layout(node: Node, body: (options: LayoutOptions) => Op[]): void {
   node.data.set(layoutKey, body);
 }
 
-function* useTextInput(): Operation<void> {
-  yield* focusable();
-  yield* set("value", "");
-  yield* onkeydown(function* (event, next) {
-    if (event.key.length === 1) {
-      yield* update("value", (v) => `${v ?? ""}${event.key}`);
-    } else if (event.code === "Backspace") {
-      yield* update("value", (v) => {
-        const str = String(v ?? "");
-        return str.slice(0, -1);
-      });
-    } else {
-      yield* next(event);
-    }
+function makeTextInput(node: Node): void {
+  focusable(node);
+  node.set("value", "");
+  layout(node, () => {
+    const color = node.props.focused ? rgba(255, 255, 255) : GRAY;
+    const border = { color, top: 1, right: 1, bottom: 1, left: 1 };
+    return [
+      open(node.id, {
+        border,
+        layout: {
+          height: fit(3),
+          width: percent(0.3),
+          padding: { top: 1, right: 1, bottom: 1, left: 1 },
+        },
+      }),
+      text(String(node.props.value ?? "")),
+      close(),
+    ];
   });
+  node.scope.around(InputApi, {
+    keydown([event], next) {
+      if (event.key.length === 1) {
+        node.update("value", (v) => `${v ?? ""}${event.key}`);
+      } else if (event.code === "Backspace") {
+        node.update("value", (v) => String(v ?? "").slice(0, -1));
+      } else {
+        next(event);
+      }
+    },
+  });
+}
+
+function screenBody({ node, children }: LayoutOptions): Op[] {
+  return [
+    open(node.id, {
+      layout: {
+        height: grow(),
+        width: grow(),
+        direction: "ttb",
+        padding: { top: 1, right: 1, bottom: 1, left: 1 },
+      },
+      border: {
+        color: rgba(255, 255, 255),
+        top: 1,
+        right: 1,
+        bottom: 1,
+        left: 1,
+      },
+    }),
+    ...children,
+    close(),
+  ];
+}
+
+function containerBody({ node, children }: LayoutOptions): Op[] {
+  return [
+    open(node.id, {
+      border: { color: 0xFFF, top: 1, right: 1, bottom: 1, left: 1 },
+      layout: {
+        height: fit(),
+        width: grow(),
+        direction: "ttb",
+        padding: { top: 1, right: 1, bottom: 1, left: 1 },
+      },
+    }),
+    ...children,
+    close(),
+  ];
 }
 
 await main(function* () {
@@ -112,122 +130,50 @@ await main(function* () {
     throw new Error("freedom demo requires an interactive TTY");
   }
 
-  const tree = yield* useTree(function* () {
-    yield* useFocus();
-    yield* layout(({ node, children }) => {
-      return [
-        open(node.id, {
-          layout: {
-            height: grow(),
-            width: grow(),
-            direction: "ttb",
-            padding: { top: 1, right: 1, bottom: 1, left: 1 },
-          },
-          border: {
-            color: rgba(255, 255, 255),
-            top: 1,
-            right: 1,
-            bottom: 1,
-            left: 1,
-          },
-        }),
-        ...children,
-        close(),
-      ];
-    });
+  const root = createRoot();
+  useFocus(root.node);
 
-    yield* DispatchApi.around({
-      *dispatch([event], next) {
-        if (isKeyboardEvent(event)) {
-          const focus = yield* current();
-          const result = yield* focus.eval(function* () {
-            const handler = InputApi.operations[event.type];
-            yield* handler(event as KeyDown & KeyUp & KeyRepeat);
-          });
-          return result.ok ? { ok: true, value: true } : result;
-        }
-        return yield* next(event);
-      },
-    });
-
-    yield* append("input-1", function* () {
-      yield* layout(({ node, children }) => {
-        return [
-          open(node.id, {
-            border: { color: 0xFFF, top: 1, right: 1, bottom: 1, left: 1 },
-            layout: {
-              height: fit(),
-              width: grow(),
-              direction: "ttb",
-              padding: { top: 1, right: 1, bottom: 1, left: 1 },
-            },
-          }),
-          ...children,
-          close(),
-        ];
-      });
-
-      yield* append("input-1-1", function* () {
-        yield* useTextInput();
-        yield* layout(({ node }) => {
-          const color = node.props.focused ? rgba(255, 255, 255) : GRAY;
-          const border = { color, top: 1, right: 1, bottom: 1, left: 1 };
-          return [
-            open(node.id, {
-              border,
-              layout: {
-                height: fit(3),
-                width: percent(0.3),
-                padding: { top: 1, right: 1, bottom: 1, left: 1 },
-              },
-            }),
-            text(String(node.props.value ?? "")),
-            close(),
-          ];
-        });
-      });
-
-      yield* append("input-1-2", function* () {
-        yield* useTextInput();
-        yield* layout(({ node }) => {
-          const color = node.props.focused ? rgba(255, 255, 255) : GRAY;
-          const border = { color, top: 1, right: 1, bottom: 1, left: 1 };
-          return [
-            open(node.id, {
-              border,
-              layout: {
-                height: fit(3),
-                width: percent(0.3),
-                padding: { top: 1, right: 1, bottom: 1, left: 1 },
-              },
-            }),
-            text(String(node.props.value ?? "")),
-            close(),
-          ];
-        });
-      });
-    });
-
-    yield* append("input-2", function* () {
-      yield* useTextInput();
-      yield* layout(({ node }) => {
-        const color = node.props.focused ? rgba(255, 255, 255) : GRAY;
-        const border = { color, top: 1, right: 1, bottom: 1, left: 1 };
-        return [
-          open(node.id, {
-            border,
-            layout: {
-              height: fit(3),
-              width: percent(0.3),
-              padding: { top: 1, right: 1, bottom: 1, left: 1 },
-            },
-          }),
-          text(String(node.props.value ?? "")),
-          close(),
-        ];
-      });
-    });
+  // Demux: route keyboard events to the focused node's input chain.
+  root.node.scope.around(DispatchApi, {
+    *dispatch([event], next) {
+      if (isKeyboardEvent(event)) {
+        InputApi.invoke(current(root.node).scope, event.type, [event]);
+        return { ok: true, value: true };
+      }
+      return yield* next(event);
+    },
   });
+
+  // Tab/Backtab navigation, bubbled up from inputs that don't consume the key.
+  root.node.scope.around(InputApi, {
+    keydown([event], next) {
+      if (event.code === "Tab") {
+        advance(root.node);
+      } else if (event.code === "Backtab") {
+        retreat(root.node);
+      } else {
+        next(event);
+      }
+    },
+    keyrepeat([event], next) {
+      if (event.code === "Tab") {
+        advance(root.node);
+      } else if (event.code === "Backtab") {
+        retreat(root.node);
+      } else {
+        next(event);
+      }
+    },
+  });
+
+  layout(root.node, screenBody);
+
+  const container = root.node.createChild("input-1");
+  layout(container, containerBody);
+
+  makeTextInput(container.createChild("input-1-1"));
+  makeTextInput(container.createChild("input-1-2"));
+  makeTextInput(root.node.createChild("input-2"));
 
   const { columns, rows } = stdout.isTTY
     ? { columns: stdout.columns, rows: stdout.rows }
@@ -256,14 +202,14 @@ await main(function* () {
         }));
       }
 
-      tree.dispatch(event);
+      root.dispatch(event);
 
       yield* each.next();
     }
   });
 
-  function render(tree: Tree) {
-    const ops = walk(tree.root);
+  function render(): void {
+    const ops = walk(root.node);
     const { output } = term.render(ops);
     stdout.write(output);
   }
@@ -273,10 +219,10 @@ await main(function* () {
   try {
     stdout.write(tty.apply);
 
-    render(tree);
+    render();
     yield* spawn(function* () {
-      for (const _ of yield* each(tree)) {
-        render(tree);
+      for (const _ of yield* each(root)) {
+        render();
         yield* each.next();
       }
     });
