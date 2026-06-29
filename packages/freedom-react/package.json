@@ -1,0 +1,57 @@
+{
+	"name": "@bomb.sh/freedom-react",
+	"version": "0.0.0",
+	"private": true,
+	"license": "ISC",
+	"author": {
+		"name": "Bombshell",
+		"email": "oss@bomb.sh",
+		"url": "https://bomb.sh"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/bombshell-dev/playground.git",
+		"directory": "packages/freedom-react"
+	},
+	"type": "module",
+	"exports": {
+		".": {
+			"import": "./dist/index.mjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"scripts": {
+		"dev": "bsh dev",
+		"build": "bsh build",
+		"format": "bsh format",
+		"lint": "bsh lint",
+		"test": "bsh test",
+		"counter": "tsx examples/counter.tsx"
+	},
+	"dependencies": {
+		"@bomb.sh/freedom": "workspace:*",
+		"@bomb.sh/tty": "latest",
+		"effection": "4.1.0-alpha.9",
+		"react": "^18.3.1",
+		"react-reconciler": "^0.29.2"
+	},
+	"devDependencies": {
+		"@bomb.sh/tools": "latest",
+		"@types/node": "^26.0.0",
+		"@types/react": "^18.3.12",
+		"@types/react-reconciler": "^0.28.9",
+		"tsx": "^4.19.2"
+	},
+	"devEngines": {
+		"packageManager": {
+			"name": "pnpm",
+			"version": "10.7.0",
+			"onFail": "error"
+		},
+		"runtime": {
+			"name": "node",
+			"version": "22.14.0",
+			"onFail": "error"
+		}
+	}
+}

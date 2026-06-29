@@ -1,0 +1,6 @@
+{
+	"extends": ["@bomb.sh/tools/tsconfig.json"],
+	"compilerOptions": {
+		"jsx": "react-jsx"
+	}
+}
