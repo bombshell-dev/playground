@@ -10,6 +10,7 @@ import {
   type Result,
   type Scope,
 } from "effection";
+import { createApi } from "effection/experimental";
 import type { JsonValue, Node, NodeData, NodeDataKey } from "./types.ts";
 import { TreeContext } from "./state.ts";
 import { validateJsonValue } from "./validate.ts";
@@ -110,41 +111,27 @@ export class NodeImpl implements Node {
   }
 
   get(key: string): JsonValue | undefined {
-    return this._props[key];
+    return NodeApi.invoke(this.scope, "get", [this, key]);
   }
 
   set(key: string, value: JsonValue): void {
-    validateJsonValue(value);
-    this._props[key] = value;
-    this.scope.expect(TreeContext).markDirty();
+    NodeApi.invoke(this.scope, "set", [this, key, value]);
   }
 
   update(key: string, fn: (prev: JsonValue | undefined) => JsonValue): void {
-    const value = fn(this._props[key]);
-    validateJsonValue(value);
-    this._props[key] = value;
-    this.scope.expect(TreeContext).markDirty();
+    NodeApi.invoke(this.scope, "update", [this, key, fn]);
   }
 
   unset(key: string): void {
-    if (key in this._props) {
-      delete this._props[key];
-      this.scope.expect(TreeContext).markDirty();
-    }
+    NodeApi.invoke(this.scope, "unset", [this, key]);
   }
 
   createChild(name = ""): Node {
-    const state = this.scope.expect(TreeContext);
-    const child = new NodeImpl(state.nextId(), name, this);
-    this._children.add(child);
-    state.nodes.set(child.id, child);
-    state.markDirty();
-    return child;
+    return NodeApi.invoke(this.scope, "createChild", [this, name]);
   }
 
   sort(fn?: (a: Node, b: Node) => number): void {
-    this._sortFn = fn;
-    this.scope.expect(TreeContext).markDirty();
+    NodeApi.invoke(this.scope, "sort", [this, fn]);
   }
 
   destroy(): Promise<void> {
@@ -155,6 +142,47 @@ export class NodeImpl implements Node {
     throw new Error("Cannot remove root node");
   }
 }
+
+// Synchronous node mutation API. Core methods take the node first; interceptors
+// are installed per scope via `node.scope.around(NodeApi, ...)`.
+export const NodeApi = createApi("freedom:node", {
+  get(node: NodeImpl, key: string): JsonValue | undefined {
+    return node._props[key];
+  },
+  set(node: NodeImpl, key: string, value: JsonValue): void {
+    validateJsonValue(value);
+    node._props[key] = value;
+    node.scope.expect(TreeContext).markDirty();
+  },
+  update(
+    node: NodeImpl,
+    key: string,
+    fn: (prev: JsonValue | undefined) => JsonValue,
+  ): void {
+    const value = fn(node._props[key]);
+    validateJsonValue(value);
+    node._props[key] = value;
+    node.scope.expect(TreeContext).markDirty();
+  },
+  unset(node: NodeImpl, key: string): void {
+    if (key in node._props) {
+      delete node._props[key];
+      node.scope.expect(TreeContext).markDirty();
+    }
+  },
+  createChild(node: NodeImpl, name: string): Node {
+    const state = node.scope.expect(TreeContext);
+    const child = new NodeImpl(state.nextId(), name, node);
+    node._children.add(child);
+    state.nodes.set(child.id, child);
+    state.markDirty();
+    return child;
+  },
+  sort(node: NodeImpl, fn: ((a: Node, b: Node) => number) | undefined): void {
+    node._sortFn = fn;
+    node.scope.expect(TreeContext).markDirty();
+  },
+});
 
 export const NodeContext: Context<NodeImpl> = createContext<NodeImpl>(
   "freedom:current-node",

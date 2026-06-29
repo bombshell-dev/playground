@@ -1,4 +1,4 @@
-import type { Operation, Result, Stream } from "effection";
+import type { Operation, Result, Scope, Stream } from "effection";
 
 export type JsonValue =
   | string
@@ -35,6 +35,7 @@ export interface Node {
   readonly children: Iterable<Node>;
   readonly parent: Node | undefined;
   readonly data: NodeData;
+  readonly scope: Scope;
   get(key: string): JsonValue | undefined;
   set(key: string, value: JsonValue): void;
   update(key: string, fn: (prev: JsonValue | undefined) => JsonValue): void;

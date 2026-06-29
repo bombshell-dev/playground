@@ -11,6 +11,7 @@ export type {
 export { createNodeData } from "./types.ts";
 
 export { createRoot } from "./root.ts";
+export { NodeApi } from "./node.ts";
 export { useTree } from "./tree.ts";
 
 export {
