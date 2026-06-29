@@ -1,4 +1,4 @@
-import { createSignal } from "effection";
+import { createQueue, createSignal } from "effection";
 import type { Root } from "./types.ts";
 import { NodeImpl } from "./node.ts";
 import { TreeContext, type TreeState } from "./state.ts";
@@ -6,13 +6,15 @@ import { DispatchApi } from "./dispatch.ts";
 
 export function createRoot(): Root {
   const output = createSignal<void, never>();
-  const events = createSignal<unknown, void>();
+  // Internal, always-drained buffer: createRoot is synchronous, so the drain
+  // loop subscribes asynchronously — a Queue keeps events dispatched before the
+  // loop runs from being lost (bounded, since the loop drains immediately).
+  const events = createQueue<unknown, void>();
 
   let counter = 0;
   const state: TreeState = {
     dirty: false,
     output,
-    events,
     nodes: new Map(),
     nextId() {
       return `node-${++counter}`;
@@ -28,9 +30,8 @@ export function createRoot(): Root {
 
   // Dispatch loop: drain events through the demux middleware chain.
   node.scope.run(function* () {
-    const sub = yield* events;
     while (true) {
-      const next = yield* sub.next();
+      const next = yield* events.next();
       if (next.done) {
         break;
       }
@@ -45,7 +46,7 @@ export function createRoot(): Root {
   return {
     node,
     dispatch(event) {
-      events.send(event);
+      events.add(event);
     },
     [Symbol.iterator]: output[Symbol.iterator],
     destroy() {

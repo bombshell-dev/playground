@@ -22,7 +22,6 @@ export function useTree(root: Component): Operation<Tree> {
     const state: TreeState = {
       dirty: false,
       output,
-      events,
       nodes: new Map(),
       nextId() {
         return `node-${++counter}`;
