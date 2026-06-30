@@ -85,7 +85,10 @@ export function focus(target: Node): void {
 }
 
 export function useFocus(node: Node): void {
-  node.set("focused", true);
+  const first = focusChain(node).find((n) => n !== node);
+  if (first) {
+    focus(first);
+  }
   node.scope.around(NodeApi, {
     remove([target], next) {
       if (target.props.focused === true) {
