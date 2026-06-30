@@ -44,7 +44,6 @@ export interface Node {
   unset(key: string): void;
   createChild(name?: string, options?: CreateChildOptions): Node;
   sort(fn?: (a: Node, b: Node) => number): void;
-  destroy(): Promise<void>;
   remove(): Promise<void>;
 }
 

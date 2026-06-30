@@ -77,8 +77,9 @@ the future.
 The `Node` object's data fields — `id`, `name`, `props`, `children`, `parent` —
 are for reading only. All mutations go through synchronous `Node` methods
 (`set`, `update`, `unset`, `createChild`, `sort`, `remove`), each interceptable
-by synchronous middleware installed on the node's scope (§6). `node.destroy()`
-disposes the node's scope for teardown.
+by synchronous middleware installed on the node's scope (§6). `node.remove()`
+tears a node down (detach + dispose its scope); the whole tree is torn down via
+`root.destroy()`.
 
 ---
 
@@ -200,15 +201,14 @@ interface Node {
   createChild(name?: string, options?: { before?: Node }): Node;
   sort(fn?: (a: Node, b: Node) => number): void;
   remove(): Promise<void>;
-  destroy(): Promise<void>;
 }
 ```
 
 The Node's data fields are read-only; all mutations go through the synchronous
 methods (§6). Each node creates its own Effection scope in its constructor
 (§5.3), inheriting the parent's contexts; mutations and their interceptors
-resolve against that scope. `remove()` detaches the node and tears it down via
-`destroy()`. `data` provides typed, symbol-keyed storage for private,
+resolve against that scope. `remove()` detaches the node and tears it down by
+disposing its scope. `data` provides typed, symbol-keyed storage for private,
 non-serializable per-node state (§5.7).
 
 ### 5.2 Identity
@@ -241,9 +241,9 @@ its parent's scope (`createScope(parent?.scope)`), so it inherits the parent's
 contexts. Mutations (§6) and their synchronous interceptors resolve against this
 scope. There is no eval loop, no channel, and no `eval` method.
 
-N-scope1. A node's scope is created with the node and torn down by
-`node.destroy()` (disposing the scope halts all descendant node scopes and
-resources).
+N-scope1. A node's scope is created with the node and torn down when the node is
+removed — or, for the root, when `root.destroy()` is called. Disposing the scope
+halts all descendant node scopes and resources.
 
 N-scope2. Synchronous interceptors installed via `node.scope.around(...)` are
 visible to mutations on this node and its descendants, via context inheritance.
@@ -256,18 +256,19 @@ parent's children, and it is returned synchronously. If `options.before` is
 given, the child is inserted immediately before that sibling in insertion order
 instead of being appended (C14).
 
-N8. A node is destroyed by `node.remove()` (detach + teardown) or directly by
-`node.destroy()`, which disposes the node's scope — halting all descendant node
-scopes and resources.
+N8. A node is torn down by `node.remove()` (detach + dispose its scope). The
+whole tree is torn down via `root.destroy()`, which disposes the root node's
+scope. There is no public `destroy()` on `Node`; disposing a scope halts all
+descendant node scopes and resources.
 
-N9. When a node is destroyed, its interceptors disappear automatically because
+N9. When a node is torn down, its interceptors disappear automatically because
 its Effection scope is destroyed.
 
-N10. When a parent node is destroyed, all descendant nodes are destroyed per
+N10. When a parent node is torn down, all descendant nodes are torn down per
 Effection's structured concurrency guarantees.
 
 N11. `node.remove()` detaches the node from its parent, marks the tree dirty
-(§8), and calls `node.destroy()` to dispose its scope.
+(§8), and disposes its scope.
 
 N12. Calling `remove()` on the root node is an error (C-rm3).
 
@@ -376,7 +377,6 @@ interface Node {
   createChild(name?: string, options?: { before?: Node }): Node;
   sort(fn?: (a: Node, b: Node) => number): void;
   remove(): Promise<void>;
-  destroy(): Promise<void>;
 }
 ```
 
@@ -398,7 +398,6 @@ node.unset(key): void
 node.createChild(name?, options?: { before?: Node }): Node
 node.sort(fn?: (a: Node, b: Node) => number): void
 node.remove(): Promise<void>
-node.destroy(): Promise<void>
 ```
 
 C-api1. A mutation resolves its composed interceptor chain off the node's scope
@@ -477,18 +476,14 @@ C20. `sort` marks the tree dirty (§8) (N19).
 **remove**
 
 C-rm1. `remove()` detaches the node from its parent (synchronously) and tears
-down its scope and all descendants via `destroy()`. It **returns the teardown
-`Promise`** (the result of `destroy()`); callers MAY await it or ignore it — the
-teardown is initiated regardless.
+down its scope and all descendants (disposing the scope). It **returns the
+teardown `Promise`**; callers MAY await it or ignore it — the teardown is
+initiated regardless.
 
-C-rm3. `remove()` on the root node is an error.
+C-rm3. `remove()` on the root node is an error. The whole tree is torn down via
+`root.destroy()` (§8).
 
 C-rm4. `remove` marks the tree dirty (§8).
-
-**destroy**
-
-C-d1. `destroy()` disposes the node's scope — halting all descendant node scopes
-and resources — and returns a `Promise<void>`.
 
 ### 6.3 Middleware Interception
 

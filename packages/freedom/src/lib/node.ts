@@ -109,6 +109,10 @@ export class NodeImpl implements Node {
     NodeApi.invoke(this.scope, "sort", [this, fn]);
   }
 
+  // Internal scope teardown — not on the public `Node` interface. Used by
+  // `remove` and by `root.destroy()`; disposing the scope cascades to all
+  // descendants. Removing a non-root node should go through `remove`, which also
+  // detaches and notifies.
   destroy(): Promise<void> {
     return this.#dispose();
   }
