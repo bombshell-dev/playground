@@ -131,7 +131,6 @@ await main(function* () {
   }
 
   const root = createRoot();
-  useFocus(root.node);
 
   // Demux: route keyboard events to the focused node's input chain.
   root.node.scope.around(DispatchApi, {
@@ -174,6 +173,8 @@ await main(function* () {
   makeTextInput(container.createChild("input-1-1"));
   makeTextInput(container.createChild("input-1-2"));
   makeTextInput(root.node.createChild("input-2"));
+
+  useFocus(root.node); // seed focus now that focusable inputs exist (input-1-1)
 
   const { columns, rows } = stdout.isTTY
     ? { columns: stdout.columns, rows: stdout.rows }
