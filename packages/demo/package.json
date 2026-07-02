@@ -24,6 +24,7 @@
     },
     "dependencies": {
         "@bomb.sh/freedom": "workspace:*",
+        "@bomb.sh/input": "workspace:^",
         "@bomb.sh/tty": "latest",
         "@types/node": "^26.0.0",
         "effection": "4.1.0-alpha.9"

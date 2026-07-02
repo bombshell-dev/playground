@@ -20,6 +20,9 @@ importers:
       '@bomb.sh/freedom':
         specifier: workspace:*
         version: link:../freedom
+      '@bomb.sh/input':
+        specifier: workspace:^
+        version: link:../input
       '@bomb.sh/tty':
         specifier: latest
         version: 0.8.0

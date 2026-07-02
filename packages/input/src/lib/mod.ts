@@ -1,1 +1,1 @@
-export { makeInput } from "./input.ts";
+export { Input, makeInput, useInput } from "./input.ts";
