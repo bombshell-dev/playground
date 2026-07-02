@@ -11,13 +11,14 @@
     },
     "exports": {
         ".": {
+            "types": "./dist/index.d.mts",
             "import": "./dist/index.mjs"
         },
         "./package.json": "./package.json"
     },
     "scripts": {
-        "dev": "bsh dev",
-        "build": "bsh build",
+        "dev": "bsh dev --dts",
+        "build": "bsh build --dts",
         "format": "bsh format",
         "lint": "bsh lint",
         "test": "bsh test"

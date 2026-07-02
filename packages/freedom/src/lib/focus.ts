@@ -1,4 +1,6 @@
 // oxlint-disable bombshell-dev/no-generic-error
+
+//TODO: export as freedom/focus
 import type { Node } from "./types.ts";
 import { NodeApi } from "./node.ts";
 
@@ -33,12 +35,14 @@ function successorOf(node: Node): Node | undefined {
   return nodes[(idx + 1) % nodes.length];
 }
 
+// TODO nename -> setFocusable
 export function focusable(node: Node): void {
   if (!("focused" in node.props)) {
     node.set("focused", false);
   }
 }
 
+// TODO: rename -> getCurrentFocus()
 export function current(node: Node): Node {
   const root = findRoot(node);
   return focusChain(root).find((n) => n.props.focused === true) ?? root;

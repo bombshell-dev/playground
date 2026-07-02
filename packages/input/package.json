@@ -1,42 +1,42 @@
 {
-    "name": "@bomb.sh/playground",
+    "name": "@bomb.sh/input",
     "version": "0.0.0",
+    "private": true,
     "type": "module",
-    "license": "MIT",
+    "license": "ISC",
     "author": {
         "name": "Bombshell",
         "email": "oss@bomb.sh",
         "url": "https://bomb.sh"
     },
-    "homepage": "https://bomb.sh/docs/playground",
-    "keywords": [
-        "cli",
-        "bombshell"
-    ],
     "exports": {
         ".": {
-            "import": "./dist/index.js"
+            "types": "./dist/index.d.mts",
+            "import": "./dist/index.mjs"
         },
         "./package.json": "./package.json"
     },
     "scripts": {
-        "dev": "bsh dev",
-        "build": "bsh build",
+        "dev": "bsh dev --dts",
+        "build": "bsh build --dts",
         "format": "bsh format",
         "lint": "bsh lint",
-        "test": "bsh test",
-        "demo": "node scripts/demo.mjs"
+        "test": "bsh test"
+    },
+    "dependencies": {
+        "@bomb.sh/freedom": "workspace:*",
+        "@bomb.sh/tty": "^0.8.0",
+        "effection": "4.1.0-alpha.9"
     },
     "devDependencies": {
         "@bomb.sh/tools": "latest",
-        "typescript": "^6.0.3"
-    },
-    "publishConfig": {
-        "access": "public"
+        "@types/node": "^26.0.0",
+        "vitest": "^4.1.2"
     },
     "repository": {
         "type": "git",
-        "url": "git+https://github.com/bombshell-dev/playground.git"
+        "url": "git+https://github.com/bombshell-dev/playground.git",
+        "directory": "packages/input"
     },
     "devEngines": {
         "runtime": {
