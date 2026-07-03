@@ -3,50 +3,73 @@ import { DispatchApi, focusable, current, type Node, type Root } from "@bomb.sh/
 import type { KeyDown, KeyEvent, KeyRepeat, KeyUp } from "@bomb.sh/tty";
 
 export const Input = createApi("@bomb.sh/input", {
+  insert(node: Node, text: string): void {
+    const codepoints = [...node.get("value") as string];
+    const caret = node.get("caret") as number;
+    codepoints.splice(caret, 0, text);
+    node.set("value", codepoints.join(""));
+    node.set("caret", caret + 1);
+  },
+  deleteBackward(node: Node): void {
+    const codepoints = [...node.get("value") as string];
+    let caret = node.get("caret") as number;
+    const length = codepoints.length;
+    if (caret > length) {
+      console.warn("caret mismatch: ${caret}, value length: ${length}");
+      caret = length;
+    }
+    if (caret > 0) {
+      codepoints.splice(caret - 1, 1);
+      node.set("value", codepoints.join(""));
+      node.set("caret", caret - 1);
+    }
+  },
+  deleteForward(node: Node): void {
+    const codepoints = [...node.get("value") as string];
+    let caret = node.get("caret") as number;
+    const length = codepoints.length;
+    if (caret > length) {
+      console.warn("caret mismatch: ${caret}, value length: ${length}");
+      caret = length;
+    }
+    if (caret < length) {
+      codepoints.splice(caret, 1);
+      node.set("value", codepoints.join(""));
+    }
+  },
+  moveBack(node: Node): void {
+    const caret = node.get("caret") as number;
+    node.set("caret", Math.max(0, caret - 1));
+  },
+  moveForward(node: Node): void {
+    const caret = node.get("caret") as number;
+    const codepoints = [...node.get("value") as string];
+    node.set("caret", Math.min(codepoints.length, caret + 1));
+  },  
+  moveMin(node: Node): void {
+    node.set("caret", 0);
+  },
+  moveMax(node: Node): void {
+    node.set("caret", [...node.get("value") as string].length);    
+  },
   keydown(node: Node, event: KeyDown): void {
     if (node.get("input")) {
       if (event.text && event.text?.length > 0) {
-        node.update("value", (v) => `${v ?? ""}${event.text}`);
-        node.update("caret", (v) => v != null ? Number(v) + 1 : 0);
+        Input.invoke(node.scope, "insert", [node, event.text]);
       } else if (event.code === "Backspace") {
-        const codepoints = [...node.get("value") as string];
-        let caret = node.get("caret") as number;
-        const length = codepoints.length;
-        if (caret > length) {
-          console.warn("caret mismatch: ${caret}, value length: ${length}");
-          caret = length;
-        }
-        if (caret > 0) {
-          codepoints.splice(caret - 1, 1);
-          node.set("value", codepoints.join(""));
-          node.set("caret", caret - 1);
-        }
+        Input.invoke(node.scope, "deleteBackward", [node]);
       } else if (event.code === "Delete") {
-        const codepoints = [...node.get("value") as string];
-        let caret = node.get("caret") as number;
-        const length = codepoints.length;
-        if (caret > length) {
-          console.warn("caret mismatch: ${caret}, value length: ${length}");
-          caret = length;
-        }
-        if (caret < length) {
-          codepoints.splice(caret, 1);
-          node.set("value", codepoints.join(""));
-        }
+        Input.invoke(node.scope, "deleteForward", [node]);
       } else if (event.code === "ArrowLeft") {
-        const caret = node.get("caret") as number;
-        node.set("caret", Math.max(0, caret - 1))
+        Input.invoke(node.scope, "moveBack", [node]);
       } else if (event.code === "ArrowRight") {
-        const caret = node.get("caret") as number;
-        const codepoints = [...node.get("value") as string];
-        node.set("caret", Math.min(codepoints.length, caret + 1));
+        Input.invoke(node.scope, "moveForward", [node]);
       } else if (event.code === "Home") {
-        node.set("caret", 0);
+        Input.invoke(node.scope, "moveMin", [node]);
       } else if (event.code === "End") {
-        node.set("caret", [...node.get("value") as string].length);
+        Input.invoke(node.scope, "moveMax", [node]);
       }
     }
-
   },
   keyup(_node: Node, _event: KeyUp): void { },
   keyrepeat(_node: Node, _event: KeyRepeat): void { },

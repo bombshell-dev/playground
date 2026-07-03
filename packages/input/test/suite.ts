@@ -1,11 +1,11 @@
 import { createRoot, type Root } from "@bomb.sh/freedom";
 import { useInput } from "../src/lib/input.ts";
-import type { KeyCode } from "@bomb.sh/tty";
+import type { KeyCode, KeyModifiers } from "@bomb.sh/tty";
 export { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 export interface TestInterface extends Root {
   type(str: string): void;
-  keydown(code: KeyCode): void;
+  keydown(code: KeyCode, modifiers?: KeyModifiers): void;
 }
 
 export function createTestInterface(): TestInterface {
@@ -21,11 +21,12 @@ export function createTestInterface(): TestInterface {
       })
     }
   };
-  root.keydown = (code) => {
+  root.keydown = (code, modifiers) => {
     root.dispatch({
       type: "keydown",
       key: code,
       code,
+      ...modifiers,
     });
   };
   return root;

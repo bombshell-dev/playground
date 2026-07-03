@@ -34,7 +34,15 @@ describe("Level 1 — text entry & caret", () => {
     expect(input.get("value")).toEqual("cat");
     expect(input.get("caret")).toEqual(3);
   });
-  
+
+  it("inserts a character at the caret when the caret is mid-string", () => {
+    root.type("cat");
+    root.keydown("ArrowLeft"); // caret between "ca" and "t"
+    root.type("x");
+    expect(input.get("value")).toEqual("caxt");
+    expect(input.get("caret")).toEqual(3);
+  });
+
   it("does not insert a newline on Enter", () => {
     root.keydown("Enter");
     expect(input.get("value")).toEqual("");
