@@ -8,7 +8,12 @@ import {
   retreat,
   useFocus,
 } from "@bomb.sh/freedom";
-import { Input, makeInput, useInput } from "@bomb.sh/input";
+import {
+  initInput,
+  KeyboardApi,
+  useInput,
+  useReadlineKeymap,
+} from "@bomb.sh/input";
 import {
   alternateBuffer,
   close,
@@ -26,6 +31,7 @@ import {
 import { stdin, stdout } from "node:process";
 import { useInput as decodeBytes } from "./use-input.ts";
 import { useStdin } from "./use-stdin.ts";
+import { logKeys } from "./key-logger.ts";
 
 const GRAY = rgba(100, 100, 100);
 
@@ -44,17 +50,15 @@ function layout(node: Node, body: (options: LayoutOptions) => Op[]): void {
 }
 
 // A bordered text input. Editing, caret, and focus state come from
-// `@bomb.sh/input` (`makeInput`); the demo owns only how it's drawn — reading
-// `value`/`caret`/`focused` off the node and rendering a caret bar when focused.
+// `@bomb.sh/input` (`makeInput`); the demo owns only how it's drawn. The focused
+// input passes its `caret` (a code-point offset) to `text()`, so tty positions
+// the terminal's native cursor there rather than drawing a glyph.
 function textInput(node: Node): void {
-  makeInput(node);
+  initInput(node);
   layout(node, () => {
     const focused = node.props.focused;
-    const chars = [...String(node.props.value ?? "")];
-    const caret = Math.min(Number(node.props.caret ?? 0), chars.length);
-    const shown = focused
-      ? `${chars.slice(0, caret).join("")}▏${chars.slice(caret).join("")}`
-      : chars.join("");
+    const value = String(node.props.value ?? "");
+    const caret = Math.min(Number(node.props.caret ?? 0), [...value].length);
     const color = focused ? rgba(255, 255, 255) : GRAY;
     const border = { color, top: 1, right: 1, bottom: 1, left: 1 };
     return [
@@ -66,7 +70,9 @@ function textInput(node: Node): void {
           padding: { top: 1, right: 1, bottom: 1, left: 1 },
         },
       }),
-      text(shown),
+      // An empty focused field has no cell for the native cursor, so render a
+      // single space to give the caret at 0 somewhere to sit.
+      focused ? text(value || " ", { caret }) : text(value),
       close(),
     ];
   });
@@ -117,14 +123,20 @@ await main(function* () {
 
   const root = createRoot();
 
+  logKeys(root.node);
+
   // Route keyboard events to the focused input's editing behavior.
   useInput(root);
+  useReadlineKeymap(root.node);
+
+  // Debug: log every key + resulting value/caret to `input-keylog.jsonl`.
+  // Installed first so it wraps everything below. Comment out to disable.
 
   // Tab/Backtab move focus between inputs. Installed at the root scope so it
   // wraps the focused input's editing behavior (root is an ancestor of where
-  // `Input` is invoked): Tab/Backtab are consumed here, every other key falls
-  // through via `next` to the input.
-  root.node.scope.around(Input, {
+  // `KeyboardApi` is invoked): Tab/Backtab are consumed here, every other key
+  // falls through via `next` to the input.
+  root.node.scope.around(KeyboardApi, {
     keydown([node, event], next) {
       if (event.code === "Tab") {
         advance(root.node);
@@ -196,7 +208,7 @@ await main(function* () {
     stdout.write(output);
   }
 
-  const tty = settings(cursor(false), alternateBuffer());
+  const tty = settings(cursor(true), alternateBuffer());
 
   try {
     stdout.write(tty.apply);

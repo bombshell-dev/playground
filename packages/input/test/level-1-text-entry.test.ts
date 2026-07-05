@@ -1,6 +1,6 @@
 import { focus, type Node } from "@bomb.sh/freedom";
 import { afterEach, beforeEach, createTestInterface, describe, expect, it, type TestInterface } from "./suite.ts";
-import { makeInput } from "../src/index.ts";
+import { initInput } from "../src/index.ts";
 
 // Level 1 — Text entry & caret (the foundation)
 describe("Level 1 — text entry & caret", () => {
@@ -9,7 +9,7 @@ describe("Level 1 — text entry & caret", () => {
   beforeEach(async () => {
     root = createTestInterface();
     input = root.node.createChild("input")
-    makeInput(input);
+    initInput(input);
     focus(input);
   });
   afterEach(() => root.destroy());

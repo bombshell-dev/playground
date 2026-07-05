@@ -24,8 +24,8 @@ importers:
         specifier: workspace:^
         version: link:../input
       '@bomb.sh/tty':
-        specifier: latest
-        version: 0.8.0
+        specifier: https://pkg.pr.new/@bomb.sh/tty@103
+        version: https://pkg.pr.new/@bomb.sh/tty@103
       '@types/node':
         specifier: ^26.0.0
         version: 26.0.0
@@ -138,6 +138,11 @@ packages:
 
   '@bomb.sh/tty@0.8.0':
     resolution: {integrity: sha512-tEE0mtqnEp2uJt4kQS5AjdghCD5KN4BobqHOlfhaiNyrigxFBKk61XkDy//4D7V/AejrTvubh44B4NV35lsnxw==}
+    engines: {node: '>= 22'}
+
+  '@bomb.sh/tty@https://pkg.pr.new/@bomb.sh/tty@103':
+    resolution: {tarball: https://pkg.pr.new/@bomb.sh/tty@103}
+    version: 0.8.0-pr
     engines: {node: '>= 22'}
 
   '@emnapi/core@1.10.0':
@@ -1707,6 +1712,8 @@ snapshots:
       - vue-tsc
 
   '@bomb.sh/tty@0.8.0': {}
+
+  '@bomb.sh/tty@https://pkg.pr.new/@bomb.sh/tty@103': {}
 
   '@emnapi/core@1.10.0':
     dependencies:
