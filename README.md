@@ -1,42 +1,124 @@
 # Ghostwright
 
-Ghostwright drives terminal programs from the outside through a real Unix PTY and a dedicated upstream `libghostty-vt` WebAssembly instance.
+Ghostwright blackbox-tests terminal CLIs and TUIs from the outside using a real Unix PTY and a dedicated upstream `libghostty-vt` WebAssembly instance. The application sees real TTY descriptors, raw/canonical input, dimensions, process-group signals, alternate screens, mouse modes, and terminal responses; it does not link Ghostwright or expose internals.
+
+## Give Ghostwright to a coding agent
+
+Install Ghostwright, then tell your agent:
+
+> Read `node_modules/ghostwright/AGENTS.md`. Add outside-in blackbox tests for `<your command>`. Use the repository's existing test runner, visible terminal state only, no application instrumentation, and no fixed readiness sleeps. Run the focused tests and inspect Ghostwright artifacts before reporting failure.
+
+Inside this repository:
+
+> Read `packages/ghostwright/AGENTS.md`, then blackbox test `<target command>` using Ghostwright's public API.
+
+Start with the [agent quickstart](docs/agent-quickstart.md) or prove your agent can [exit vi](examples/async/agent-closes-vi.test.ts).
+
+## Install
+
+```sh
+npm install --save-dev ghostwright
+# or
+bun add --dev ghostwright
+```
+
+Consumers receive prebuilt WASM, terminfo, and the native host for each supported target. No C compiler, Rust, Zig, or Ghostty installation is required.
+
+## First async test
 
 ```ts
+import { expect, test } from "bun:test";
 import { expectTerminal, withTerminalAsync } from "ghostwright";
 
-await withTerminalAsync({ command: "bun", args: ["app.ts"] }, async (terminal) => {
-  await expectTerminal(terminal.getByText("Ready")).toBeStable();
-  await terminal.keyboard.press("Enter");
+test("interactive CLI", async () => {
+  await withTerminalAsync(
+    {
+      command: "bun",
+      args: ["src/cli.ts"],
+      cwd: process.cwd(),
+      viewport: { columns: 80, rows: 24 },
+    },
+    async (terminal) => {
+      await expectTerminal(terminal.getByText("Ready")).toBePresent();
+
+      const action = await terminal.keyboard.press("Enter");
+      await expectTerminal(terminal).toHaveShownText("Working", {
+        since: action,
+      });
+      await expectTerminal(terminal.getByText("Complete")).toBeStable();
+
+      const status = await terminal.process.waitForExit();
+      expect(status.exitCode).toBe(0);
+    },
+  );
 });
 ```
 
-The callback is the ownership scope: return, throw, or cancellation closes the terminal and its process group. Generator users can use `withTerminal` with Effection 4 operations.
+The callback owns the terminal. Normal return, throw, assertion failure, and cancellation close the PTY, sidecar, application process group, and WASM resources before the outer operation completes.
+
+Effection users get the same operations and lifecycle through `withTerminal`; see the [Effection examples](examples/effection/).
+
+## Synchronization model
+
+Ghostwright assertions are revision-driven rather than polling-based:
+
+| Intent | API |
+|---|---|
+| First visible appearance / readiness | `toBePresent()` |
+| Final visually settled state | `toBeStable()` |
+| Stable disappearance | `toBeAbsent()` |
+| Compound stable screen condition | `toSatisfy()` |
+| Fleeting screen state after an action | `toHaveShown()` |
+| Fleeting text after an action | `toHaveShownText()` |
+
+Text locators are lazy, current-visible-viewport only, grapheme-aware, and strict. Zero matches wait; multiple matches fail with candidate geometry. Use `.nth()` or `.region()` to disambiguate deliberately.
+
+See [Choosing locators and assertions](docs/choosing-assertions.md).
+
+## Documentation
+
+- [Agent operational guide](AGENTS.md)
+- [Agent quickstart](docs/agent-quickstart.md)
+- [Choosing locators and assertions](docs/choosing-assertions.md)
+- [Interaction recipes](docs/interaction-recipes.md)
+- [Debugging failures and traces](docs/debugging-failures.md)
+- [Architecture](docs/architecture.md)
+- [Runnable async and Effection examples](examples/)
+- [C versus Rust PTY-host comparison](HOST-COMPARISON.md)
+- [Performance report](PERFORMANCE.md)
 
 ## Compatibility
 
 - Node 22+
 - Bun 1.2+
-- Deno 2.2+ with `--allow-read=<package-artifacts> --allow-run=<pty-host> --allow-env` (environment inheritance requires the final permission)
-- macOS/Linux on arm64/x64
+- Deno 2.2+
+- macOS and Linux
+- arm64 and x64
 
-`TERM=xterm-ghostty`, package-local terminfo, truecolor, 10×20 pixel cells, and 10,000 scrollback rows form one deterministic profile. Explicit terminal-identity environment overrides are rejected.
+Deno requires path-scoped read/run permissions for package artifacts and `--allow-env` for environment inheritance. Permission errors print the exact paths to grant.
 
-A sidecar output frame is one OS PTY read, not a pixel-rendered frame. The kernel may combine application writes; Ghostwright never splits a read into synthetic intermediate revisions or coalesces separate sidecar output frames.
+The deterministic profile uses `TERM=xterm-ghostty`, package-local terminfo, truecolor, Ghostwright program identity, a dark color scheme, 10×20 pixel cells, an 80×24 default viewport, and 10,000 rows of maximum scrollback. Explicit terminal-identity environment overrides are rejected.
 
-Assertions are revision-driven rather than polling-based. Locator assertions provide `toBePresent`, `toBeStable`, and `toBeAbsent`. Terminal assertions provide `toSatisfy` for converged screen predicates and `toHaveShown`/`toHaveShownText` for transient revision history after an action receipt.
+## Fidelity boundary
+
+A sidecar output frame is one OS PTY read, not a pixel-rendered frame. The kernel may combine application writes. Ghostwright never splits a read into artificial per-byte revisions and never coalesces separate host frames, but it cannot recover a state overwritten within one kernel-coalesced read.
+
+Ghostwright validates terminal-grid and PTY behavior. It does not validate fonts, shaping, rasterization, GPU output, or graphical occlusion.
 
 ## Security
 
-Ghostwright is **not a sandbox**. Commands run directly without an implicit shell and retain the caller's filesystem, network, process, and credential permissions. Launch a shell explicitly if shell syntax is required.
+Ghostwright is **not a sandbox**. Commands run directly, without an implicit shell, using the caller's filesystem, network, process, and credential permissions. Launch a shell explicitly only when shell syntax is intended.
 
-Failure tracing defaults to `retain-on-failure`. Application output can contain secrets even when environment and marked input values are redacted. Use `trace: "off"` for sensitive sessions.
+Failure tracing defaults to `retain-on-failure`. Common secret-like environment keys are redacted, and typed/pasted input can use `{ trace: "redact" }`, but application output and unmarked values may still contain secrets. Use `trace: "off"` for sensitive sessions.
 
 ## Maintainer artifacts
 
-Consumers never build native code. Generated `dist/`, `artifacts/`, Rust `target/`, and candidate host binaries are Git-ignored and assembled before packaging.
+Generated `dist/`, `artifacts/`, Rust `target/`, and candidate host binaries are Git-ignored and assembled before packaging.
 
-The PTY host has two side-by-side implementations under `native/pty-host-c` and `native/pty-host-rust`. The packaged default is pure C compiled with Apple Clang on macOS or native `musl-gcc` on Linux—no Zig wrapper or `zig cc`. The Rust candidate uses `nix`, `minicbor`, and `thiserror` with a synchronous event loop. Build and compare them with:
+The PTY host has two side-by-side implementations:
+
+- `native/pty-host-c`: packaged pure-C default, compiled with Apple Clang or native `musl-gcc`
+- `native/pty-host-rust`: synchronous Rust candidate using `nix`, `minicbor`, and `thiserror`
 
 ```sh
 bun run build:host:c
@@ -45,4 +127,6 @@ bun run test:hosts
 bun run compare:hosts
 ```
 
-See [`HOST-COMPARISON.md`](HOST-COMPARISON.md) for measured results. Zig remains pinned only because upstream Ghostty uses it to build `ghostty-vt.wasm`. Release CI builds each native target on its matching OS/architecture runner, combines the generated artifacts, compiles the tracked terminfo source, and regenerates checksums. `bun run verify:artifacts` independently checks hashes, the GWPT protocol marker, required WASM exports, and ABI layouts.
+See [`HOST-COMPARISON.md`](HOST-COMPARISON.md). Zig remains pinned only because upstream Ghostty uses it to build `ghostty-vt.wasm`; the PTY host has no Zig wrapper or `zig cc` dependency.
+
+Release jobs build native targets on matching runners, compile tracked terminfo, generate package output, and record checksums. `bun run verify:artifacts` independently checks hashes, protocol markers, WASM exports, and ABI layouts without rebuilding.

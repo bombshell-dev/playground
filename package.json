@@ -5,11 +5,13 @@
     "license": "MIT",
     "files": [
         "src",
+        "docs",
         "examples",
         "dist",
         "artifacts",
         "ghostty.lock.json",
         "README.md",
+        "AGENTS.md",
         "PERFORMANCE.md",
         "HOST-COMPARISON.md",
         "LICENSE"
