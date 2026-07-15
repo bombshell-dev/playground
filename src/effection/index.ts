@@ -3,8 +3,11 @@ import type {
   ActionReceipt,
   AssertionOptions,
   KeyName,
+  HistoryQuery,
+  HistorySearchOptions,
   KeyPress,
   MouseOptions,
+  RevisionCollectionOptions,
   OperationLocator,
   OperationRegion,
   OperationTerminal,
@@ -62,6 +65,19 @@ export class EffectionTerminal implements OperationTerminal {
   get screen() {
     return this.inner.screen;
   }
+  revisions = {
+    collect: (options: RevisionCollectionOptions) =>
+      op(() => this.inner.revisions.collect(options)),
+  };
+  history = {
+    read: (query?: HistoryQuery) => op(() => this.inner.history.read(query)),
+    findText: (text: string, options?: HistorySearchOptions) =>
+      op(() => this.inner.history.findText(text, options)),
+  };
+  graphics = {
+    inspectImage: (id: number) => op(() => this.inner.graphics.inspectImage(id)),
+    copyImageData: (id: number) => op(() => this.inner.graphics.copyImageData(id)),
+  };
   getByText(t: string, o?: TextLocatorOptions) {
     return new EffectionLocator(this.inner.getByText(t, o) as Locator);
   }

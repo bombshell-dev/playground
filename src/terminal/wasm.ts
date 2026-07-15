@@ -1,6 +1,10 @@
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import type {
   CellStyle,
+  KittyGraphicsSnapshot,
+  KittyImageSnapshot,
+  KittyPlacementSnapshot,
   ScreenCell,
   ScreenLine,
   ScreenSnapshot,
@@ -81,6 +85,10 @@ export type TerminalEffect =
   | { type: "title" }
   | { type: "working-directory" }
   | { type: "clipboard-write"; data: string };
+interface HistoryRow {
+  line: ScreenLine;
+  kittyVirtualPlaceholder: boolean;
+}
 const defaultStyle: CellStyle = Object.freeze({
   bold: false,
   italic: false,
@@ -99,6 +107,8 @@ async function moduleFor(url: URL) {
   return (compiled ??= WebAssembly.compile(await readFile(url)));
 }
 function freeze<T>(value: T): T {
+  // Typed arrays are mutable buffers by design and cannot be frozen when nonempty.
+  if (ArrayBuffer.isView(value)) return value;
   if (value && typeof value === "object" && !Object.isFrozen(value)) {
     Object.freeze(value);
     for (const v of Object.values(value)) freeze(v);
@@ -129,10 +139,17 @@ export class GhosttyWasmTerminal {
   #started = performance.now();
   #lastVisual = 0;
   #previous = "";
+  #kittySupported = false;
+  #kittyStorageLimit = 0;
+  // Metadata is immutable and may be structurally shared by retained revisions.
+  // Decoded pixel copies deliberately never enter this cache.
+  #images = new Map<string, KittyImageSnapshot>();
+  #currentImageKeys = new Set<string>();
+  #inspectedImageIds = new Set<number>();
   private constructor(viewport: Required<Viewport>) {
     this.#viewport = viewport;
   }
-  static async create(viewport: Required<Viewport>) {
+  static async create(viewport: Required<Viewport>, storageLimitBytes = 64 * 1024 * 1024) {
     const self = new GhosttyWasmTerminal(viewport);
     const url = new URL(
       import.meta.url.includes("/dist/")
@@ -148,7 +165,7 @@ export class GhosttyWasmTerminal {
     }
     const instance = await WebAssembly.instantiate(mod, { env: { log() {} } });
     self.#e = instance.exports as unknown as Exports;
-    self.#initialize();
+    self.#initialize(storageLimitBytes);
     return self;
   }
   #view() {
@@ -185,7 +202,7 @@ export class GhosttyWasmTerminal {
       throw new AssetIntegrityError("Unable to decode libghostty-vt ABI metadata", { cause });
     }
   }
-  #initialize() {
+  #initialize(storageLimitBytes: number) {
     this.#layouts = this.#readTypeLayouts();
     const terminalLayout = this.#layouts.GhosttyTerminalOptions;
     if (!terminalLayout || terminalLayout.size !== 8)
@@ -199,6 +216,40 @@ export class GhosttyWasmTerminal {
     if (this.#e.ghostty_terminal_new(0, out, opts) !== 0)
       throw new AssetIntegrityError("ghostty_terminal_new failed");
     this.#terminal = this.#view().getUint32(out, true);
+    const capability = this.#alloc(1);
+    try {
+      this.#kittySupported =
+        this.#e.ghostty_build_info(2, capability) === 0 && this.#view().getUint8(capability) !== 0;
+    } finally {
+      this.#release(capability, 1);
+    }
+    if (!this.#kittySupported)
+      throw new AssetIntegrityError(
+        "ghostty-vt.wasm was built without the required Kitty graphics capability",
+      );
+    {
+      if (!Number.isSafeInteger(storageLimitBytes) || storageLimitBytes < 0)
+        throw new RangeError("graphics.storageLimitBytes must be a nonnegative safe integer");
+      const limit = this.#alloc(8);
+      try {
+        this.#view().setBigUint64(limit, BigInt(storageLimitBytes), true);
+        if (this.#e.ghostty_terminal_set(this.#terminal, 15, limit) !== 0)
+          throw new AssetIntegrityError("Unable to configure Kitty image storage limit");
+        this.#kittyStorageLimit = storageLimitBytes;
+      } finally {
+        this.#release(limit, 8);
+      }
+    }
+    if (
+      this.#e.ghostty_terminal_resize(
+        this.#terminal,
+        this.#viewport.columns,
+        this.#viewport.rows,
+        10,
+        20,
+      ) !== 0
+    )
+      throw new AssetIntegrityError("Unable to initialize Ghostty cell pixel geometry");
     const fo = this.#opaque(),
       o = this.#alloc(40),
       v = this.#view();
@@ -483,6 +534,24 @@ export class GhosttyWasmTerminal {
       this.#release(pointer, size);
     }
   }
+  #styleFromPointer(stylePointer: number): CellStyle {
+    const styleLayout = this.#layouts.GhosttyStyle,
+      view = this.#view();
+    return Object.freeze({
+      bold: view.getUint8(stylePointer + styleLayout.fields.bold.offset) !== 0,
+      italic: view.getUint8(stylePointer + styleLayout.fields.italic.offset) !== 0,
+      faint: view.getUint8(stylePointer + styleLayout.fields.faint.offset) !== 0,
+      blink: view.getUint8(stylePointer + styleLayout.fields.blink.offset) !== 0,
+      inverse: view.getUint8(stylePointer + styleLayout.fields.inverse.offset) !== 0,
+      invisible: view.getUint8(stylePointer + styleLayout.fields.invisible.offset) !== 0,
+      strikethrough: view.getUint8(stylePointer + styleLayout.fields.strikethrough.offset) !== 0,
+      overline: view.getUint8(stylePointer + styleLayout.fields.overline.offset) !== 0,
+      underline: view.getInt32(stylePointer + styleLayout.fields.underline.offset, true),
+      foreground: this.#color(stylePointer, "fg_color"),
+      background: this.#color(stylePointer, "bg_color"),
+      underlineColor: this.#color(stylePointer, "underline_color"),
+    });
+  }
   #terminalString(kind: number) {
     const layout = this.#layouts.GhosttyString,
       pointer = this.#alloc(layout.size);
@@ -511,6 +580,367 @@ export class GhosttyWasmTerminal {
         blue: this.#view().getUint8(value + 2),
       };
     return { kind: "default" as const };
+  }
+  scrollbackRows() {
+    return this.#get(15);
+  }
+  /** Copies a bounded oldest-based scrollback range without moving Ghostty's viewport. */
+  history(start: number, count: number): readonly HistoryRow[] {
+    const total = this.#get(14),
+      available = this.#get(15),
+      end = Math.min(available, start + count),
+      pointLayout = this.#layouts.GhosttyPoint,
+      coordinate = this.#layouts.GhosttyPointCoordinate,
+      refLayout = this.#layouts.GhosttyGridRef,
+      styleLayout = this.#layouts.GhosttyStyle,
+      point = this.#alloc(pointLayout.size),
+      ref = this.#alloc(refLayout.size),
+      rawCell = this.#alloc(8),
+      rawRow = this.#alloc(8),
+      value = this.#alloc(8),
+      style = this.#alloc(styleLayout.size),
+      graphemes = this.#alloc(256),
+      length = this.#alloc(4),
+      result: HistoryRow[] = [];
+    // `total` is deliberately read even though `available` determines the range:
+    // it exercises Ghostty's documented total/scrollback coordinate contract.
+    void total;
+    try {
+      const view = this.#view(),
+        pointValue = point + pointLayout.fields.value.offset;
+      view.setInt32(point + pointLayout.fields.tag.offset, 3, true); // HISTORY
+      for (let row = start; row < end; row++) {
+        const cells: ScreenCell[] = [];
+        view.setUint32(pointValue + coordinate.fields.y.offset, row, true);
+        view.setUint16(pointValue + coordinate.fields.x.offset, 0, true);
+        view.setUint32(ref + refLayout.fields.size.offset, refLayout.size, true);
+        let wrapped = false,
+          kittyVirtualPlaceholder = false;
+        if (this.#e.ghostty_terminal_grid_ref(this.#terminal, point, ref) === 0) {
+          this.#e.ghostty_grid_ref_row(ref, rawRow);
+          const row = view.getBigUint64(rawRow, true);
+          this.#e.ghostty_row_get(row, 1, value);
+          wrapped = view.getUint8(value) !== 0;
+          this.#e.ghostty_row_get(row, 7, value);
+          kittyVirtualPlaceholder = view.getUint8(value) !== 0;
+        }
+        for (let column = 0; column < this.#viewport.columns; column++) {
+          view.setUint16(pointValue + coordinate.fields.x.offset, column, true);
+          view.setUint32(ref + refLayout.fields.size.offset, refLayout.size, true);
+          let text = "",
+            width: 0 | 1 | 2 = 1,
+            continuation = false,
+            cellStyle = defaultStyle,
+            hyperlink: string | undefined;
+          if (this.#e.ghostty_terminal_grid_ref(this.#terminal, point, ref) === 0) {
+            this.#e.ghostty_grid_ref_cell(ref, rawCell);
+            const cell = view.getBigUint64(rawCell, true);
+            this.#e.ghostty_cell_get(cell, 3, value);
+            const wide = view.getInt32(value, true);
+            continuation = wide === 2 || wide === 3;
+            width = continuation ? 0 : wide === 1 ? 2 : 1;
+            view.setUint32(length, 0, true);
+            if (this.#e.ghostty_grid_ref_graphemes(ref, graphemes, 64, length) === 0) {
+              text = Array.from({ length: view.getUint32(length, true) }, (_, index) =>
+                String.fromCodePoint(view.getUint32(graphemes + index * 4, true)),
+              ).join("");
+            }
+            view.setUint32(style + styleLayout.fields.size.offset, styleLayout.size, true);
+            if (this.#e.ghostty_grid_ref_style(ref, style) === 0)
+              cellStyle = this.#styleFromPointer(style);
+            view.setUint32(length, 0, true);
+            if (this.#e.ghostty_grid_ref_hyperlink_uri(ref, 0, 0, length) !== 0) {
+              const hyperlinkLength = view.getUint32(length, true);
+              if (hyperlinkLength) {
+                const buffer = this.#alloc(hyperlinkLength);
+                try {
+                  if (
+                    this.#e.ghostty_grid_ref_hyperlink_uri(ref, buffer, hyperlinkLength, length) ===
+                    0
+                  )
+                    hyperlink = decoder.decode(
+                      this.#bytes().subarray(buffer, buffer + hyperlinkLength),
+                    );
+                } finally {
+                  this.#release(buffer, hyperlinkLength);
+                }
+              }
+            }
+          }
+          cells.push(
+            Object.freeze({
+              column,
+              text,
+              width,
+              continuation,
+              style: cellStyle,
+              selected: false,
+              ...(hyperlink ? { hyperlink } : {}),
+            }),
+          );
+        }
+        const text = cells
+          .map((cell) => (cell.continuation ? "" : cell.style.invisible ? " " : cell.text || " "))
+          .join("");
+        result.push(
+          Object.freeze({
+            line: Object.freeze({ row, cells: Object.freeze(cells), wrapped, text }),
+            kittyVirtualPlaceholder,
+          }),
+        );
+      }
+      return Object.freeze(result);
+    } finally {
+      for (const [pointer, size] of [
+        [point, pointLayout.size],
+        [ref, refLayout.size],
+        [rawCell, 8],
+        [rawRow, 8],
+        [value, 8],
+        [style, styleLayout.size],
+        [graphemes, 256],
+        [length, 4],
+      ] as const)
+        this.#release(pointer, size);
+    }
+  }
+  #kittyImage(graphics: number, id: number): KittyImageSnapshot | undefined {
+    if (!this.#kittySupported) return undefined;
+    const image = this.#e.ghostty_kitty_graphics_image(graphics, id);
+    if (!image) return undefined;
+    const output = this.#alloc(8);
+    const getU32 = (kind: number) => {
+      if (this.#e.ghostty_kitty_graphics_image_get(image, kind, output) !== 0) return 0;
+      return this.#view().getUint32(output, true);
+    };
+    try {
+      const imageId = getU32(1),
+        number = getU32(2),
+        width = getU32(3),
+        height = getU32(4),
+        formatValue = getU32(5),
+        compression = getU32(6),
+        dataPointer = getU32(7),
+        dataLength = getU32(8);
+      if (compression !== 0 || dataLength > this.#kittyStorageLimit)
+        throw new AssetIntegrityError("Invalid Kitty decoded image storage metadata");
+      this.#e.ghostty_kitty_graphics_image_get(image, 9, output);
+      const generation = this.#view().getBigUint64(output, true).toString(),
+        key = `${imageId}:${generation}`,
+        cached = this.#images.get(key);
+      if (cached) return cached;
+      const data = this.#bytes().slice(dataPointer, dataPointer + dataLength),
+        format = (["rgb", "rgba", "png", "gray-alpha", "gray"] as const)[formatValue];
+      if (!format || format === "png")
+        throw new AssetIntegrityError("Invalid Kitty decoded image format");
+      const snapshot = freeze({
+        id: imageId,
+        number,
+        generation,
+        width,
+        height,
+        format,
+        compression: "none" as const,
+        dataLength,
+        sha256: createHash("sha256").update(data).digest("hex"),
+      });
+      this.#images.set(key, snapshot);
+      return snapshot;
+    } finally {
+      this.#release(output, 8);
+    }
+  }
+  #pruneKittyImages() {
+    for (const key of this.#images.keys())
+      if (!this.#currentImageKeys.has(key)) this.#images.delete(key);
+  }
+  graphics(): KittyGraphicsSnapshot {
+    if (!this.#kittySupported)
+      return freeze({ supported: false, generation: "0", storageLimitBytes: 0, placements: [] });
+    const graphicsOutput = this.#alloc(4);
+    try {
+      if (this.#e.ghostty_terminal_get(this.#terminal, 30, graphicsOutput) !== 0)
+        throw new AssetIntegrityError("Kitty graphics capability disappeared from the terminal");
+      const graphics = this.#view().getUint32(graphicsOutput, true),
+        generationOutput = this.#alloc(8);
+      try {
+        if (this.#e.ghostty_kitty_graphics_get(graphics, 2, generationOutput) !== 0)
+          throw new AssetIntegrityError("Unable to read Kitty graphics generation");
+        const generation = this.#view().getBigUint64(generationOutput, true).toString(),
+          iteratorOutput = this.#alloc(4),
+          placements: KittyPlacementSnapshot[] = [];
+        try {
+          if (this.#e.ghostty_kitty_graphics_placement_iterator_new(0, iteratorOutput) !== 0)
+            throw new AssetIntegrityError("Unable to allocate Kitty placement iterator");
+          const iterator = this.#view().getUint32(iteratorOutput, true),
+            value = this.#alloc(4),
+            render = this.#alloc(48);
+          try {
+            if (this.#e.ghostty_kitty_graphics_get(graphics, 1, iteratorOutput) !== 0)
+              throw new AssetIntegrityError("Unable to initialize Kitty placement iterator");
+            while (this.#e.ghostty_kitty_graphics_placement_next(iterator)) {
+              const get = (kind: number, signed = false) => {
+                if (this.#e.ghostty_kitty_graphics_placement_get(iterator, kind, value) !== 0)
+                  throw new AssetIntegrityError(`Unable to read Kitty placement field ${kind}`);
+                return signed
+                  ? this.#view().getInt32(value, true)
+                  : this.#view().getUint32(value, true);
+              };
+              const imageId = get(1),
+                virtual = get(3) !== 0,
+                image = this.#kittyImage(graphics, imageId);
+              if (!image) continue;
+              const z = get(12, true),
+                requestedSource = {
+                  x: get(6),
+                  y: get(7),
+                  width: get(8),
+                  height: get(9),
+                },
+                imageHandle = this.#e.ghostty_kitty_graphics_image(graphics, imageId);
+              let renderInfoAvailable = false;
+              if (!virtual && imageHandle) {
+                this.#view().setUint32(render, 48, true);
+                // Geometry can be unavailable for an individual placement (for
+                // example, after an unsupported protocol edge case). It is
+                // observational state, not an artifact-integrity failure.
+                renderInfoAvailable =
+                  this.#e.ghostty_kitty_graphics_placement_render_info(
+                    iterator,
+                    imageHandle,
+                    this.#terminal,
+                    render,
+                  ) === 0;
+              }
+              const visible = renderInfoAvailable && this.#view().getUint8(render + 28) !== 0,
+                placement = freeze({
+                  imageId,
+                  placementId: get(2),
+                  imageGeneration: image.generation,
+                  image,
+                  virtual,
+                  z,
+                  layer:
+                    z < -1_073_741_824
+                      ? ("below-background" as const)
+                      : z < 0
+                        ? ("below-text" as const)
+                        : ("above-text" as const),
+                  offset: { xPixels: get(4), yPixels: get(5) },
+                  requestedGrid: { columns: get(10), rows: get(11) },
+                  ...(renderInfoAvailable
+                    ? {
+                        renderedGrid: {
+                          columns: this.#view().getUint32(render + 12, true),
+                          rows: this.#view().getUint32(render + 16, true),
+                        },
+                        renderedPixels: {
+                          width: this.#view().getUint32(render + 4, true),
+                          height: this.#view().getUint32(render + 8, true),
+                        },
+                      }
+                    : {}),
+                  viewport: visible
+                    ? {
+                        column: this.#view().getInt32(render + 20, true),
+                        row: this.#view().getInt32(render + 24, true),
+                        visible,
+                      }
+                    : { visible: false },
+                  source: renderInfoAvailable
+                    ? {
+                        x: this.#view().getUint32(render + 32, true),
+                        y: this.#view().getUint32(render + 36, true),
+                        width: this.#view().getUint32(render + 40, true),
+                        height: this.#view().getUint32(render + 44, true),
+                      }
+                    : requestedSource,
+                } satisfies KittyPlacementSnapshot);
+              placements.push(placement);
+            }
+          } finally {
+            this.#e.ghostty_kitty_graphics_placement_iterator_free(iterator);
+            this.#release(value, 4);
+            this.#release(render, 48);
+          }
+        } finally {
+          this.#release(iteratorOutput, 4);
+        }
+        const currentImageKeys = new Set(
+          placements.map((placement) => `${placement.imageId}:${placement.imageGeneration}`),
+        );
+        // Placement iteration cannot enumerate unplaced images. Revalidate
+        // explicitly inspected IDs against the active Ghostty storage so they
+        // remain cache-visible until deleted or replaced.
+        for (const id of this.#inspectedImageIds) {
+          const image = this.#kittyImage(graphics, id);
+          if (image) currentImageKeys.add(`${image.id}:${image.generation}`);
+          else this.#inspectedImageIds.delete(id);
+        }
+        this.#currentImageKeys = currentImageKeys;
+        this.#pruneKittyImages();
+        return freeze({
+          supported: true,
+          generation,
+          storageLimitBytes: this.#kittyStorageLimit,
+          placements: Object.freeze(placements),
+        });
+      } finally {
+        this.#release(generationOutput, 8);
+      }
+    } finally {
+      this.#release(graphicsOutput, 4);
+    }
+  }
+  inspectImage(id: number) {
+    const graphics = this.#alloc(4);
+    try {
+      if (!this.#kittySupported || this.#e.ghostty_terminal_get(this.#terminal, 30, graphics) !== 0)
+        return undefined;
+      const image = this.#kittyImage(this.#view().getUint32(graphics, true), id);
+      if (image) {
+        this.#inspectedImageIds.add(id);
+        this.#currentImageKeys.add(`${image.id}:${image.generation}`);
+      }
+      this.#pruneKittyImages();
+      return image;
+    } finally {
+      this.#release(graphics, 4);
+    }
+  }
+  copyImageData(id: number) {
+    const graphics = this.#alloc(4);
+    try {
+      if (!this.#kittySupported || this.#e.ghostty_terminal_get(this.#terminal, 30, graphics) !== 0)
+        return undefined;
+      const image = this.inspectImage(id);
+      if (!image) return undefined;
+      const handle = this.#e.ghostty_kitty_graphics_image(
+        this.#view().getUint32(graphics, true),
+        id,
+      );
+      if (!handle) return undefined;
+      const output = this.#alloc(8);
+      try {
+        if (
+          this.#e.ghostty_kitty_graphics_image_get(handle, 7, output) !== 0 ||
+          this.#e.ghostty_kitty_graphics_image_get(handle, 8, output + 4) !== 0
+        )
+          return undefined;
+        const pointer = this.#view().getUint32(output, true),
+          length = this.#view().getUint32(output + 4, true);
+        return this.#bytes().slice(pointer, pointer + length);
+      } finally {
+        this.#release(output, 8);
+      }
+    } finally {
+      this.#release(graphics, 4);
+    }
+  }
+  cachedImage(id: number) {
+    return [...this.#images.entries()].find(
+      ([key, image]) => image.id === id && this.#currentImageKeys.has(key),
+    )?.[1];
   }
   snapshot(cause?: "pty-output" | "resize" | "reset") {
     const pointLayout = this.#layouts.GhosttyPoint,
@@ -753,6 +1183,7 @@ export class GhosttyWasmTerminal {
       lastVisualChangeAt: this.#lastVisual,
       viewport: this.#viewport,
       activeBuffer,
+      graphics: this.graphics(),
       cursor,
       lines,
       modes: this.modes(),

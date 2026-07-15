@@ -44,5 +44,6 @@ export class CoordinateRangeError extends errorType(
 export class StrictLocatorError extends errorType("StrictLocatorError", "GW_LOCATOR_STRICT") {}
 export class TerminalAssertionError extends errorType("TerminalAssertionError", "GW_ASSERTION") {}
 export class HistoryEvictedError extends errorType("HistoryEvictedError", "GW_HISTORY_EVICTED") {}
+export class HistoryChangedError extends errorType("HistoryChangedError", "GW_HISTORY_CHANGED") {}
 export class TraceWriteError extends errorType("TraceWriteError", "GW_TRACE_WRITE") {}
 export class CleanupError extends errorType("CleanupError", "GW_CLEANUP") {}

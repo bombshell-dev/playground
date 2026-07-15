@@ -2,12 +2,14 @@ import { resolve } from "node:path";
 import {
   CoordinateRangeError,
   DenoPermissionError,
+  HistoryChangedError,
   HistoryEvictedError,
   LaunchError,
   ProcessExitedError,
   ReservedEnvironmentError,
   SessionClosedError,
   StrictLocatorError,
+  TerminalAssertionError,
 } from "../errors.ts";
 import {
   assertSupportedRuntime,
@@ -25,12 +27,21 @@ import type {
   AsyncTerminal,
   CellChange,
   KeyName,
+  HistoryLine,
+  HistoryMatch,
+  HistoryQuery,
+  HistoryRange,
+  HistorySearchOptions,
   KeyPress,
+  KittyImageSnapshot,
   LocatorMatch,
   MouseOptions,
   Point,
   ProcessStatus,
   Rect,
+  RevisionCollection,
+  RevisionCollectionOptions,
+  RevisionRangeQuery,
   ScreenCell,
   ScreenReader,
   ScreenRevision,
@@ -57,10 +68,12 @@ function visualKey(s: ScreenSnapshot) {
     s.cursor,
     s.activeBuffer,
     s.viewport,
+    // Only renderer-visible graphics participate in visual settlement.
+    s.graphics.placements.filter((placement) => placement.viewport.visible),
   ]);
 }
 function observableKey(s: ScreenSnapshot) {
-  return JSON.stringify([visualKey(s), s.modes, s.title, s.workingDirectory]);
+  return JSON.stringify([visualKey(s), s.graphics, s.modes, s.title, s.workingDirectory]);
 }
 export class TerminalSession implements AsyncTerminal {
   #host!: SidecarClient;
@@ -73,6 +86,8 @@ export class TerminalSession implements AsyncTerminal {
   #history: ScreenRevision[] = [];
   #historyDecodedBytes = 0;
   #historySizes: number[] = [];
+  // This is a session-owned generation because the Ghostty ABI does not expose one.
+  #terminalHistoryGeneration = 0;
   #raw: Uint8Array[] = [];
   #listeners = new Set<() => void>();
   #outputPump: Promise<void> = Promise.resolve();
@@ -120,6 +135,7 @@ export class TerminalSession implements AsyncTerminal {
       ["maxRevisions", options.history?.maxRevisions],
       ["maxRawBytes", options.history?.maxRawBytes],
       ["maxDecodedBytes", options.history?.maxDecodedBytes],
+      ["graphics.storageLimitBytes", options.graphics?.storageLimitBytes],
     ] as const)
       if (value !== undefined && (!Number.isSafeInteger(value) || value < 0))
         throw new RangeError(`${label} must be a nonnegative safe integer`);
@@ -137,8 +153,16 @@ export class TerminalSession implements AsyncTerminal {
         );
       throw cause;
     }
-    self.#engine = await GhosttyWasmTerminal.create(self.#viewport);
+    self.#engine = await GhosttyWasmTerminal.create(
+      self.#viewport,
+      options.graphics?.storageLimitBytes ?? 64 * 1024 * 1024,
+    );
     self.#snapshot = self.#engine.snapshot();
+    self.#trace.add("kitty-capability", {
+      supported: self.#snapshot.graphics.supported,
+      storageLimitBytes: self.#snapshot.graphics.storageLimitBytes,
+      profile: self.#snapshot.graphics.supported ? "direct-raw-only" : "disabled",
+    });
     self.#host = await SidecarClient.start(assets.host, options.commandTimeoutMs ?? 5000);
     self.#host.on("output", (b, seq) => {
       self.#outputPump = self.#outputPump
@@ -214,7 +238,7 @@ export class TerminalSession implements AsyncTerminal {
   get trace() {
     return this.#trace;
   }
-  get history() {
+  get revisionHistory() {
     return this.#history;
   }
   get lastAction() {
@@ -237,6 +261,9 @@ export class TerminalSession implements AsyncTerminal {
     const max = this.options.history?.maxRawBytes ?? 4 * 1024 * 1024;
     while (this.#raw.reduce((n, b) => n + b.length, 0) > max) this.#raw.shift();
     this.#engine.write(bytes);
+    // Any output can append, prune, reflow, reset, or switch Ghostty's active page list.
+    // Incrementing conservatively prevents a caller from mixing pagination layouts.
+    this.#terminalHistoryGeneration++;
     this.#publish("pty-output", sourceFrameSequence);
     for (const effect of this.#engine.takeEffects()) {
       this.#trace.add("terminal-effect", {
@@ -301,6 +328,17 @@ export class TerminalSession implements AsyncTerminal {
       cause,
       changedRows,
       visualChange: visual,
+      graphics: {
+        generation: this.#snapshot.graphics.generation,
+        placements: this.#snapshot.graphics.placements.map((placement) => ({
+          imageId: placement.imageId,
+          placementId: placement.placementId,
+          imageGeneration: placement.imageGeneration,
+          sha256: placement.image?.sha256,
+          visible: placement.viewport.visible,
+          z: placement.z,
+        })),
+      },
     });
     this.#notify();
   }
@@ -448,6 +486,23 @@ export class TerminalSession implements AsyncTerminal {
         () => new ProcessExitedError("Timed out waiting for process exit"),
       ),
   };
+  revisions = {
+    collect: (options: RevisionCollectionOptions) => this.collectRevisions(options),
+  };
+  history = {
+    read: (query?: HistoryQuery) => this.readHistory(query),
+    findText: (text: string, options?: HistorySearchOptions) => this.findHistoryText(text, options),
+  };
+  graphics = {
+    inspectImage: async (id: number): Promise<KittyImageSnapshot | undefined> => {
+      await this.#outputPump;
+      return this.#engine.inspectImage(id);
+    },
+    copyImageData: async (id: number): Promise<Uint8Array | undefined> => {
+      await this.#outputPump;
+      return this.#engine.copyImageData(id);
+    },
+  };
   getByText(text: string, options?: TextLocatorOptions) {
     return new Locator(this, text, options);
   }
@@ -472,6 +527,7 @@ export class TerminalSession implements AsyncTerminal {
     const receipt = await this.#send(FrameKind.RESIZE, viewport);
     this.#viewport = viewport;
     this.#engine.resize(viewport);
+    this.#terminalHistoryGeneration++;
     this.#publish("resize");
     return receipt;
   }
@@ -555,13 +611,209 @@ export class TerminalSession implements AsyncTerminal {
       );
     });
   }
+  #baselineSequence(value: ActionReceipt | ScreenRevision | number) {
+    if (typeof value === "number") {
+      if (!Number.isSafeInteger(value) || value < 0)
+        throw new RangeError("revision sequence must be a nonnegative safe integer");
+      return value;
+    }
+    return "screenSequenceBefore" in value ? value.screenSequenceBefore : value.sequence;
+  }
   revisionsSince(sequence: number) {
-    const earliest = this.#history[0]?.sequence ?? this.#revision;
+    const earliest = this.#history[0]?.sequence ?? this.#revision,
+      latest = this.#history.at(-1)?.sequence ?? this.#revision;
     if (sequence < earliest - 1)
       throw new HistoryEvictedError(
-        `Revision ${sequence} was evicted; earliest retained is ${earliest}`,
+        `Revision baseline ${sequence} was evicted; retained range is ${earliest} through ${latest}`,
       );
-    return this.#history.filter((r) => r.sequence >= sequence);
+    return this.#history.filter((revision) => revision.sequence > sequence);
+  }
+  revisionRange(query: RevisionRangeQuery) {
+    const since = this.#baselineSequence(query.since),
+      until = query.until === undefined ? undefined : this.#baselineSequence(query.until),
+      max = this.options.history?.maxRevisions ?? 1000,
+      limit = query.limit ?? max;
+    if (!Number.isSafeInteger(limit) || limit <= 0)
+      throw new RangeError("revision limit must be positive");
+    if (limit > max)
+      throw new RangeError(
+        `revision limit ${limit} exceeds the configured retained maximum ${max}`,
+      );
+    if (until !== undefined && until < since)
+      throw new RangeError("revision until sequence must not precede its exclusive baseline");
+    const revisions = this.revisionsSince(since);
+    if (until !== undefined) {
+      const latest = this.#history.at(-1)?.sequence ?? this.#revision;
+      if (until < (this.#history[0]?.sequence ?? this.#revision) || until > latest)
+        throw new HistoryEvictedError(
+          `Revision endpoint ${until} cannot be proven from retained range ${this.#history[0]?.sequence ?? this.#revision} through ${latest}`,
+        );
+    }
+    return Object.freeze(
+      revisions
+        .filter((revision) => until === undefined || revision.sequence <= until)
+        .slice(0, limit),
+    );
+  }
+  async collectRevisions(options: RevisionCollectionOptions): Promise<RevisionCollection> {
+    const baseline = this.#baselineSequence(options.since),
+      max = options.maxRevisions ?? 1000,
+      configuredMax = this.options.history?.maxRevisions ?? 1000,
+      timeout = options.timeoutMs ?? this.options.assertionTimeoutMs ?? 5000,
+      startedAt = this.now();
+    if (!Number.isSafeInteger(max) || max <= 0 || max > configuredMax)
+      throw new RangeError(`maxRevisions must be positive and no greater than ${configuredMax}`);
+    if (!Number.isSafeInteger(timeout) || timeout < 0)
+      throw new RangeError("timeoutMs must be nonnegative");
+    const samples = [...this.revisionsSince(baseline)].slice(0, max);
+    const complete = () => samples.some((revision) => options.until(revision.snapshot, revision));
+    if (!complete() && samples.length === max)
+      throw new HistoryEvictedError(
+        `Revision collection reached its ${max} sample limit before its predicate matched`,
+      );
+    if (!complete())
+      await new Promise<void>((resolve, reject) => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const finish = (error?: Error) => {
+          if (timer) clearTimeout(timer);
+          off();
+          error ? reject(error) : resolve();
+        };
+        const off = this.subscribe(() => {
+          try {
+            const latest = this.revisionsSince(baseline);
+            for (const revision of latest)
+              if (!samples.some((sample) => sample.sequence === revision.sequence))
+                samples.push(revision);
+            if (samples.length > max)
+              return finish(
+                new HistoryEvictedError(
+                  `Revision collection exceeded its ${max} sample limit before its predicate matched`,
+                ),
+              );
+            if (complete()) return finish();
+            if (this.#status.state === "closed" || this.#status.state === "failed")
+              return finish(new SessionClosedError("Session closed during revision collection"));
+            if (this.#status.ptyEof)
+              return finish(new ProcessExitedError("Process exited during revision collection"));
+          } catch (error) {
+            finish(error instanceof Error ? error : new Error(String(error)));
+          }
+        });
+        timer = setTimeout(
+          () =>
+            finish(
+              new TerminalAssertionError(`Timed out collecting revisions after ${timeout} ms`),
+            ),
+          timeout,
+        );
+      });
+    return Object.freeze({
+      baselineSequence: baseline,
+      startedAt,
+      completedAt: this.now(),
+      revisions: Object.freeze(samples),
+    });
+  }
+  async readHistory(query: HistoryQuery = {}): Promise<HistoryRange> {
+    const direction = query.direction ?? "oldest-first",
+      count = query.count ?? 200,
+      start = query.start ?? 0;
+    if (!Number.isSafeInteger(start) || start < 0)
+      throw new RangeError("history start must be nonnegative");
+    if (!Number.isSafeInteger(count) || count <= 0 || count > 1000)
+      throw new RangeError("history count must be positive and no greater than 1000");
+    await this.#outputPump;
+    const generation = String(this.#terminalHistoryGeneration);
+    if (query.expectedGeneration !== undefined && query.expectedGeneration !== generation)
+      throw new HistoryChangedError(
+        `Terminal history changed (expected generation ${query.expectedGeneration}, current ${generation})`,
+      );
+    const predecessor = start > 0 ? this.#engine.history(start - 1, 1)[0] : undefined;
+    const rows = this.#engine.history(start, count);
+    const lines = rows.map((entry, offset) => {
+      const line = entry.line;
+      return Object.freeze({
+        index: start + offset,
+        text: line.text,
+        wrapped: line.wrapped,
+        wrapContinuation: offset > 0 ? rows[offset - 1].line.wrapped : !!predecessor?.line.wrapped,
+        kittyVirtualPlaceholder: entry.kittyVirtualPlaceholder,
+        cells: line.cells,
+      } satisfies HistoryLine);
+    });
+    if (direction === "newest-first") lines.reverse();
+    return Object.freeze({
+      generation,
+      totalRows: this.#engine.scrollbackRows(),
+      start,
+      direction,
+      lines: Object.freeze(lines),
+    });
+  }
+  async findHistoryText(
+    text: string,
+    options: HistorySearchOptions = {},
+  ): Promise<readonly HistoryMatch[]> {
+    if (!text.length) throw new RangeError("history search text must be nonempty");
+    const maxRows = options.maxRows ?? 1000,
+      limit = options.limit ?? 20;
+    if (!Number.isSafeInteger(maxRows) || maxRows <= 0 || maxRows > 10_000)
+      throw new RangeError("history maxRows must be positive and no greater than 10000");
+    if (!Number.isSafeInteger(limit) || limit <= 0 || limit > 1000)
+      throw new RangeError("history result limit must be positive and no greater than 1000");
+    const start = options.start ?? 0;
+    if (!Number.isSafeInteger(start) || start < 0)
+      throw new RangeError("history start must be nonnegative");
+    const lines: HistoryLine[] = [];
+    let generation = options.expectedGeneration;
+    for (let offset = start; offset < start + maxRows; offset += 1000) {
+      const page = await this.readHistory({
+        direction: "oldest-first",
+        start: offset,
+        count: Math.min(1000, start + maxRows - offset),
+        expectedGeneration: generation,
+      });
+      generation ??= page.generation;
+      lines.push(...page.lines);
+      if (page.lines.length < 1000) break;
+    }
+    if (options.direction === "newest-first") lines.reverse();
+    const results: HistoryMatch[] = [];
+    for (const line of lines) {
+      let textOffset = 0;
+      const segments = line.cells
+        .filter((cell) => !cell.continuation)
+        .map((cell) => {
+          const start = textOffset;
+          textOffset += (cell.style.invisible ? " " : cell.text || " ").length;
+          return { cell, start, end: textOffset };
+        });
+      let matchAt = 0;
+      while (results.length < limit && (matchAt = line.text.indexOf(text, matchAt)) >= 0) {
+        const first = segments.find((segment) => matchAt < segment.end) ?? segments.at(-1);
+        const last =
+          [...segments].reverse().find((segment) => matchAt + text.length > segment.start) ?? first;
+        const column = first?.cell.column ?? 0,
+          endColumn = last ? last.cell.column + Math.max(1, last.cell.width) : column + 1;
+        results.push(
+          Object.freeze({
+            lineIndex: line.index,
+            text,
+            range: {
+              column,
+              row: line.index,
+              width: Math.max(1, endColumn - column),
+              height: 1,
+            },
+            line,
+          }),
+        );
+        matchAt += Math.max(1, text.length);
+      }
+      if (results.length === limit) break;
+    }
+    return Object.freeze(results);
   }
   screen: ScreenReader = {
     current: () => this.#snapshot,
@@ -599,6 +851,8 @@ export class TerminalSession implements AsyncTerminal {
         }
       return out;
     },
+    revisions: (query) => this.revisionRange(query),
+    getKittyImage: (id: number): KittyImageSnapshot | undefined => this.#engine.cachedImage(id),
     rawOutput: () => {
       const n = this.#raw.reduce((s, b) => s + b.length, 0),
         out = new Uint8Array(n);

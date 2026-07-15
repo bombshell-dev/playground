@@ -16,6 +16,11 @@ export interface HistoryOptions {
   maxRawBytes?: number;
   maxDecodedBytes?: number;
 }
+/** Per-active-screen Kitty image storage configuration. */
+export interface GraphicsOptions {
+  /** Decoded-image storage cap in bytes. Defaults to 64 MiB; zero disables storage. */
+  storageLimitBytes?: number;
+}
 export type TracePolicy = "off" | "retain-on-failure" | "on";
 export interface TraceOptions {
   policy?: TracePolicy;
@@ -33,6 +38,7 @@ export interface TerminalLaunchOptions {
   settleMs?: number;
   cleanup?: CleanupOptions;
   history?: HistoryOptions;
+  graphics?: GraphicsOptions;
   trace?: TracePolicy | TraceOptions;
   name?: string;
 }
@@ -162,12 +168,46 @@ export interface TerminalModes {
   alternateScreen: boolean;
   privateModes: Readonly<Record<number, boolean>>;
 }
+export interface KittyImageSnapshot {
+  id: number;
+  number: number;
+  generation: string;
+  width: number;
+  height: number;
+  format: "rgb" | "rgba" | "gray" | "gray-alpha";
+  compression: "none";
+  dataLength: number;
+  sha256: string;
+}
+export interface KittyPlacementSnapshot {
+  imageId: number;
+  placementId: number;
+  imageGeneration: string;
+  image?: KittyImageSnapshot;
+  virtual: boolean;
+  z: number;
+  layer: "below-background" | "below-text" | "above-text";
+  offset: { xPixels: number; yPixels: number };
+  requestedGrid: { columns: number; rows: number };
+  renderedGrid?: { columns: number; rows: number };
+  renderedPixels?: { width: number; height: number };
+  viewport: { column?: number; row?: number; visible: boolean };
+  source: { x: number; y: number; width: number; height: number };
+}
+export interface KittyGraphicsSnapshot {
+  supported: boolean;
+  generation: string;
+  storageLimitBytes: number;
+  placements: readonly KittyPlacementSnapshot[];
+}
 export interface ScreenSnapshot {
   sequence: number;
   timestamp: number;
   lastVisualChangeAt: number;
   viewport: Required<Viewport>;
   activeBuffer: "primary" | "alternate";
+  /** Renderer-ready Kitty state for the active screen only. */
+  graphics: KittyGraphicsSnapshot;
   cursor: CursorSnapshot;
   lines: readonly ScreenLine[];
   modes: TerminalModes;
@@ -183,6 +223,58 @@ export interface ScreenRevision {
   visualChange: boolean;
   snapshot: ScreenSnapshot;
 }
+export interface RevisionRangeQuery {
+  /** Exclusive action/revision baseline. */
+  since: ActionReceipt | ScreenRevision | number;
+  /** Inclusive revision endpoint. */
+  until?: ScreenRevision | number;
+  limit?: number;
+}
+export interface RevisionCollectionOptions {
+  since: ActionReceipt | ScreenRevision | number;
+  until(snapshot: ScreenSnapshot, revision: ScreenRevision): boolean;
+  timeoutMs?: number;
+  maxRevisions?: number;
+}
+export interface RevisionCollection {
+  baselineSequence: number;
+  startedAt: number;
+  completedAt: number;
+  revisions: readonly ScreenRevision[];
+}
+export interface HistoryQuery {
+  direction?: "oldest-first" | "newest-first";
+  /** Zero-based index from the oldest currently retained scrollback row. */
+  start?: number;
+  count?: number;
+  expectedGeneration?: string;
+}
+export interface HistoryLine extends Omit<ScreenLine, "row"> {
+  /** Zero-based index from the oldest currently retained scrollback row. */
+  index: number;
+  wrapContinuation: boolean;
+  kittyVirtualPlaceholder: boolean;
+}
+export interface HistoryRange {
+  generation: string;
+  totalRows: number;
+  start: number;
+  direction: "oldest-first" | "newest-first";
+  lines: readonly HistoryLine[];
+}
+export interface HistorySearchOptions {
+  direction?: "oldest-first" | "newest-first";
+  start?: number;
+  maxRows?: number;
+  limit?: number;
+  expectedGeneration?: string;
+}
+export interface HistoryMatch {
+  lineIndex: number;
+  text: string;
+  range: Rect;
+  line: HistoryLine;
+}
 export interface CellChange {
   point: Point;
   before: ScreenCell;
@@ -194,8 +286,34 @@ export interface ScreenReader {
   getText(rect?: Rect): string;
   changedCells(since: ScreenSnapshot | number): readonly CellChange[];
   rawOutput(): Uint8Array;
+  /** Retained revision query. `since` is exclusive and `until` is inclusive. */
+  revisions(query: RevisionRangeQuery): readonly ScreenRevision[];
+  /** Cache-only image lookup; it never dereferences a live WASM graphics handle. */
+  getKittyImage(id: number): KittyImageSnapshot | undefined;
   scrollback(): readonly ScreenLine[];
   clipboard(): string;
+}
+export interface AsyncRevisionObserver {
+  collect(options: RevisionCollectionOptions): Promise<RevisionCollection>;
+}
+export interface OperationRevisionObserver {
+  collect(options: RevisionCollectionOptions): Operation<RevisionCollection>;
+}
+export interface AsyncHistoryReader {
+  read(query?: HistoryQuery): Promise<HistoryRange>;
+  findText(text: string, options?: HistorySearchOptions): Promise<readonly HistoryMatch[]>;
+}
+export interface OperationHistoryReader {
+  read(query?: HistoryQuery): Operation<HistoryRange>;
+  findText(text: string, options?: HistorySearchOptions): Operation<readonly HistoryMatch[]>;
+}
+export interface AsyncGraphicsReader {
+  inspectImage(id: number): Promise<KittyImageSnapshot | undefined>;
+  copyImageData(id: number): Promise<Uint8Array | undefined>;
+}
+export interface OperationGraphicsReader {
+  inspectImage(id: number): Operation<KittyImageSnapshot | undefined>;
+  copyImageData(id: number): Operation<Uint8Array | undefined>;
 }
 
 export interface AsyncLocator {
@@ -241,6 +359,9 @@ export interface AsyncTerminal {
     waitForExit(options?: AssertionOptions): Promise<ProcessStatus>;
   };
   readonly screen: ScreenReader;
+  readonly revisions: AsyncRevisionObserver;
+  readonly history: AsyncHistoryReader;
+  readonly graphics: AsyncGraphicsReader;
   getByText(text: string, options?: TextLocatorOptions): AsyncLocator;
   region(rect: Rect): AsyncRegion;
   resize(viewport: Viewport): Promise<ActionReceipt>;
@@ -269,6 +390,9 @@ export interface OperationTerminal {
     waitForExit(options?: AssertionOptions): Operation<ProcessStatus>;
   };
   readonly screen: ScreenReader;
+  readonly revisions: OperationRevisionObserver;
+  readonly history: OperationHistoryReader;
+  readonly graphics: OperationGraphicsReader;
   getByText(text: string, options?: TextLocatorOptions): OperationLocator;
   region(rect: Rect): OperationRegion;
   resize(viewport: Viewport): Operation<ActionReceipt>;

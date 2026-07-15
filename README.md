@@ -75,6 +75,27 @@ Text locators are lazy, current-visible-viewport only, grapheme-aware, and stric
 
 See [Choosing locators and assertions](docs/choosing-assertions.md).
 
+## Historical and graphics inspection
+
+Retained revision ranges use an explicit exclusive baseline, so animation tests can inspect the PTY-observed trajectory without claiming every application timer write was presented:
+
+```ts
+const samples = terminal.screen.revisions({ since: action });
+const collection = await terminal.revisions.collect({
+  since: action,
+  until: (snapshot) => snapshot.lines.some((line) => line.text.includes("Complete")),
+});
+```
+
+Terminal scrollback is a serialized, bounded observation of Ghostty history; it does not search application-owned virtual history. Pages default to 200 rows (maximum 1,000), and generation guards prevent mixed pagination after output or reflow:
+
+```ts
+const page = await terminal.history.read({ count: 200 });
+const matches = await terminal.history.findText("tool completed", { direction: "newest-first" });
+```
+
+`ScreenSnapshot.graphics` exposes active-screen renderer-ready Kitty placement/image metadata. The shipped deterministic profile accepts bounded direct raw RGB/RGBA/gray transfers (64 MiB per screen by default), hashes decoded pixels, and rejects file/shared-memory media. PNG transport/playback support is not enabled in this artifact. Graphics inspection proves Ghostty accepted and prepared image data for rendering; it does not prove font/GPU-composited pixels.
+
 ## Documentation
 
 - [Agent operational guide](AGENTS.md)
