@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 const root = new URL("..", import.meta.url),
   lock = JSON.parse(await readFile(new URL("ghostty.lock.json", root), "utf8"));
-if (lock.protocolVersion !== 1 || lock.bindingVersion !== 1)
+if (lock.protocolVersion !== 1 || lock.bindingVersion !== 2)
   throw new Error("protocol or binding version mismatch");
 for (const [path, entry] of Object.entries(lock.artifacts) as [string, { sha256: string }][]) {
   const actual = createHash("sha256")
@@ -33,6 +33,15 @@ for (const [name, size] of Object.entries(lock.abi.structSizes))
     throw new Error(
       `ghostty-vt.wasm: ${name} size mismatch (expected ${size}, got ${layouts[name]?.size})`,
     );
+if (lock.graphics?.kittyGraphics) {
+  const out = wasmExports.ghostty_wasm_alloc_u8_array(1);
+  try {
+    if (wasmExports.ghostty_build_info(2, out) !== 0 || bytes[out] === 0)
+      throw new Error("ghostty-vt.wasm: Kitty graphics capability is absent");
+  } finally {
+    wasmExports.ghostty_wasm_free_u8_array(out, 1);
+  }
+}
 console.log(
   `verified ${Object.keys(lock.artifacts).length} Ghostwright artifacts and ${Object.keys(lock.abi.structSizes).length} ABI layouts`,
 );

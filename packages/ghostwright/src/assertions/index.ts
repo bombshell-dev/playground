@@ -21,7 +21,7 @@ function diagnostic(session: TerminalSession, expected: string, timeout: number,
       .slice(-5)
       .map((event) => `#${event.sequence} action=${event.actionSequence} kind=${event.kind}`)
       .join("; ");
-  return `Ghostwright assertion failed\nexpected: ${expected}\ntimeout: ${timeout} ms${settle === undefined ? "" : `\nsettle: ${settle} ms`}\nviewport: ${s.viewport.columns}x${s.viewport.rows}\ncursor: (${s.cursor.column},${s.cursor.row}) visible=${s.cursor.visible} shape=${s.cursor.shape} blinking=${s.cursor.blinking}\nactive buffer: ${s.activeBuffer}\nmodes: ${JSON.stringify(s.modes)}\nprocess: ${JSON.stringify(session.process.status())}\nchanged rows: ${session.history.at(-1)?.changedRows.join(",") ?? "none"}\nhistory: earliest=${session.history.at(0)?.sequence ?? s.sequence} latest=${session.history.at(-1)?.sequence ?? s.sequence}\nrecent actions: ${recent || "none"}\nclosest candidates: ${
+  return `Ghostwright assertion failed\nexpected: ${expected}\ntimeout: ${timeout} ms${settle === undefined ? "" : `\nsettle: ${settle} ms`}\nviewport: ${s.viewport.columns}x${s.viewport.rows}\ncursor: (${s.cursor.column},${s.cursor.row}) visible=${s.cursor.visible} shape=${s.cursor.shape} blinking=${s.cursor.blinking}\nactive buffer: ${s.activeBuffer}\nmodes: ${JSON.stringify(s.modes)}\nprocess: ${JSON.stringify(session.process.status())}\nchanged rows: ${session.revisionHistory.at(-1)?.changedRows.join(",") ?? "none"}\nhistory: earliest=${session.revisionHistory.at(0)?.sequence ?? s.sequence} latest=${session.revisionHistory.at(-1)?.sequence ?? s.sequence}\nrecent actions: ${recent || "none"}\nclosest candidates: ${
     s.lines
       .map((line) => line.text.trimEnd())
       .filter(Boolean)
