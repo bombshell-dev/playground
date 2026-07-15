@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { parse } from '@bomb.sh/args';
 import { select, isCancel } from '@clack/prompts';
 
-const EXAMPLES_DIR = new URL('../examples', import.meta.url);
+const EXAMPLES_DIR = new URL('../examples/', import.meta.url);
 
 async function getExamples(): Promise<string[]> {
 	const entries = await readdir(EXAMPLES_DIR, { withFileTypes: true });
@@ -44,7 +44,7 @@ if (!example) {
 	example = result;
 }
 
-const exampleRoot = new URL(`./${example}`, EXAMPLES_DIR);
+const exampleRoot = new URL(`./${example}/`, EXAMPLES_DIR);
 const exampleIndex = new URL(`./src/index.ts`, exampleRoot);
 const child = spawn('node', ['--experimental-transform-types', fileURLToPath(exampleIndex)], {
 	cwd: fileURLToPath(exampleRoot),
