@@ -17,9 +17,6 @@
 		"url": "git+https://github.com/bombshell-dev/playground.git"
 	},
 	"type": "module",
-	"publishConfig": {
-		"access": "public"
-	},
 	"scripts": {
 		"playground": "NODE_NO_WARNINGS=1 node --experimental-transform-types ./scripts/playground.ts",
 		"format": "bsh format",
@@ -27,9 +24,9 @@
 		"test": "bsh test"
 	},
 	"devDependencies": {
+		"@bomb.sh/args": "catalog:",
 		"@bomb.sh/tools": "^0.5.4",
-        "@bomb.sh/args": "catalog:",
-        "@clack/prompts": "catalog:",
+		"@clack/prompts": "catalog:",
 		"@types/node": "^22"
 	},
 	"devEngines": {
