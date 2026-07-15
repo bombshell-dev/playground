@@ -28,11 +28,7 @@
 		"test": "bsh test"
 	},
 	"dependencies": {
-		"@bomb.sh/tty": "catalog:",
-		"@types/node": "^26.0.0"
-	},
-	"devDependencies": {
-		"@bomb.sh/tools": "latest"
+		"@bomb.sh/tty": "catalog:"
 	},
 	"devEngines": {
 		"packageManager": {
