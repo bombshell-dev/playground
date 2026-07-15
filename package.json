@@ -28,6 +28,8 @@
 	},
 	"devDependencies": {
 		"@bomb.sh/tools": "^0.5.4",
+        "@bomb.sh/args": "catalog:",
+        "@clack/prompts": "catalog:",
 		"@types/node": "^22"
 	},
 	"devEngines": {
