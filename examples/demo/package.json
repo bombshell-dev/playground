@@ -1,11 +1,7 @@
 {
-	"name": "@bomb.sh/playground",
+	"name": "demo",
 	"version": "0.0.0",
-	"keywords": [
-		"bombshell",
-		"cli"
-	],
-	"homepage": "https://bomb.sh/docs/playground",
+	"private": true,
 	"license": "MIT",
 	"author": {
 		"name": "Bombshell",
@@ -14,20 +10,25 @@
 	},
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/bombshell-dev/playground.git"
+		"url": "git+https://github.com/bombshell-dev/playground.git",
+		"directory": "packages/demo"
 	},
 	"type": "module",
+	"exports": {
+		".": {
+			"import": "./dist/index.js"
+		},
+		"./package.json": "./package.json"
+	},
 	"scripts": {
-		"playground": "NODE_NO_WARNINGS=1 node --experimental-transform-types ./scripts/playground.ts",
+		"dev": "bsh dev",
+		"build": "bsh build",
 		"format": "bsh format",
 		"lint": "bsh lint",
 		"test": "bsh test"
 	},
-	"devDependencies": {
-		"@bomb.sh/args": "catalog:",
-		"@bomb.sh/tools": "^0.5.4",
-		"@clack/prompts": "catalog:",
-		"@types/node": "^22"
+	"dependencies": {
+		"@bomb.sh/tty": "catalog:"
 	},
 	"devEngines": {
 		"packageManager": {
