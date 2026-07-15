@@ -1,6 +1,0 @@
-node_modules/
-.cache/
-dist/
-artifacts/
-native/pty-host-rust/target/
-.ghostwright/
