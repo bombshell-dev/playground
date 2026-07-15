@@ -286,8 +286,24 @@ export interface AsyncLocatorExpectation {
   toBeStable(options?: StableAssertionOptions): Promise<LocatorMatch>;
 }
 export interface OperationTerminalExpectation {
+  toSatisfy(
+    predicate: (snapshot: ScreenSnapshot) => boolean,
+    options?: StableAssertionOptions,
+  ): Operation<ScreenSnapshot>;
+  toHaveShown(
+    predicate: (snapshot: ScreenSnapshot) => boolean,
+    options?: TransientAssertionOptions,
+  ): Operation<ScreenRevision>;
   toHaveShownText(text: string, options?: TransientAssertionOptions): Operation<ScreenRevision>;
 }
 export interface AsyncTerminalExpectation {
+  toSatisfy(
+    predicate: (snapshot: ScreenSnapshot) => boolean,
+    options?: StableAssertionOptions,
+  ): Promise<ScreenSnapshot>;
+  toHaveShown(
+    predicate: (snapshot: ScreenSnapshot) => boolean,
+    options?: TransientAssertionOptions,
+  ): Promise<ScreenRevision>;
   toHaveShownText(text: string, options?: TransientAssertionOptions): Promise<ScreenRevision>;
 }

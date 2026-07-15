@@ -24,6 +24,8 @@ The callback is the ownership scope: return, throw, or cancellation closes the t
 
 A sidecar output frame is one OS PTY read, not a pixel-rendered frame. The kernel may combine application writes; Ghostwright never splits a read into synthetic intermediate revisions or coalesces separate sidecar output frames.
 
+Assertions are revision-driven rather than polling-based. Locator assertions provide `toBePresent`, `toBeStable`, and `toBeAbsent`. Terminal assertions provide `toSatisfy` for converged screen predicates and `toHaveShown`/`toHaveShownText` for transient revision history after an action receipt.
+
 ## Security
 
 Ghostwright is **not a sandbox**. Commands run directly without an implicit shell and retain the caller's filesystem, network, process, and credential permissions. Launch a shell explicitly if shell syntax is required.

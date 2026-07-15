@@ -3,6 +3,7 @@ import type { AsyncLocatorExpectation, AsyncTerminalExpectation } from "./types-
 import type {
   AssertionOptions,
   ScreenRevision,
+  ScreenSnapshot,
   StableAssertionOptions,
   TransientAssertionOptions,
 } from "../types.ts";
@@ -156,7 +157,47 @@ class LocatorExpectation implements AsyncLocatorExpectation {
 }
 class TerminalExpectation implements AsyncTerminalExpectation {
   constructor(readonly session: TerminalSession) {}
-  async toHaveShownText(text: string, options: TransientAssertionOptions = {}) {
+  async toSatisfy(
+    predicate: (snapshot: ScreenSnapshot) => boolean,
+    options: StableAssertionOptions = {},
+  ) {
+    const timeout = options.timeoutMs ?? this.session.options.assertionTimeoutMs ?? 5000,
+      settle = options.settleMs ?? this.session.options.settleMs ?? 100,
+      started = performance.now();
+    for (;;) {
+      const snapshot = this.session.screen.current();
+      if (predicate(snapshot)) {
+        const remaining = Math.max(0, settle - (this.session.now() - snapshot.lastVisualChangeAt));
+        if (remaining === 0) return snapshot;
+        if (performance.now() - started + remaining > timeout)
+          throw new TerminalAssertionError(
+            diagnostic(this.session, "screen predicate to converge", timeout, settle),
+          );
+        await new Promise<void>((resolve) => {
+          const unsubscribe = this.session.subscribe(() => {
+              clearTimeout(timer);
+              unsubscribe();
+              resolve();
+            }),
+            timer = setTimeout(() => {
+              unsubscribe();
+              resolve();
+            }, remaining);
+        });
+        continue;
+      }
+      await wait(
+        this.session,
+        () => predicate(this.session.screen.current()),
+        Math.max(1, timeout - (performance.now() - started)),
+        () => diagnostic(this.session, "screen predicate to converge", timeout, settle),
+      );
+    }
+  }
+  async toHaveShown(
+    predicate: (snapshot: ScreenSnapshot) => boolean,
+    options: TransientAssertionOptions = {},
+  ) {
     const timeout = options.timeoutMs ?? this.session.options.assertionTimeoutMs ?? 5000,
       baseline =
         typeof options.since === "number"
@@ -165,24 +206,22 @@ class TerminalExpectation implements AsyncTerminalExpectation {
             this.session.lastAction?.screenSequenceBefore ??
             this.session.screen.current().sequence);
     const find = () =>
-      this.session
-        .revisionsSince(baseline)
-        .find((r) => r.snapshot.lines.some((l) => l.text.includes(text)));
+      this.session.revisionsSince(baseline).find((revision) => predicate(revision.snapshot));
     let result = find();
-    if (!result) {
+    if (!result)
       await wait(
         this.session,
         () => !!(result = find()),
         timeout,
-        () =>
-          diagnostic(
-            this.session,
-            `${JSON.stringify(text)} to have been shown since revision ${baseline}`,
-            timeout,
-          ),
+        () => diagnostic(this.session, `screen predicate since revision ${baseline}`, timeout),
       );
-    }
     return result as ScreenRevision;
+  }
+  toHaveShownText(text: string, options: TransientAssertionOptions = {}) {
+    return this.toHaveShown(
+      (snapshot) => snapshot.lines.some((line) => line.text.includes(text)),
+      options,
+    );
   }
 }
 export function expectTerminal(

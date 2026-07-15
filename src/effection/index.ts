@@ -11,6 +11,7 @@ import type {
   Point,
   Rect,
   StableAssertionOptions,
+  ScreenSnapshot,
   TerminalLaunchOptions,
   TextLocatorOptions,
   TraceableInputOptions,
@@ -123,6 +124,12 @@ export function expectOperation(target: EffectionLocator | EffectionTerminal) {
   }
   const e = expectAsync(target.inner) as any;
   return {
+    toSatisfy: (predicate: (snapshot: ScreenSnapshot) => boolean, o?: StableAssertionOptions) =>
+      op(() => e.toSatisfy(predicate, o)),
+    toHaveShown: (
+      predicate: (snapshot: ScreenSnapshot) => boolean,
+      o?: TransientAssertionOptions,
+    ) => op(() => e.toHaveShown(predicate, o)),
     toHaveShownText: (t: string, o?: TransientAssertionOptions) =>
       op(() => e.toHaveShownText(t, o)),
   };
