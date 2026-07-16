@@ -53,7 +53,7 @@ function makeTextInput(root: Root, parent: Node, name: string): void {
 	node.setAttribute('tabindex', 0);
 	node.setAttribute('value', '');
 	layout(node, () => {
-		const color = node.getAttribute('focused') ? rgba(255, 255, 255) : GRAY;
+		const color = node.states.has('focus') ? rgba(255, 255, 255) : GRAY;
 		const border = { color, top: 1, right: 1, bottom: 1, left: 1 };
 		return [
 			open(node.id, {

@@ -24,7 +24,7 @@
     },
     "dependencies": {
         "@bomb.sh/dom": "workspace:*",
-        "@bomb.sh/tty": "catalog:*"
+        "@bomb.sh/tty": "catalog:"
     },
     "devDependencies": {
         "@bomb.sh/tools": "latest"

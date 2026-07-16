@@ -17,7 +17,7 @@ describe('FocusManager construction', () => {
 		addChild(root, root.documentElement, 'B', 0);
 		const focus = new FocusManager(root.documentElement);
 		expect(focus.activeElement).toBe(a);
-		expect(a.getAttribute('focused')).toBe(true);
+		expect(a.states.has('focus')).toBe(true);
 		root.destroy();
 	});
 
@@ -25,7 +25,7 @@ describe('FocusManager construction', () => {
 		const root = createRoot();
 		const focus = new FocusManager(root.documentElement);
 		expect(focus.activeElement).toBe(root.documentElement);
-		expect(root.documentElement.hasAttribute('focused')).toBe(false);
+		expect(root.documentElement.states.has('focus')).toBe(false);
 		root.destroy();
 	});
 
@@ -75,7 +75,7 @@ describe('tabindex', () => {
 		expect(focus.activeElement.localName).toEqual('B'); // ring skips hidden
 		focus.focus(hidden); // but programmatic focus works
 		expect(focus.activeElement).toBe(hidden);
-		expect(a.hasAttribute('focused')).toBe(false);
+		expect(a.states.has('focus')).toBe(false);
 		root.destroy();
 	});
 });
@@ -160,8 +160,8 @@ describe('focus()', () => {
 		const focus = new FocusManager(root.documentElement); // seeds A
 		focus.focus(b);
 		expect(focus.activeElement).toBe(b);
-		expect(a.hasAttribute('focused')).toBe(false);
-		expect(b.getAttribute('focused')).toBe(true);
+		expect(a.states.has('focus')).toBe(false);
+		expect(b.states.has('focus')).toBe(true);
 		root.destroy();
 	});
 
@@ -246,7 +246,7 @@ describe('focused node removal', () => {
 		const a = addChild(root, root.documentElement, 'A', 0);
 		addChild(root, root.documentElement, 'B', 0);
 		const focus = new FocusManager(root.documentElement); // seeds A
-		expect(a.getAttribute('focused')).toBe(true);
+		expect(a.states.has('focus')).toBe(true);
 		a.remove();
 		expect(focus.activeElement.localName).toEqual('B');
 		root.destroy();

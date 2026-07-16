@@ -51,7 +51,7 @@ diffing, no ops in this package.
 // compose with an op-based renderer (e.g. @bomb.sh/tty): read state, return ops
 function textInput(node: Node): Op[] {
 	return [
-		open(node.id, { border: node.getAttribute('focused') ? focusedBorder : border }),
+		open(node.id, { border: node.states.has('focus') ? focusedBorder : border }),
 		text(String(node.getAttribute('value') ?? '')),
 		close(),
 	];
@@ -74,6 +74,9 @@ reordering:
 - State is **attributes**: `getAttribute`/`setAttribute`/`hasAttribute`/
   `removeAttribute`, with a frozen `node.attributes` snapshot for renderers.
   Focusability is literally `setAttribute('tabindex', 0)`.
+- Derived pseudo-class flags live in **`node.states`** (`'focus'`,
+  `'focus-within'`) — the `ElementInternals.states` analog. Managers write
+  them, renderers read them; the attribute namespace stays author-owned.
 
 Deliberate divergences, documented rather than hidden: attribute values are
 JsonValue (renderers need structure; the DOM's string-only rule buys nothing
@@ -124,9 +127,10 @@ Focus is structured the way the DOM structures it — authoritative state held
 by an owner, not a property scanned for:
 
 - **Focusability is `tabindex`**, like the DOM: `setAttribute('tabindex', 0)`
-  joins sequential traversal; `-1` is focusable only via `focus()`. The
-  `focused` attribute is the derived projection renderers read (`:focus`),
-  written only on transitions.
+  joins sequential traversal; `-1` is focusable only via `focus()`. Transitions
+  project into `node.states`: `'focus'` on the active node, `'focus-within'`
+  up its ancestor chain — the pseudo-classes renderers match on, minus the
+  colon.
 - **`FocusManager`** is the `document.activeElement` analog: an O(1) pointer,
   `focus()`, and sequential `next()`/`previous()` (Tab) traversal. Focus
   changes fire `blur`/`focusout` at the old node and `focus`/`focusin` at the

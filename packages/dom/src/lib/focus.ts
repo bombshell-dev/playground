@@ -6,8 +6,9 @@
 //
 // - Focusability is the `tabindex` attribute, like the DOM: `0` (or any
 //   non-negative number) joins sequential traversal; `-1` is focusable only
-//   programmatically. The `focused` attribute is a derived projection for
-//   renderers (`:focus`), written only on transitions.
+//   programmatically. The manager projects transitions into `node.states` for
+//   renderers: `'focus'` on the active node, `'focus-within'` on its ancestor
+//   chain — the pseudo-classes, minus the colon. Attributes stay author-owned.
 // - `FocusManager` is `document`'s focus machinery: an `activeElement` pointer,
 //   `focus()`, and sequential (Tab) traversal.
 // - `focusgroup` is an attribute on a container using the Open UI
@@ -225,14 +226,24 @@ export class FocusManager {
 		}
 		const old = this.#active;
 		if (old) {
-			old.removeAttribute('focused');
+			this.#clearStates(old);
 			old.dispatchEvent(new FocusEvent('blur', node));
 			old.dispatchEvent(new FocusEvent('focusout', node));
 		}
 		this.#active = node;
-		node.setAttribute('focused', true);
+		node.states.add('focus');
+		for (let n: Node | undefined = node; n; n = n.parent) {
+			n.states.add('focus-within');
+		}
 		node.dispatchEvent(new FocusEvent('focus', old));
 		node.dispatchEvent(new FocusEvent('focusin', old));
+	}
+
+	#clearStates(node: Node): void {
+		node.states.delete('focus');
+		for (let n: Node | undefined = node; n; n = n.parent) {
+			n.states.delete('focus-within');
+		}
 	}
 
 	next(): void {
@@ -327,6 +338,10 @@ export class FocusManager {
 				return;
 			}
 		}
+		// No successor: clear states while the removed chain is still attached
+		// (this listener runs before detach), so surviving ancestors drop
+		// `focus-within`.
+		this.#clearStates(active);
 		this.#active = undefined;
 	}
 }

@@ -27,6 +27,41 @@ class NodeDataImpl implements NodeData {
 	}
 }
 
+// CustomStateSet analog: a Set of pseudo-class flags that invalidates
+// rendering on real mutations only (adding a present state or deleting an
+// absent one is a no-op, no `change`).
+class StateSetImpl extends Set<string> {
+	#tree: TreeState;
+
+	constructor(tree: TreeState) {
+		super();
+		this.#tree = tree;
+	}
+
+	override add(state: string): this {
+		if (!super.has(state)) {
+			super.add(state);
+			this.#tree.markDirty();
+		}
+		return this;
+	}
+
+	override delete(state: string): boolean {
+		const deleted = super.delete(state);
+		if (deleted) {
+			this.#tree.markDirty();
+		}
+		return deleted;
+	}
+
+	override clear(): void {
+		if (this.size > 0) {
+			super.clear();
+			this.#tree.markDirty();
+		}
+	}
+}
+
 // Shared per-tree bookkeeping; owned by the root, threaded to every node.
 // `registry` holds CONNECTED nodes only, so getElementById behaves like the
 // DOM's (detached nodes are not resolvable by id).
@@ -42,6 +77,7 @@ export class NodeImpl extends PropagationTarget implements Node {
 	_children: NodeImpl[] = [];
 	_parent: NodeImpl | undefined;
 	readonly data: NodeData = new NodeDataImpl();
+	readonly states: Set<string>;
 	readonly #tree: TreeState;
 	readonly #controller = new AbortController();
 
@@ -52,6 +88,7 @@ export class NodeImpl extends PropagationTarget implements Node {
 	) {
 		super();
 		this.#tree = tree;
+		this.states = new StateSetImpl(tree);
 	}
 
 	protected override getParentTarget(): PropagationTarget | undefined {

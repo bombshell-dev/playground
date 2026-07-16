@@ -39,6 +39,12 @@ export interface Node extends EventTarget {
 	readonly parent: Node | undefined;
 	readonly isConnected: boolean;
 	readonly data: NodeData;
+	// Pseudo-class flags (`'focus'`, `'focus-within'`, ...) — the
+	// ElementInternals.states analog, kept out of the author-owned attribute
+	// namespace. Convention: authors write attributes; managers (FocusManager,
+	// ...) write states; renderers read both. Mutations coalesce into the
+	// root's `change` event, like attributes.
+	readonly states: Set<string>;
 	// Aborts when this node is removed (or the root destroyed). Hand it to
 	// anything whose lifetime should match the node's: listeners on ancestors
 	// (`{ signal }`), timers, fetch, streams. Cancellation is cooperative.
