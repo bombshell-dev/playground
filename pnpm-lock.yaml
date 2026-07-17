@@ -33,6 +33,12 @@ importers:
         specifier: ^22
         version: 22.20.1
 
+  experiments/ghostwright:
+    dependencies:
+      effection:
+        specifier: ^4.0.2
+        version: 4.0.3
+
   examples/demo:
     dependencies:
       '@bomb.sh/tty':
@@ -998,6 +1004,10 @@ packages:
     peerDependenciesMeta:
       oxc-resolver:
         optional: true
+
+  effection@4.0.3:
+    resolution: {integrity: sha512-bmzMdw1+q6d+O6J2iU314cXofWsZEDmeF2nqOjgOJe7R964RDJKamXdoO3iBvmMa7CJhgNcjZHow1ILzUP8Bjg==}
+    engines: {node: '>= 16'}
 
   empathic@2.0.1:
     resolution: {integrity: sha512-YGRs8knHhKHVShLkFET/rWAU8kmHbOV5LwN938RHI0pljAJ1Gf6SzXsSmRaEzcXTtOOmVqJ5+WtQPL5uigY50Q==}
@@ -2152,6 +2162,8 @@ snapshots:
   dts-resolver@3.0.0(oxc-resolver@11.21.3):
     optionalDependencies:
       oxc-resolver: 11.21.3
+
+  effection@4.0.3: {}
 
   empathic@2.0.1: {}
 
