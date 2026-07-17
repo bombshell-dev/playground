@@ -1,5 +1,5 @@
 {
-	"extends": "@bomb.sh/tools/tsconfig.json",
+	"extends": ["@bomb.sh/tools/tsconfig.json"],
 	"compilerOptions": {
 		"types": ["node"]
 	}
