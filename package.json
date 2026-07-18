@@ -17,10 +17,13 @@
 		"url": "git+https://github.com/bombshell-dev/playground.git"
 	},
 	"type": "module",
+	"publishConfig": {
+		"access": "public"
+	},
 	"scripts": {
 		"playground": "NODE_NO_WARNINGS=1 node --experimental-transform-types ./scripts/playground.ts",
 		"format": "bsh format",
-		"lint": "bsh lint",
+		"lint": "bsh lint .",
 		"test": "bsh test --exclude 'experiments/ghostwright/**'"
 	},
 	"devDependencies": {

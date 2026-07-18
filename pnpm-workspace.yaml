@@ -8,4 +8,5 @@ packages:
 catalog:
   '@bomb.sh/tty': '^0.8.0'
   '@bomb.sh/args': '^0.3.1'
+  '@clack/ui': 'https://pkg.pr.new/bombshell-dev/ui/@clack/ui@a60ac12'
   '@clack/prompts': '^1.7.0'

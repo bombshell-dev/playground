@@ -15,9 +15,7 @@
 	},
 	"type": "module",
 	"exports": {
-		".": {
-			"import": "./dist/index.js"
-		},
+		".": "./src/index.ts",
 		"./package.json": "./package.json"
 	},
 	"scripts": {
