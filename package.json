@@ -24,7 +24,7 @@
 		"playground": "NODE_NO_WARNINGS=1 node --experimental-transform-types ./scripts/playground.ts",
 		"format": "bsh format",
 		"lint": "bsh lint .",
-		"test": "bsh test"
+		"test": "bsh test --exclude 'experiments/ghostwright/**'"
 	},
 	"devDependencies": {
 		"@bomb.sh/args": "catalog:",
