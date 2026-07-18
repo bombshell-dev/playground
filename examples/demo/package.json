@@ -11,13 +11,11 @@
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/bombshell-dev/playground.git",
-		"directory": "packages/demo"
+		"directory": "examples/demo"
 	},
 	"type": "module",
 	"exports": {
-		".": {
-			"import": "./dist/index.js"
-		},
+		".": "./src/index.ts",
 		"./package.json": "./package.json"
 	},
 	"scripts": {

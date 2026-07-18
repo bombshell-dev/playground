@@ -23,13 +23,13 @@
 	"scripts": {
 		"playground": "NODE_NO_WARNINGS=1 node --experimental-transform-types ./scripts/playground.ts",
 		"format": "bsh format",
-		"lint": "bsh lint",
+		"lint": "bsh lint .",
 		"test": "bsh test"
 	},
 	"devDependencies": {
+		"@bomb.sh/args": "catalog:",
 		"@bomb.sh/tools": "^0.5.4",
-        "@bomb.sh/args": "catalog:",
-        "@clack/prompts": "catalog:",
+		"@clack/prompts": "catalog:",
 		"@types/node": "^22"
 	},
 	"devEngines": {
