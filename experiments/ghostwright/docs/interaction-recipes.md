@@ -6,16 +6,16 @@ These recipes use the async API. With Effection, replace `await` with `yield*` a
 
 ```ts
 await withTerminalAsync(
-  {
-    command: "my-cli",
-    args: ["--interactive"],
-    cwd: process.cwd(),
-    env: { APP_MODE: "test" },
-    viewport: { columns: 80, rows: 24 },
-  },
-  async (terminal) => {
-    await expectTerminal(terminal.getByText("Ready")).toBePresent();
-  },
+	{
+		command: 'my-cli',
+		args: ['--interactive'],
+		cwd: process.cwd(),
+		env: { APP_MODE: 'test' },
+		viewport: { columns: 80, rows: 24 },
+	},
+	async (terminal) => {
+		await expectTerminal(terminal.getByText('Ready')).toBePresent();
+	},
 );
 ```
 
@@ -24,10 +24,10 @@ The callback owns the session. Normal return, throw, assertion failure, and canc
 ## Type into a canonical shell prompt
 
 ```ts
-await expectTerminal(terminal.getByText("Name: ")).toBePresent();
-await terminal.keyboard.type("Ada");
-await terminal.keyboard.press("Enter");
-await expectTerminal(terminal.getByText("Hello, Ada!")).toBeStable();
+await expectTerminal(terminal.getByText('Name: ')).toBePresent();
+await terminal.keyboard.type('Ada');
+await terminal.keyboard.press('Enter');
+await expectTerminal(terminal.getByText('Hello, Ada!')).toBeStable();
 ```
 
 `keyboard.type()` sends user key input without an implicit delay. `Enter` is a separate key action.
@@ -35,9 +35,9 @@ await expectTerminal(terminal.getByText("Hello, Ada!")).toBeStable();
 ## Keyboard shortcuts
 
 ```ts
-await terminal.keyboard.press({ key: "c", control: true });
-await terminal.keyboard.press({ key: "Tab", shift: true });
-await terminal.keyboard.press({ key: "x", alt: true });
+await terminal.keyboard.press({ key: 'c', control: true });
+await terminal.keyboard.press({ key: 'Tab', shift: true });
+await terminal.keyboard.press({ key: 'x', alt: true });
 ```
 
 Keyboard encoding uses current Ghostty terminal modes, including application cursor keys, backarrow mode, and Kitty keyboard flags.
@@ -45,14 +45,14 @@ Keyboard encoding uses current Ghostty terminal modes, including application cur
 User Control-C is terminal input. In canonical mode with `ISIG`, line discipline normally delivers `SIGINT`; in raw mode the application receives byte `0x03`. Administrative signaling is separate:
 
 ```ts
-await terminal.process.signal("SIGINT", "child");
-await terminal.process.signal("SIGTERM", "process-group");
+await terminal.process.signal('SIGINT', 'child');
+await terminal.process.signal('SIGTERM', 'process-group');
 ```
 
 ## Paste
 
 ```ts
-await terminal.keyboard.paste("first line\nsecond line");
+await terminal.keyboard.paste('first line\nsecond line');
 ```
 
 Paste uses Ghostty paste encoding and active bracketed-paste mode. It is not implemented as delayed key-by-key typing.
@@ -60,8 +60,8 @@ Paste uses Ghostty paste encoding and active bracketed-paste mode. It is not imp
 Redact sensitive input from traces:
 
 ```ts
-await terminal.keyboard.type(secret, { trace: "redact" });
-await terminal.keyboard.paste(secret, { trace: "redact" });
+await terminal.keyboard.type(secret, { trace: 'redact' });
+await terminal.keyboard.paste(secret, { trace: 'redact' });
 ```
 
 Application output can still expose the value.
@@ -69,9 +69,7 @@ Application output can still expose the value.
 ## Raw bytes
 
 ```ts
-await terminal.keyboard.write(
-  new Uint8Array([0x1b, 0x5b, 0x41]),
-);
+await terminal.keyboard.write(new Uint8Array([0x1b, 0x5b, 0x41]));
 ```
 
 Use raw input only when exact bytes are part of the test. Prefer `press`, `type`, or `paste` for mode-aware interaction.
@@ -79,12 +77,12 @@ Use raw input only when exact bytes are part of the test. Prefer `press`, `type`
 ## Click visible text
 
 ```ts
-const action = await terminal.getByText("Save", { exact: true }).click();
+const action = await terminal.getByText('Save', { exact: true }).click();
 
-await expectTerminal(terminal).toHaveShownText("Saving", {
-  since: action,
+await expectTerminal(terminal).toHaveShownText('Saving', {
+	since: action,
 });
-await expectTerminal(terminal.getByText("Saved")).toBeStable();
+await expectTerminal(terminal.getByText('Saved')).toBeStable();
 ```
 
 The locator resolves to cell geometry and performs ordinary terminal mouse behavior. If mouse reporting is disabled, no bytes are delivered to the child and the receipt reports `deliveredToChild: false`.
@@ -93,14 +91,10 @@ The locator resolves to cell geometry and performs ordinary terminal mouse behav
 
 ```ts
 await terminal.mouse.move({ column: 10, row: 4 });
-await terminal.mouse.down({ column: 10, row: 4 }, { button: "left" });
-await terminal.mouse.up({ column: 10, row: 4 }, { button: "left" });
+await terminal.mouse.down({ column: 10, row: 4 }, { button: 'left' });
+await terminal.mouse.up({ column: 10, row: 4 }, { button: 'left' });
 
-await terminal.mouse.drag(
-  { column: 2, row: 3 },
-  { column: 20, row: 3 },
-  { button: "left" },
-);
+await terminal.mouse.drag({ column: 2, row: 3 }, { column: 20, row: 3 }, { button: 'left' });
 ```
 
 Coordinates are zero-based terminal cells. Out-of-range coordinates fail before input is sent.
@@ -109,9 +103,9 @@ Coordinates are zero-based terminal cells. Out-of-range coordinates fail before 
 
 ```ts
 await terminal.mouse.wheel({
-  column: 10,
-  row: 4,
-  deltaRows: 1,
+	column: 10,
+	row: 4,
+	deltaRows: 1,
 });
 ```
 
@@ -121,15 +115,13 @@ Positive row deltas scroll down; negative deltas scroll up. `deltaColumns` sends
 
 ```ts
 await terminal.resize({
-  columns: 100,
-  rows: 30,
+	columns: 100,
+	rows: 30,
 });
 
 await expectTerminal(terminal).toSatisfy(
-  (snapshot) =>
-    snapshot.viewport.columns === 100 &&
-    snapshot.viewport.rows === 30,
-  { timeoutMs: 5_000, settleMs: 100 },
+	(snapshot) => snapshot.viewport.columns === 100 && snapshot.viewport.rows === 30,
+	{ timeoutMs: 5_000, settleMs: 100 },
 );
 ```
 
@@ -141,7 +133,7 @@ Ghostwright updates both the Ghostty engine and kernel PTY dimensions. The foreg
 const running = terminal.process.status();
 
 const status = await terminal.process.waitForExit({
-  timeoutMs: 5_000,
+	timeoutMs: 5_000,
 });
 
 expect(status.exitCode).toBe(0);
@@ -157,11 +149,11 @@ Direct-child exit and PTY EOF are tracked separately. Ghostwright drains final o
 const snapshot = terminal.screen.current();
 const cell = terminal.screen.getCell({ column: 4, row: 2 });
 
-expect(cell.text).toBe("A");
+expect(cell.text).toBe('A');
 expect(cell.style.bold).toBe(true);
 expect(cell.style.foreground).toEqual({
-  kind: "palette",
-  index: 42,
+	kind: 'palette',
+	index: 42,
 });
 ```
 
@@ -185,15 +177,15 @@ Runnable versions:
 ## Effection form
 
 ```ts
-import { run } from "effection";
-import { expectTerminal, withTerminal } from "ghostwright";
+import { run } from 'effection';
+import { expectTerminal, withTerminal } from 'ghostwright';
 
 await run(function* () {
-  return yield* withTerminal(options, function* (terminal) {
-    yield* expectTerminal(terminal.getByText("Ready")).toBePresent();
-    yield* terminal.keyboard.press("Enter");
-    yield* expectTerminal(terminal.getByText("Done")).toBeStable();
-  });
+	return yield* withTerminal(options, function* (terminal) {
+		yield* expectTerminal(terminal.getByText('Ready')).toBePresent();
+		yield* terminal.keyboard.press('Enter');
+		yield* expectTerminal(terminal.getByText('Done')).toBeStable();
+	});
 });
 ```
 

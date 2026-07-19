@@ -5,9 +5,9 @@ Generated on 2026-07-15T09:03:59.623Z by `bun run compare:hosts` on darwin-arm64
 Both candidates passed the same GWPT/PTY contract before measurement. Candidate outputs are generated under the ignored `.cache/hosts` directory and are not included in the npm artifact inventory.
 
 | Implementation | Source files | Nonblank LOC | `unsafe` tokens | Stripped binary | Warm build | Median launch/exit | Raw 1 MiB transport |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| Pure C | 5 | 1083 | 0 | 36.1 KiB | 710.9 ms | 18.6 ms | 36.1 MiB/s |
-| Rust | 3 | 979 | 21 | 345.0 KiB | 57.4 ms | 19.8 ms | 38.3 MiB/s |
+| -------------- | -----------: | -----------: | --------------: | --------------: | ---------: | -----------------: | ------------------: |
+| Pure C         |            5 |         1083 |               0 |        36.1 KiB |   710.9 ms |            18.6 ms |          36.1 MiB/s |
+| Rust           |            3 |          979 |              21 |       345.0 KiB |    57.4 ms |            19.8 ms |          38.3 MiB/s |
 
 ## Pure C
 
