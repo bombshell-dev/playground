@@ -1,6 +1,7 @@
 import { $ } from 'bun';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile } from 'node:fs/promises';
+import { GhostwrightError } from '../src/errors.ts';
 
 const root = new URL('..', import.meta.url).pathname,
 	cache = `${root}/.cache/ghostty`,
@@ -12,4 +13,7 @@ await $`git -C ${cache} fetch --depth=1 origin ${lock.ghostty.commit}`;
 await $`git -C ${cache} checkout --detach ${lock.ghostty.commit}`;
 const actual = (await $`git -C ${cache} rev-parse HEAD`.text()).trim();
 if (actual !== lock.ghostty.commit)
-	throw new Error(`Ghostty checkout mismatch: expected ${lock.ghostty.commit}, got ${actual}`);
+	throw new GhostwrightError({
+		code: 'GW_CHECKOUT_MISMATCH',
+		message: `Ghostty checkout mismatch: expected ${lock.ghostty.commit}, got ${actual}`,
+	});

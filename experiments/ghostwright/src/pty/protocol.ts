@@ -25,7 +25,7 @@ export interface Frame {
 	payload: Uint8Array;
 }
 
-const concat = (parts: readonly Uint8Array[]) => {
+const concat = (parts: readonly Uint8Array[]): Uint8Array => {
 	const n = parts.reduce((s, p) => s + p.length, 0),
 		out = new Uint8Array(n);
 	let o = 0;
@@ -45,6 +45,7 @@ function head(major: number, n: number): Uint8Array {
 	new DataView(b.buffer).setUint32(1, n);
 	return b;
 }
+/** Encode a JavaScript value to CBOR binary format. */
 export function encodeCbor(value: unknown): Uint8Array {
 	if (value === null) return Uint8Array.of(0xf6);
 	if (value === false) return Uint8Array.of(0xf4);
@@ -63,15 +64,17 @@ export function encodeCbor(value: unknown): Uint8Array {
 		const entries = Object.entries(value as Record<string, unknown>)
 			.filter(([, v]) => v !== undefined)
 			.map(([k, v]) => [encodeCbor(k), encodeCbor(v)] as const)
-			.sort((a, b) => a[0].length - b[0].length || compare(a[0], b[0]));
+			.toSorted((a, b) => a[0].length - b[0].length || compare(a[0], b[0]));
 		return concat([head(5, entries.length), ...entries.flat()]);
 	}
 	throw new ProtocolError(`Unsupported CBOR value: ${typeof value}`);
 }
-function compare(a: Uint8Array, b: Uint8Array) {
+function compare(a: Uint8Array, b: Uint8Array): number {
 	for (let i = 0; i < Math.min(a.length, b.length); i++) if (a[i] !== b[i]) return a[i] - b[i];
 	return a.length - b.length;
 }
+const bad = (): ProtocolError => new ProtocolError('Truncated CBOR payload');
+/** Decode a CBOR binary payload to a JavaScript value. */
 export function decodeCbor(bytes: Uint8Array): unknown {
 	let p = 0;
 	const readLen = (ai: number) => {
@@ -98,7 +101,6 @@ export function decodeCbor(bytes: Uint8Array): unknown {
 		}
 		throw new ProtocolError('Unsupported or indefinite CBOR length');
 	};
-	const bad = () => new ProtocolError('Truncated CBOR payload');
 	const one = (depth = 0): unknown => {
 		if (depth > 64) throw new ProtocolError('CBOR nesting limit exceeded');
 		if (p >= bytes.length) throw bad();
@@ -155,6 +157,7 @@ export function decodeCbor(bytes: Uint8Array): unknown {
 	if (p !== bytes.length) throw new ProtocolError('Trailing CBOR bytes');
 	return result;
 }
+/** Encode a frame to the GWPT wire format. */
 export function encodeFrame(frame: Frame): Uint8Array {
 	const raw = frame.kind === FrameKind.WRITE || frame.kind === FrameKind.OUTPUT;
 	const max = raw ? 65536 : 1024 * 1024;

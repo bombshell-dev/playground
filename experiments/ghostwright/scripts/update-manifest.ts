@@ -7,7 +7,7 @@ const root = new URL('../artifacts/', import.meta.url),
 		'terminfo/78/xterm-ghostty',
 	];
 const artifacts: Record<string, { sha256: string }> = {};
-for (const name of files.sort()) {
+for (const name of files.toSorted()) {
 	artifacts[`artifacts/${name}`] = {
 		sha256: createHash('sha256')
 			.update(await readFile(new URL(name, root)))

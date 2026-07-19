@@ -1,8 +1,11 @@
+// oxlint-disable-next-line no-restricted-imports -- path module needed for path resolution
 import { resolve } from 'node:path';
 import { expectTerminal, withTerminalAsync } from '../src/index.ts';
 import { usePtyHostForTesting } from '../src/profile.ts';
 import { SidecarClient } from '../src/pty/client.ts';
+import { GhostwrightError } from '../src/errors.ts';
 
+/** Run the host contract test suite against a PTY host binary. */
 export async function runHostContract(hostPath: string): Promise<void> {
 	const absolute = resolve(hostPath),
 		restore = usePtyHostForTesting(absolute);
@@ -17,7 +20,10 @@ export async function runHostContract(hostPath: string): Promise<void> {
 				await expectTerminal(terminal.getByText('TTY READY')).toBePresent();
 				const status = await terminal.process.waitForExit();
 				if (status.exitCode !== 0 || !status.ptyEof)
-					throw new Error(`invalid basic status: ${JSON.stringify(status)}`);
+					throw new GhostwrightError({
+						code: 'GW_CONTRACT_BASIC',
+						message: `invalid basic status: ${JSON.stringify(status)}`,
+					});
 			},
 		);
 
@@ -50,7 +56,10 @@ export async function runHostContract(hostPath: string): Promise<void> {
 				await terminal.keyboard.press({ key: 'c', control: true });
 				await expectTerminal(terminal.getByText('INTERRUPTED')).toBePresent();
 				if ((await terminal.process.waitForExit()).exitCode !== 0)
-					throw new Error('canonical Control-C fixture failed');
+					throw new GhostwrightError({
+						code: 'GW_CONTRACT_SIGNAL',
+						message: 'canonical Control-C fixture failed',
+					});
 			},
 		);
 
@@ -68,7 +77,10 @@ export async function runHostContract(hostPath: string): Promise<void> {
 				await terminal.keyboard.press({ key: 'c', control: true });
 				await expectTerminal(terminal.getByText('RAW:03')).toBePresent();
 				if ((await terminal.process.waitForExit()).exitCode !== 0)
-					throw new Error('raw input fixture failed');
+					throw new GhostwrightError({
+						code: 'GW_CONTRACT_RAW',
+						message: 'raw input fixture failed',
+					});
 			},
 		);
 
@@ -84,11 +96,17 @@ export async function runHostContract(hostPath: string): Promise<void> {
 				await expectTerminal(terminal.getByText('FINAL')).toBePresent();
 				const status = await terminal.process.waitForExit({ timeoutMs: 1_000 });
 				if (status.exitCode !== 0 || !status.ptyEof)
-					throw new Error(`descendant drain failed: ${JSON.stringify(status)}`);
+					throw new GhostwrightError({
+						code: 'GW_CONTRACT_DRAIN',
+						message: `descendant drain failed: ${JSON.stringify(status)}`,
+					});
 			},
 		);
 		if (performance.now() - started > 1_000)
-			throw new Error('descendant cleanup exceeded deadline');
+			throw new GhostwrightError({
+				code: 'GW_CONTRACT_CLEANUP',
+				message: 'descendant cleanup exceeded deadline',
+			});
 
 		const client = await SidecarClient.start(absolute, 1_000);
 		try {
@@ -98,7 +116,11 @@ export async function runHostContract(hostPath: string): Promise<void> {
 			} catch {
 				rejected = true;
 			}
-			if (!rejected) throw new Error('host accepted WRITE before SPAWN');
+			if (!rejected)
+				throw new GhostwrightError({
+					code: 'GW_CONTRACT_ORDERING',
+					message: 'host accepted WRITE before SPAWN',
+				});
 		} finally {
 			await client.close(1_000).catch(() => undefined);
 		}
@@ -108,8 +130,13 @@ export async function runHostContract(hostPath: string): Promise<void> {
 }
 
 if (import.meta.main) {
-	const path = process.argv[2];
-	if (!path) throw new Error('usage: bun test/host-contract.ts <pty-host-path>');
-	await runHostContract(path);
-	console.log(`host contract passed: ${path}`);
+	const contractPath = process.argv[2];
+	if (!contractPath)
+		throw new GhostwrightError({
+			code: 'GW_MISSING_ARGS',
+			message: 'usage: bun test/host-contract.ts <pty-host-path>',
+		});
+	await runHostContract(contractPath);
+	// oxlint-disable-next-line no-console -- test script
+	console.log(`host contract passed: ${contractPath}`);
 }

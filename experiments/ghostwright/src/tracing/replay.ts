@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+// oxlint-disable-next-line no-restricted-imports -- path module needed for path resolution
 import { join } from 'node:path';
 import { AssetIntegrityError } from '../errors.ts';
 import type { ScreenRevision, ScreenSnapshot, Viewport } from '../types.ts';
@@ -9,7 +10,7 @@ export interface ReplayResult {
 	finalSnapshot: ScreenSnapshot;
 }
 
-function observable(snapshot: ScreenSnapshot) {
+function observable(snapshot: ScreenSnapshot): string {
 	return JSON.stringify({
 		viewport: snapshot.viewport,
 		activeBuffer: snapshot.activeBuffer,
@@ -21,6 +22,7 @@ function observable(snapshot: ScreenSnapshot) {
 	});
 }
 
+/** Replay a trace directory and return the screen revisions and final snapshot. */
 export async function replayTrace(directory: string): Promise<ReplayResult> {
 	const metadata = JSON.parse(await readFile(join(directory, 'metadata.json'), 'utf8'));
 	if (metadata.schemaVersion !== 1)

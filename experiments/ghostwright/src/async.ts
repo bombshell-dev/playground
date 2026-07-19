@@ -1,6 +1,7 @@
 import { call, run } from 'effection';
 import type { AsyncTerminal, TerminalLaunchOptions } from './types.ts';
 import { TerminalSession } from './terminal/session.ts';
+/** Launch a terminal session, run an async body, and clean up when done. */
 export async function withTerminalAsync<T>(
 	options: TerminalLaunchOptions,
 	body: (terminal: AsyncTerminal) => Promise<T>,

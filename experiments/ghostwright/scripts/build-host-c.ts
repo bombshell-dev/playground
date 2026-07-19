@@ -1,5 +1,6 @@
 import { $ } from 'bun';
 import { mkdir } from 'node:fs/promises';
+import { GhostwrightError } from '../src/errors.ts';
 
 const root = new URL('..', import.meta.url).pathname,
 	source = `${root}/native/pty-host-c`,
@@ -25,7 +26,11 @@ if (process.platform === 'darwin') {
 	await $`chmod +x ${output}`;
 	await $`cp ${output} ${cache}/pty-host-c`;
 } else {
-	throw new Error(`unsupported C host build platform ${process.platform}-${process.arch}`);
+	throw new GhostwrightError({
+		code: 'GW_UNSUPPORTED_PLATFORM',
+		message: `unsupported C host build platform ${process.platform}-${process.arch}`,
+	});
 }
 
+// oxlint-disable-next-line no-console -- build script
 console.log(`${cache}/pty-host-c`);

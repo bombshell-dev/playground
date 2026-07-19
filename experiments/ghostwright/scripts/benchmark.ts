@@ -1,17 +1,21 @@
 import { TerminalSession } from '../src/terminal/session.ts';
 
-async function measure(name: string, operation: () => Promise<void>, iterations: number) {
+async function measure(params: {
+	name: string;
+	operation: () => Promise<void>;
+	iterations: number;
+}): Promise<void> {
 	const samples: number[] = [];
-	for (let index = 0; index < iterations; index++) {
+	for (let index = 0; index < params.iterations; index++) {
 		const started = performance.now();
-		await operation();
+		await params.operation();
 		samples.push(performance.now() - started);
 	}
-	samples.sort((a, b) => a - b);
+	// oxlint-disable-next-line no-console -- benchmark script
 	console.log(
 		JSON.stringify({
-			name,
-			iterations,
+			name: params.name,
+			iterations: params.iterations,
 			medianMs: samples[Math.floor(samples.length / 2)],
 			minMs: samples[0],
 			maxMs: samples.at(-1),

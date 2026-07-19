@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+// oxlint-disable-next-line no-restricted-imports -- path module needed for path resolution
 import { dirname } from 'node:path';
 import {
 	DenoPermissionError,
@@ -13,7 +14,7 @@ import {
 	FrameDecoder,
 	FrameKind,
 	type Frame,
-} from './protocol';
+} from './protocol.ts';
 
 export interface SidecarEvents {
 	output: (data: Uint8Array, sequence: number) => void;
@@ -22,6 +23,9 @@ export interface SidecarEvents {
 	fatal: (error: Error) => void;
 }
 type Key = keyof SidecarEvents;
+type SpawnResponse = { pid?: number; processGroupId?: number };
+type AckResponse = { bytesWritten?: number };
+/** IPC client that communicates with a PTY host sidecar process. */
 export class SidecarClient {
 	#child: ChildProcessWithoutNullStreams;
 	#sequence = 1;
@@ -29,7 +33,7 @@ export class SidecarClient {
 		number,
 		{
 			kind: FrameKind;
-			resolve: (v: any) => void;
+			resolve: (v: unknown) => void;
 			reject: (e: unknown) => void;
 			timer: ReturnType<typeof setTimeout>;
 			interim?: Record<string, unknown>;
@@ -76,31 +80,34 @@ export class SidecarClient {
 			),
 		);
 	}
-	static async start(path: string, timeoutMs = 5000) {
+	static async start(path: string, timeoutMs = 5000): Promise<SidecarClient> {
 		const child = spawn(path, [], { stdio: ['pipe', 'pipe', 'pipe'] });
 		const c = new SidecarClient(child, timeoutMs);
 		await c.request(FrameKind.HELLO, { minVersion: 1, maxVersion: 1, clientVersion: '0.1.0' });
 		return c;
 	}
-	on<K extends Key>(key: K, listener: SidecarEvents[K]) {
+	on<K extends Key>(key: K, listener: SidecarEvents[K]): () => boolean {
 		this.#listeners[key].add(listener);
 		return () => this.#listeners[key].delete(listener);
 	}
-	#emit<K extends Key>(key: K, ...args: Parameters<SidecarEvents[K]>) {
+	#emit<K extends Key>(key: K, ...args: Parameters<SidecarEvents[K]>): void {
 		for (const f of this.#listeners[key])
 			try {
-				(f as (...a: any[]) => void)(...args);
+				(f as (...a: readonly unknown[]) => void)(...args);
 			} catch (e) {
 				this.#fail(e as Error);
 			}
 	}
-	#frame(f: Frame) {
+	#frame(f: Frame): void {
 		if (f.kind === FrameKind.OUTPUT) {
 			this.#emit('output', f.payload, f.sequence);
 			return;
 		}
 		if (f.kind === FrameKind.PROCESS_EXIT) {
-			this.#emit('exit', decodeCbor(f.payload) as any);
+			this.#emit(
+				'exit',
+				decodeCbor(f.payload) as { exitCode: number | null; signal: string | null },
+			);
 			return;
 		}
 		if (f.kind === FrameKind.PTY_EOF) {
@@ -108,7 +115,7 @@ export class SidecarClient {
 			return;
 		}
 		if (f.kind === FrameKind.ERROR && f.correlation === 0) {
-			const d = decodeCbor(f.payload) as any;
+			const d = decodeCbor(f.payload) as { code: string; message: string };
 			this.#fail(new ProtocolError(`${d.code}: ${d.message}`));
 			return;
 		}
@@ -124,7 +131,7 @@ export class SidecarClient {
 		clearTimeout(p.timer);
 		this.#pending.delete(f.correlation);
 		if (f.kind === FrameKind.ERROR) {
-			const d = decodeCbor(f.payload) as any;
+			const d = decodeCbor(f.payload) as { code: string; message: string };
 			p.reject(new ProtocolError(`${d.code}: ${d.message}`));
 		} else {
 			const response = f.payload.length ? decodeCbor(f.payload) : {};
@@ -133,7 +140,7 @@ export class SidecarClient {
 			);
 		}
 	}
-	#fail(error: Error) {
+	#fail(error: Error): void {
 		if (this.#closed) return;
 		this.#closed = true;
 		for (const p of this.#pending.values()) {
@@ -144,7 +151,13 @@ export class SidecarClient {
 		this.#emit('fatal', error);
 		this.#child.kill('SIGKILL');
 	}
-	request(kind: FrameKind, value?: unknown, raw = false, timeout = this.commandTimeoutMs) {
+	// oxlint-disable-next-line max-params -- request needs kind, value, raw flag, and timeout
+	request<T = unknown>(
+		kind: FrameKind,
+		value?: unknown,
+		raw = false,
+		timeout = this.commandTimeoutMs,
+	): Promise<T> {
 		if (this.#closed) return Promise.reject(new SidecarExitedError('PTY host is closed'));
 		if (this.#sequence === 0xffffffff)
 			return Promise.reject(new ProtocolError('Client sequence exhausted'));
@@ -155,7 +168,7 @@ export class SidecarClient {
 					? new Uint8Array()
 					: encodeCbor(value);
 		const data = encodeFrame({ kind, sequence, correlation: 0, payload });
-		return new Promise<any>((resolve, reject) => {
+		return new Promise<T>((resolve, reject) => {
 			const timer = setTimeout(() => {
 				this.#pending.delete(sequence);
 				let fallback = 'not attempted: no trusted application process group';
@@ -178,7 +191,12 @@ export class SidecarClient {
 				reject(error);
 				this.#fail(error);
 			}, timeout);
-			this.#pending.set(sequence, { kind, resolve, reject, timer });
+			this.#pending.set(sequence, {
+				kind,
+				resolve: resolve as (v: unknown) => void,
+				reject,
+				timer,
+			});
 			this.#child.stdin.write(data, (e) => {
 				if (e) {
 					clearTimeout(timer);
@@ -188,22 +206,22 @@ export class SidecarClient {
 			});
 		});
 	}
-	async spawn(value: unknown) {
-		const result = await this.request(FrameKind.SPAWN, value);
+	async spawn(value: unknown): Promise<SpawnResponse> {
+		const result = await this.request<SpawnResponse>(FrameKind.SPAWN, value);
 		this.#applicationPid = result.pid;
 		this.#applicationPgid = result.processGroupId;
 		return result;
 	}
-	write(data: Uint8Array) {
-		return this.request(FrameKind.WRITE, data, true);
+	write(data: Uint8Array): Promise<AckResponse> {
+		return this.request<AckResponse>(FrameKind.WRITE, data, true);
 	}
-	resize(value: unknown) {
-		return this.request(FrameKind.RESIZE, value);
+	resize(value: unknown): Promise<AckResponse> {
+		return this.request<AckResponse>(FrameKind.RESIZE, value);
 	}
-	signal(value: unknown) {
-		return this.request(FrameKind.SIGNAL, value);
+	signal(value: unknown): Promise<AckResponse> {
+		return this.request<AckResponse>(FrameKind.SIGNAL, value);
 	}
-	async close(timeout?: number) {
+	async close(timeout?: number): Promise<void> {
 		if (this.#closed) return;
 		try {
 			await this.request(FrameKind.CLOSE, undefined, false, timeout);
@@ -212,7 +230,7 @@ export class SidecarClient {
 			this.#child.stdin.end();
 		}
 	}
-	forceKill() {
+	forceKill(): void {
 		this.#closed = true;
 		this.#child.kill('SIGKILL');
 	}

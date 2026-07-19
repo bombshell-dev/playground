@@ -1,5 +1,6 @@
 import { $ } from 'bun';
 import { readdir, readFile, stat, writeFile } from 'node:fs/promises';
+// oxlint-disable-next-line no-restricted-imports -- path module needed for path resolution
 import { join } from 'node:path';
 import { TerminalSession } from '../src/terminal/session.ts';
 import { usePtyHostForTesting } from '../src/profile.ts';
@@ -12,7 +13,7 @@ const root = new URL('..', import.meta.url).pathname,
 		{ name: 'Rust', key: 'rust', path: `${root}/.cache/hosts/pty-host-rust` },
 	];
 
-async function timed(operation: () => Promise<unknown>) {
+async function timed(operation: () => Promise<unknown>): Promise<number> {
 	const started = performance.now();
 	await operation();
 	return performance.now() - started;
@@ -25,7 +26,7 @@ const buildTimes = {
 
 for (const host of hosts) await runHostContract(host.path);
 
-async function launchSamples(hostPath: string) {
+async function launchSamples(hostPath: string): Promise<number> {
 	const restore = usePtyHostForTesting(hostPath),
 		samples: number[] = [];
 	try {
@@ -43,7 +44,9 @@ async function launchSamples(hostPath: string) {
 	return samples[Math.floor(samples.length / 2)];
 }
 
-async function transportThroughput(hostPath: string) {
+async function transportThroughput(
+	hostPath: string,
+): Promise<{ bytes: number; elapsed: number; mibPerSecond: number }> {
 	const environment = Object.fromEntries(
 			Object.entries(process.env).filter(
 				(entry): entry is [string, string] => entry[1] !== undefined,
@@ -82,7 +85,9 @@ async function transportThroughput(hostPath: string) {
 	return { bytes, elapsed, mibPerSecond: bytes / (1024 * 1024) / (elapsed / 1000) };
 }
 
-async function sourceStats(directory: string) {
+async function sourceStats(
+	directory: string,
+): Promise<{ files: number; lines: number; nonblank: number; unsafe: number }> {
 	const names = (await readdir(directory)).filter((name) => /\.(c|h|rs)$/.test(name)),
 		sources = await Promise.all(names.map((name) => readFile(join(directory, name), 'utf8')));
 	return {
@@ -154,4 +159,5 @@ ${table}
 - Zig remains a maintainer dependency only for building upstream \`ghostty-vt.wasm\`; it is absent from both PTY-host implementations.
 `;
 await writeFile(`${root}/HOST-COMPARISON.md`, document);
+// oxlint-disable-next-line no-console -- comparison script
 console.log(document);

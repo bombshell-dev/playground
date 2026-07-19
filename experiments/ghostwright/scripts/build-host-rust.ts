@@ -15,4 +15,5 @@ if (target) {
 	await $`cp ${crate}/target/release/ghostwright-pty-host ${cache}/pty-host-rust`;
 }
 await $`chmod +x ${cache}/pty-host-rust`;
+// oxlint-disable-next-line no-console -- build script
 console.log(`${cache}/pty-host-rust`);

@@ -1,4 +1,5 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+// oxlint-disable-next-line no-restricted-imports -- path module needed for path resolution
 import { resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import type { ProcessStatus, ScreenSnapshot, TerminalLaunchOptions } from '../types.ts';
@@ -11,25 +12,32 @@ export interface TraceEvent {
 	type: string;
 	[key: string]: unknown;
 }
+/** Records terminal events and optionally persists trace artifacts on failure. */
 export class SessionTrace {
 	#events: TraceEvent[] = [];
 	#seq = 0;
 	readonly started = performance.now();
 	readonly raw: Uint8Array[] = [];
-	constructor(
-		readonly options: TerminalLaunchOptions,
-		readonly policy: 'off' | 'retain-on-failure' | 'on',
-		readonly directory: string,
-	) {
+	readonly options: TerminalLaunchOptions;
+	readonly policy: 'off' | 'retain-on-failure' | 'on';
+	readonly directory: string;
+	constructor(params: {
+		options: TerminalLaunchOptions;
+		policy: 'off' | 'retain-on-failure' | 'on';
+		directory: string;
+	}) {
+		this.options = params.options;
+		this.policy = params.policy;
+		this.directory = params.directory;
 		this.add('session-start');
 	}
-	now() {
+	now(): number {
 		return performance.now() - this.started;
 	}
-	events() {
+	events(): TraceEvent[] {
 		return [...this.#events];
 	}
-	add(type: string, data: Record<string, unknown> = {}) {
+	add(type: string, data: Record<string, unknown> = {}): void {
 		if (this.policy === 'off') return;
 		this.#events.push({
 			schemaVersion: 1,
@@ -40,7 +48,7 @@ export class SessionTrace {
 		});
 		if (this.#events.length > 10000) this.#events.shift();
 	}
-	output(bytes: Uint8Array, frameSequence: number) {
+	output(bytes: Uint8Array, frameSequence: number): void {
 		if (this.policy === 'off') return;
 		const offset = this.raw.reduce((n, b) => n + b.length, 0);
 		this.raw.push(bytes.slice());
@@ -49,7 +57,8 @@ export class SessionTrace {
 			raw: { offset, length: bytes.length, direction: 'from-pty' },
 		});
 	}
-	input(bytes: Uint8Array, actionSequence: number, redacted = false) {
+	// oxlint-disable-next-line max-params -- input needs bytes, action sequence, and redaction flag
+	input(bytes: Uint8Array, actionSequence: number, redacted = false): void {
 		if (this.policy === 'off') return;
 		if (redacted) {
 			this.add('input', { actionSequence, redacted: true, length: bytes.length });
@@ -62,7 +71,12 @@ export class SessionTrace {
 			raw: { offset, length: bytes.length, direction: 'to-pty' },
 		});
 	}
-	async persist(error: unknown, snapshot: ScreenSnapshot, status: ProcessStatus) {
+	// oxlint-disable-next-line max-params -- persist needs error, snapshot, and status for artifact writing
+	async persist(
+		error: unknown,
+		snapshot: ScreenSnapshot,
+		status: ProcessStatus,
+	): Promise<string | undefined> {
 		if (this.policy === 'off') return undefined;
 		try {
 			const name = (this.options.name ?? 'session').replace(/[^a-zA-Z0-9_.-]/g, '-').slice(0, 60),

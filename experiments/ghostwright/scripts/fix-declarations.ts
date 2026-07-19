@@ -1,4 +1,5 @@
 import { readdir, readFile, writeFile } from 'node:fs/promises';
+// oxlint-disable-next-line no-restricted-imports -- path module needed for path resolution
 import { join } from 'node:path';
 
 async function rewrite(directory: string): Promise<void> {

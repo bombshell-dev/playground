@@ -15,7 +15,7 @@ import type {
 	MouseOptions,
 	Point,
 } from '../types.ts';
-import { AssetIntegrityError } from '../errors.ts';
+import { AssetIntegrityError, GhostwrightError } from '../errors.ts';
 
 type Fn = (...args: any[]) => number;
 type Exports = Record<string, Fn> & {
@@ -229,7 +229,10 @@ export class GhosttyWasmTerminal {
 			);
 		{
 			if (!Number.isSafeInteger(storageLimitBytes) || storageLimitBytes < 0)
-				throw new RangeError('graphics.storageLimitBytes must be a nonnegative safe integer');
+				throw new GhostwrightError({
+					code: 'GW_INVALID_STORAGE_LIMIT',
+					message: 'graphics.storageLimitBytes must be a nonnegative safe integer',
+				});
 			const limit = this.#alloc(8);
 			try {
 				this.#view().setBigUint64(limit, BigInt(storageLimitBytes), true);
@@ -309,9 +312,13 @@ export class GhosttyWasmTerminal {
 	resize(v: Required<Viewport>) {
 		this.#viewport = v;
 		if (this.#e.ghostty_terminal_resize(this.#terminal, v.columns, v.rows, 10, 20) !== 0)
-			throw new Error('Ghostty resize failed');
+			throw new GhostwrightError({
+				code: 'GW_WASM_RESIZE_FAILED',
+				message: 'Ghostty resize failed',
+			});
 		this.#configureMouseSize();
 	}
+	// oxlint-disable-next-line max-params -- installCallback wraps ghostty_terminal_set callback API
 	#installCallback(
 		option: number,
 		parameterCount: number,
@@ -331,6 +338,7 @@ export class GhosttyWasmTerminal {
 			throw new AssetIntegrityError(`Unable to configure Ghostty terminal effect ${option}`);
 	}
 	#configureEffects() {
+		// oxlint-disable-next-line max-params -- ghostty write-pty callback API
 		this.#installCallback(1, 4, (_terminal, _userdata, data, length) => {
 			this.#effects.push({ type: 'write-pty', data: this.#bytes().slice(data, data + length) });
 		});
@@ -354,6 +362,7 @@ export class GhosttyWasmTerminal {
 		this.#installCallback(
 			6,
 			3,
+			// oxlint-disable-next-line max-params -- ghostty size report callback API
 			(_terminal, _userdata, output) => {
 				const layout = this.#layouts.GhosttySizeReportSize,
 					field = (name: string) => layout.fields[name].offset,
@@ -369,8 +378,8 @@ export class GhosttyWasmTerminal {
 		this.#installCallback(
 			7,
 			3,
-			(_terminal, _userdata, output) => {
-				this.#view().setInt32(output, 1, true);
+			// oxlint-disable-next-line max-params -- ghostty terminal mode query callback API
+			(_terminal, _userdata, _output) => {
 				return 1;
 			},
 			true,
@@ -378,6 +387,7 @@ export class GhosttyWasmTerminal {
 		this.#installCallback(
 			8,
 			3,
+			// oxlint-disable-next-line max-params -- ghostty device attributes callback API
 			(_terminal, _userdata, output) => {
 				const all = this.#layouts.GhosttyDeviceAttributes,
 					primary = this.#layouts.GhosttyDeviceAttributesPrimary,
@@ -401,6 +411,7 @@ export class GhosttyWasmTerminal {
 		this.#installCallback(
 			26,
 			3,
+			// oxlint-disable-next-line max-params -- ghostty clipboard write callback API
 			(_terminal, _userdata, write) => {
 				const writeLayout = this.#layouts.GhosttyClipboardWrite,
 					contentLayout = this.#layouts.GhosttyClipboardContent,
@@ -618,10 +629,10 @@ export class GhosttyWasmTerminal {
 					kittyVirtualPlaceholder = false;
 				if (this.#e.ghostty_terminal_grid_ref(this.#terminal, point, ref) === 0) {
 					this.#e.ghostty_grid_ref_row(ref, rawRow);
-					const row = view.getBigUint64(rawRow, true);
-					this.#e.ghostty_row_get(row, 1, value);
+					const rowValue = view.getBigUint64(rawRow, true);
+					this.#e.ghostty_row_get(rowValue, 1, value);
 					wrapped = view.getUint8(value) !== 0;
-					this.#e.ghostty_row_get(row, 7, value);
+					this.#e.ghostty_row_get(rowValue, 7, value);
 					kittyVirtualPlaceholder = view.getUint8(value) !== 0;
 				}
 				for (let column = 0; column < this.#viewport.columns; column++) {
@@ -979,12 +990,18 @@ export class GhosttyWasmTerminal {
 			for (const [index, pointer] of [contentTagValue, wideValuePointer, hyperlinkValue].entries())
 				view.setUint32(cellValues + index * 4, pointer, true);
 			if (this.#e.ghostty_render_state_get(this.#renderState, 4, this.#rowIteratorHolder) !== 0)
-				throw new Error('Unable to initialize Ghostty render row iterator');
+				throw new GhostwrightError({
+					code: 'GW_RENDER_INIT_FAILED',
+					message: 'Unable to initialize Ghostty render row iterator',
+				});
 			for (let row = 0; row < this.#viewport.rows; row++) {
 				const cells: ScreenCell[] = [];
 				if (!this.#e.ghostty_render_state_row_iterator_next(this.#rowIterator)) break;
 				if (this.#e.ghostty_render_state_row_get(this.#rowIterator, 3, this.#rowCellsHolder) !== 0)
-					throw new Error(`Unable to read Ghostty render row ${row}`);
+					throw new GhostwrightError({
+						code: 'GW_RENDER_ROW_FAILED',
+						message: `Unable to read Ghostty render row ${row}`,
+					});
 				this.#e.ghostty_render_state_row_get(this.#rowIterator, 2, rawRow);
 				const rowValue = view.getBigUint64(rawRow, true);
 				this.#e.ghostty_row_get(rowValue, 1, value);
@@ -1003,10 +1020,16 @@ export class GhosttyWasmTerminal {
 							length,
 						) !== 0
 					)
-						throw new Error(`Unable to read Ghostty render cell ${column},${row}`);
+						throw new GhostwrightError({
+							code: 'GW_RENDER_CELL_FAILED',
+							message: `Unable to read Ghostty render cell ${column},${row}`,
+						});
 					const cellValue = view.getBigUint64(rawCell, true);
 					if (this.#e.ghostty_cell_get_multi(cellValue, 3, cellKeys, cellValues, length) !== 0)
-						throw new Error(`Unable to decode Ghostty cell ${column},${row}`);
+						throw new GhostwrightError({
+							code: 'GW_RENDER_DECODE_FAILED',
+							message: `Unable to decode Ghostty cell ${column},${row}`,
+						});
 					const wideValue = view.getInt32(wideValuePointer, true),
 						continuation = wideValue === 2 || wideValue === 3,
 						width: 0 | 1 | 2 = continuation ? 0 : wideValue === 1 ? 2 : 1,
@@ -1250,7 +1273,10 @@ export class GhosttyWasmTerminal {
 					length,
 				) !== 0
 			)
-				throw new Error(`Ghostty could not encode key ${JSON.stringify(name)}`);
+				throw new GhostwrightError({
+					code: 'GW_KEY_ENCODE_FAILED',
+					message: `Ghostty could not encode key ${JSON.stringify(name)}`,
+				});
 			return this.#bytes().slice(output, output + this.#view().getUint32(length, true));
 		} finally {
 			if (utf8.length) this.#release(utf8Pointer, utf8.length);
@@ -1258,6 +1284,7 @@ export class GhosttyWasmTerminal {
 			this.#release(length, 4);
 		}
 	}
+	// oxlint-disable-next-line max-params -- encodeMouse wraps ghostty mouse encoder API
 	encodeMouse(
 		action: 'move' | 'down' | 'up',
 		point: Point,
@@ -1310,7 +1337,10 @@ export class GhosttyWasmTerminal {
 					length,
 				) !== 0
 			)
-				throw new Error('Ghostty mouse encoding failed');
+				throw new GhostwrightError({
+					code: 'GW_MOUSE_ENCODE_FAILED',
+					message: 'Ghostty mouse encoding failed',
+				});
 			return this.#bytes().slice(output, output + this.#view().getUint32(length, true));
 		} finally {
 			this.#release(position, positionLayout.size);
@@ -1330,7 +1360,10 @@ export class GhosttyWasmTerminal {
 			out = this.#alloc(n || 1);
 		try {
 			if (this.#e.ghostty_paste_encode(p, data.length, bracketed ? 1 : 0, out, n, lp) !== 0)
-				throw new Error('Ghostty paste encoding failed');
+				throw new GhostwrightError({
+					code: 'GW_PASTE_ENCODE_FAILED',
+					message: 'Ghostty paste encoding failed',
+				});
 			return this.#bytes().slice(out, out + n);
 		} finally {
 			this.#release(p, data.length || 1);

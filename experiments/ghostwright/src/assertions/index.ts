@@ -7,8 +7,15 @@ import type {
 	StableAssertionOptions,
 	TransientAssertionOptions,
 } from '../types.ts';
-import { Locator, TerminalSession } from '../terminal/session.ts';
-function diagnostic(session: TerminalSession, expected: string, timeout: number, settle?: number) {
+import { Locator } from '../terminal/session.ts';
+import type { TerminalSession } from '../terminal/session.ts';
+// oxlint-disable-next-line max-params -- diagnostic needs all four params for failure reporting
+function diagnostic(
+	session: TerminalSession,
+	expected: string,
+	timeout: number,
+	settle?: number,
+): string {
 	const s = session.screen.current(),
 		tens = Array.from({ length: s.viewport.columns }, (_, column) =>
 			column % 10 === 0 ? String(Math.floor(column / 10) % 10) : ' ',
@@ -30,12 +37,13 @@ function diagnostic(session: TerminalSession, expected: string, timeout: number,
 			.join(', ') || 'none'
 	}\n\n    ${tens}\n    ${ones}\n${rows}`;
 }
+// oxlint-disable-next-line max-params -- wait needs all four params for polling logic
 async function wait(
 	session: TerminalSession,
 	test: () => boolean,
 	timeout: number,
 	message: () => string,
-) {
+): Promise<void> {
 	try {
 		await session.waitForChange(test, timeout);
 	} catch (cause) {
@@ -45,7 +53,7 @@ async function wait(
 }
 class LocatorExpectation implements AsyncLocatorExpectation {
 	constructor(readonly locator: Locator) {}
-	async toBePresent(options: AssertionOptions = {}) {
+	async toBePresent(options: AssertionOptions = {}): Promise<Locator> {
 		const timeout = options.timeoutMs ?? this.locator.session.options.assertionTimeoutMs ?? 5000;
 		try {
 			return await this.locator.unique(timeout);
@@ -61,7 +69,7 @@ class LocatorExpectation implements AsyncLocatorExpectation {
 			);
 		}
 	}
-	async toBeStable(options: StableAssertionOptions = {}) {
+	async toBeStable(options: StableAssertionOptions = {}): Promise<Locator> {
 		const timeout = options.timeoutMs ?? this.locator.session.options.assertionTimeoutMs ?? 5000,
 			settle = options.settleMs ?? this.locator.session.options.settleMs ?? 100,
 			start = performance.now();
@@ -103,7 +111,7 @@ class LocatorExpectation implements AsyncLocatorExpectation {
 				});
 		}
 	}
-	async toBeAbsent(options: StableAssertionOptions = {}) {
+	async toBeAbsent(options: StableAssertionOptions = {}): Promise<void> {
 		const timeout = options.timeoutMs ?? this.locator.session.options.assertionTimeoutMs ?? 5000,
 			settle = options.settleMs ?? this.locator.session.options.settleMs ?? 100,
 			start = performance.now();
@@ -160,7 +168,7 @@ class TerminalExpectation implements AsyncTerminalExpectation {
 	async toSatisfy(
 		predicate: (snapshot: ScreenSnapshot) => boolean,
 		options: StableAssertionOptions = {},
-	) {
+	): Promise<ScreenSnapshot> {
 		const timeout = options.timeoutMs ?? this.session.options.assertionTimeoutMs ?? 5000,
 			settle = options.settleMs ?? this.session.options.settleMs ?? 100,
 			started = performance.now();
@@ -197,7 +205,7 @@ class TerminalExpectation implements AsyncTerminalExpectation {
 	async toHaveShown(
 		predicate: (snapshot: ScreenSnapshot) => boolean,
 		options: TransientAssertionOptions = {},
-	) {
+	): Promise<ScreenRevision> {
 		const timeout = options.timeoutMs ?? this.session.options.assertionTimeoutMs ?? 5000,
 			baseline =
 				typeof options.since === 'number'
@@ -217,13 +225,14 @@ class TerminalExpectation implements AsyncTerminalExpectation {
 			);
 		return result as ScreenRevision;
 	}
-	toHaveShownText(text: string, options: TransientAssertionOptions = {}) {
+	toHaveShownText(text: string, options: TransientAssertionOptions = {}): Promise<ScreenRevision> {
 		return this.toHaveShown(
 			(snapshot) => snapshot.lines.some((line) => line.text.includes(text)),
 			options,
 		);
 	}
 }
+/** Create an async assertion expectation for a locator or terminal session. */
 export function expectTerminal(
 	target: Locator | TerminalSession,
 ): LocatorExpectation | TerminalExpectation {

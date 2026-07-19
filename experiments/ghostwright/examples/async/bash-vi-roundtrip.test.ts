@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+// oxlint-disable-next-line no-restricted-imports -- path module needed for path resolution
 import { join } from 'node:path';
 import { expectTerminal, withTerminalAsync } from '../../src/index.ts';
 

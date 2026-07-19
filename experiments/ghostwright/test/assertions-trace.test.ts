@@ -1,5 +1,6 @@
 import { mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+// oxlint-disable-next-line no-restricted-imports -- path module needed for path resolution
 import { join } from 'node:path';
 import { expect, test } from 'bun:test';
 import {
@@ -151,8 +152,8 @@ test('retain-on-failure writes private complete artifacts and preserves the prim
 		const tracePath = (failure as TerminalAssertionError).tracePath!;
 		expect(tracePath).toBeTruthy();
 		expect((failure as Error).message).toContain('trace artifact:');
-		expect((await readdir(tracePath)).sort()).toEqual(
-			['failure.txt', 'final-screen.txt', 'metadata.json', 'output.bin', 'trace.jsonl'].sort(),
+		expect((await readdir(tracePath)).toSorted()).toEqual(
+			['failure.txt', 'final-screen.txt', 'metadata.json', 'output.bin', 'trace.jsonl'].toSorted(),
 		);
 		const metadata = await readFile(join(tracePath, 'metadata.json'), 'utf8'),
 			trace = await readFile(join(tracePath, 'trace.jsonl'), 'utf8'),

@@ -1,7 +1,9 @@
+// oxlint-disable-next-line no-restricted-imports -- path module needed for path resolution
 import { resolve } from 'node:path';
 import {
 	CoordinateRangeError,
 	DenoPermissionError,
+	GhostwrightError,
 	HistoryChangedError,
 	HistoryEvictedError,
 	LaunchError,
@@ -109,22 +111,29 @@ export class TerminalSession implements AsyncTerminal {
 				typeof options.trace === 'object'
 					? (options.trace.directory ?? '.ghostwright')
 					: '.ghostwright';
-		this.#trace = new SessionTrace(options, t, dir);
+		this.#trace = new SessionTrace({ options, policy: t, directory: dir });
 		this.#exitPromise = new Promise((r) => (this.#exitResolve = r));
 	}
 	static async launch(options: TerminalLaunchOptions) {
 		assertSupportedRuntime();
 		if (!options.command || options.command.includes('\0'))
-			throw new TypeError('command must be a nonempty NUL-free string');
+			throw new GhostwrightError({
+				code: 'GW_INVALID_ARGUMENT',
+				message: 'command must be a nonempty NUL-free string',
+			});
 		for (const [label, value] of [
-			...(options.args ?? []).map((value, index) => [`argument ${index}`, value] as const),
-			...Object.entries(options.env ?? {}).flatMap(([key, value]) => [
+			...(options.args ?? []).map((arg, index) => [`argument ${index}`, arg] as const),
+			...Object.entries(options.env ?? {}).flatMap(([key, envValue]) => [
 				[`environment key ${key}`, key] as const,
-				[`environment value ${key}`, value] as const,
+				[`environment value ${key}`, envValue] as const,
 			]),
 			...(options.cwd ? [['cwd', options.cwd] as const] : []),
 		])
-			if (value.includes('\0')) throw new TypeError(`${label} must not contain NUL`);
+			if (value.includes('\0'))
+				throw new GhostwrightError({
+					code: 'GW_INVALID_ARGUMENT',
+					message: `${label} must not contain NUL`,
+				});
 		for (const [label, value] of [
 			['commandTimeoutMs', options.commandTimeoutMs],
 			['assertionTimeoutMs', options.assertionTimeoutMs],
@@ -138,7 +147,7 @@ export class TerminalSession implements AsyncTerminal {
 			['graphics.storageLimitBytes', options.graphics?.storageLimitBytes],
 		] as const)
 			if (value !== undefined && (!Number.isSafeInteger(value) || value < 0))
-				throw new RangeError(`${label} must be a nonnegative safe integer`);
+				throw new CoordinateRangeError(`${label} must be a nonnegative safe integer`);
 		const self = new TerminalSession(options),
 			assets = await resolveAssets(options),
 			cwd = resolve(options.cwd ?? process.cwd());
@@ -197,7 +206,7 @@ export class TerminalSession implements AsyncTerminal {
 			self.#notify();
 			self.#exitResolve(self.#status);
 		});
-		let spawned: any;
+		let spawned: { pid?: number; processGroupId?: number };
 		try {
 			spawned = await self.#host.spawn({
 				command: options.command,
@@ -248,7 +257,7 @@ export class TerminalSession implements AsyncTerminal {
 		return this.#engine.now();
 	}
 	#notify() {
-		for (const f of [...this.#listeners]) f();
+		for (const f of this.#listeners) f();
 	}
 	subscribe(f: () => void) {
 		this.#listeners.add(f);
@@ -342,20 +351,27 @@ export class TerminalSession implements AsyncTerminal {
 		});
 		this.#notify();
 	}
-	#ensure(op: string) {
+	#ensure(op: string): void {
 		if (this.#closed) throw new SessionClosedError(`Cannot ${op}: terminal session is closed`);
 	}
-	async #send(kind: FrameKind, value: unknown, raw = false, delivered = true) {
+	// oxlint-disable-next-line max-params -- internal method
+	async #send(
+		kind: FrameKind,
+		value: unknown,
+		raw = false,
+		delivered = true,
+	): Promise<ActionReceipt> {
 		this.#ensure('perform action');
 		const before = this.#revision,
 			sequence = ++this.#action;
-		let ack: any;
+		let ack: { bytesWritten?: number };
 		if (kind === FrameKind.WRITE)
 			ack = await this.#command(() => this.#host.write(value as Uint8Array));
 		else if (kind === FrameKind.RESIZE) ack = await this.#command(() => this.#host.resize(value));
 		else if (kind === FrameKind.SIGNAL) ack = await this.#command(() => this.#host.signal(value));
-		else throw new Error('Unsupported action');
-		const receipt: Object = Object.freeze({
+		else
+			throw new GhostwrightError({ code: 'GW_UNSUPPORTED_ACTION', message: 'Unsupported action' });
+		const receipt: Readonly<ActionReceipt> = Object.freeze({
 			actionSequence: sequence,
 			screenSequenceBefore: before,
 			acknowledgedAt: this.#engine.now(),
@@ -371,6 +387,7 @@ export class TerminalSession implements AsyncTerminal {
 		});
 		return receipt as ActionReceipt;
 	}
+	// oxlint-disable-next-line max-params -- internal method
 	async #write(
 		data: Uint8Array,
 		delivered = data.length > 0,
@@ -430,7 +447,8 @@ export class TerminalSession implements AsyncTerminal {
 				`Coordinate (${p.column},${p.row}) is outside ${this.#viewport.columns}x${this.#viewport.rows}`,
 			);
 	}
-	#mouse(action: 'move' | 'down' | 'up', p: Point, o: MouseOptions = {}) {
+	// oxlint-disable-next-line max-params -- internal method
+	#mouse(action: 'move' | 'down' | 'up', p: Point, o: MouseOptions = {}): Promise<ActionReceipt> {
 		this.#point(p);
 		const wasDown = this.#mouseDown;
 		if (action === 'down') this.#mouseDown = true;
@@ -455,6 +473,7 @@ export class TerminalSession implements AsyncTerminal {
 			await this.mouse.click(p, o);
 			return this.mouse.click(p, o);
 		},
+		// oxlint-disable-next-line max-params -- wraps mouse API
 		drag: async (a: Point, b: Point, o?: MouseOptions) => {
 			await this.#mouse('down', a, o);
 			await this.#mouse('move', b, o);
@@ -463,7 +482,7 @@ export class TerminalSession implements AsyncTerminal {
 		wheel: (o: WheelOptions) => {
 			this.#point(o);
 			if (!Number.isInteger(o.deltaRows) || !Number.isInteger(o.deltaColumns ?? 0))
-				throw new RangeError('Wheel deltas must be integers');
+				throw new CoordinateRangeError('Wheel deltas must be integers');
 			const parts: Uint8Array[] = [];
 			for (let index = 0; index < Math.abs(o.deltaRows); index++)
 				parts.push(this.#engine.encodeMouse('down', o, { button: o.deltaRows < 0 ? 4 : 5 }, false));
@@ -574,12 +593,12 @@ export class TerminalSession implements AsyncTerminal {
 	}
 	async waitForChange(test: () => boolean, timeout: number) {
 		if (test()) return;
-		await new Promise<void>((resolve, reject) => {
+		await new Promise<void>((resolvePromise, reject) => {
 			const off = this.subscribe(() => {
 					if (test()) {
 						clearTimeout(timer);
 						off();
-						resolve();
+						resolvePromise();
 					} else if (this.#status.state === 'closed' || this.#status.state === 'failed') {
 						clearTimeout(timer);
 						off();
@@ -592,11 +611,12 @@ export class TerminalSession implements AsyncTerminal {
 				}),
 				timer = setTimeout(() => {
 					off();
-					reject(new Error('timeout'));
+					reject(new TerminalAssertionError('timeout'));
 				}, timeout);
 		});
 	}
-	async #timeout<T>(p: Promise<T>, ms: number, error: () => Error) {
+	// oxlint-disable-next-line max-params -- internal method
+	async #timeout<T>(p: Promise<T>, ms: number, error: () => Error): Promise<T> {
 		return new Promise<T>((r, j) => {
 			const t = setTimeout(() => j(error()), ms);
 			p.then(
@@ -611,15 +631,15 @@ export class TerminalSession implements AsyncTerminal {
 			);
 		});
 	}
-	#baselineSequence(value: ActionReceipt | ScreenRevision | number) {
+	#baselineSequence(value: ActionReceipt | ScreenRevision | number): number {
 		if (typeof value === 'number') {
 			if (!Number.isSafeInteger(value) || value < 0)
-				throw new RangeError('revision sequence must be a nonnegative safe integer');
+				throw new CoordinateRangeError('revision sequence must be a nonnegative safe integer');
 			return value;
 		}
 		return 'screenSequenceBefore' in value ? value.screenSequenceBefore : value.sequence;
 	}
-	revisionsSince(sequence: number) {
+	revisionsSince(sequence: number): ScreenRevision[] {
 		const earliest = this.#history[0]?.sequence ?? this.#revision,
 			latest = this.#history.at(-1)?.sequence ?? this.#revision;
 		if (sequence < earliest - 1)
@@ -628,19 +648,21 @@ export class TerminalSession implements AsyncTerminal {
 			);
 		return this.#history.filter((revision) => revision.sequence > sequence);
 	}
-	revisionRange(query: RevisionRangeQuery) {
+	revisionRange(query: RevisionRangeQuery): readonly ScreenRevision[] {
 		const since = this.#baselineSequence(query.since),
 			until = query.until === undefined ? undefined : this.#baselineSequence(query.until),
 			max = this.options.history?.maxRevisions ?? 1000,
 			limit = query.limit ?? max;
 		if (!Number.isSafeInteger(limit) || limit <= 0)
-			throw new RangeError('revision limit must be positive');
+			throw new CoordinateRangeError('revision limit must be positive');
 		if (limit > max)
-			throw new RangeError(
+			throw new CoordinateRangeError(
 				`revision limit ${limit} exceeds the configured retained maximum ${max}`,
 			);
 		if (until !== undefined && until < since)
-			throw new RangeError('revision until sequence must not precede its exclusive baseline');
+			throw new CoordinateRangeError(
+				'revision until sequence must not precede its exclusive baseline',
+			);
 		const revisions = this.revisionsSince(since);
 		if (until !== undefined) {
 			const latest = this.#history.at(-1)?.sequence ?? this.#revision;
@@ -662,9 +684,11 @@ export class TerminalSession implements AsyncTerminal {
 			timeout = options.timeoutMs ?? this.options.assertionTimeoutMs ?? 5000,
 			startedAt = this.now();
 		if (!Number.isSafeInteger(max) || max <= 0 || max > configuredMax)
-			throw new RangeError(`maxRevisions must be positive and no greater than ${configuredMax}`);
+			throw new CoordinateRangeError(
+				`maxRevisions must be positive and no greater than ${configuredMax}`,
+			);
 		if (!Number.isSafeInteger(timeout) || timeout < 0)
-			throw new RangeError('timeoutMs must be nonnegative');
+			throw new CoordinateRangeError('timeoutMs must be nonnegative');
 		const samples = [...this.revisionsSince(baseline)].slice(0, max);
 		const complete = () => samples.some((revision) => options.until(revision.snapshot, revision));
 		if (!complete() && samples.length === max)
@@ -672,12 +696,12 @@ export class TerminalSession implements AsyncTerminal {
 				`Revision collection reached its ${max} sample limit before its predicate matched`,
 			);
 		if (!complete())
-			await new Promise<void>((resolve, reject) => {
-				let timer: ReturnType<typeof setTimeout> | undefined;
-				const finish = (error?: Error) => {
-					if (timer) clearTimeout(timer);
+			await new Promise<void>((resolvePromise, reject) => {
+				const finish = (timer: ReturnType<typeof setTimeout>, error?: Error) => {
+					clearTimeout(timer);
 					off();
-					error ? reject(error) : resolve();
+					if (error) reject(error);
+					else resolvePromise();
 				};
 				const off = this.subscribe(() => {
 					try {
@@ -687,22 +711,30 @@ export class TerminalSession implements AsyncTerminal {
 								samples.push(revision);
 						if (samples.length > max)
 							return finish(
+								timer,
 								new HistoryEvictedError(
 									`Revision collection exceeded its ${max} sample limit before its predicate matched`,
 								),
 							);
-						if (complete()) return finish();
+						if (complete()) return finish(timer);
 						if (this.#status.state === 'closed' || this.#status.state === 'failed')
-							return finish(new SessionClosedError('Session closed during revision collection'));
+							return finish(
+								timer,
+								new SessionClosedError('Session closed during revision collection'),
+							);
 						if (this.#status.ptyEof)
-							return finish(new ProcessExitedError('Process exited during revision collection'));
+							return finish(
+								timer,
+								new ProcessExitedError('Process exited during revision collection'),
+							);
 					} catch (error) {
-						finish(error instanceof Error ? error : new Error(String(error)));
+						finish(timer, error instanceof Error ? error : new Error(String(error)));
 					}
 				});
-				timer = setTimeout(
+				const timer = setTimeout(
 					() =>
 						finish(
+							timer,
 							new TerminalAssertionError(`Timed out collecting revisions after ${timeout} ms`),
 						),
 					timeout,
@@ -720,9 +752,9 @@ export class TerminalSession implements AsyncTerminal {
 			count = query.count ?? 200,
 			start = query.start ?? 0;
 		if (!Number.isSafeInteger(start) || start < 0)
-			throw new RangeError('history start must be nonnegative');
+			throw new CoordinateRangeError('history start must be nonnegative');
 		if (!Number.isSafeInteger(count) || count <= 0 || count > 1000)
-			throw new RangeError('history count must be positive and no greater than 1000');
+			throw new CoordinateRangeError('history count must be positive and no greater than 1000');
 		await this.#outputPump;
 		const generation = String(this.#terminalHistoryGeneration);
 		if (query.expectedGeneration !== undefined && query.expectedGeneration !== generation)
@@ -731,7 +763,7 @@ export class TerminalSession implements AsyncTerminal {
 			);
 		const predecessor = start > 0 ? this.#engine.history(start - 1, 1)[0] : undefined;
 		const rows = this.#engine.history(start, count);
-		const lines = rows.map((entry, offset) => {
+		let lines = rows.map((entry, offset) => {
 			const line = entry.line;
 			return Object.freeze({
 				index: start + offset,
@@ -742,7 +774,7 @@ export class TerminalSession implements AsyncTerminal {
 				cells: line.cells,
 			} satisfies HistoryLine);
 		});
-		if (direction === 'newest-first') lines.reverse();
+		if (direction === 'newest-first') lines = lines.toReversed();
 		return Object.freeze({
 			generation,
 			totalRows: this.#engine.scrollbackRows(),
@@ -755,17 +787,19 @@ export class TerminalSession implements AsyncTerminal {
 		text: string,
 		options: HistorySearchOptions = {},
 	): Promise<readonly HistoryMatch[]> {
-		if (!text.length) throw new RangeError('history search text must be nonempty');
+		if (!text.length) throw new CoordinateRangeError('history search text must be nonempty');
 		const maxRows = options.maxRows ?? 1000,
 			limit = options.limit ?? 20;
 		if (!Number.isSafeInteger(maxRows) || maxRows <= 0 || maxRows > 10_000)
-			throw new RangeError('history maxRows must be positive and no greater than 10000');
+			throw new CoordinateRangeError('history maxRows must be positive and no greater than 10000');
 		if (!Number.isSafeInteger(limit) || limit <= 0 || limit > 1000)
-			throw new RangeError('history result limit must be positive and no greater than 1000');
+			throw new CoordinateRangeError(
+				'history result limit must be positive and no greater than 1000',
+			);
 		const start = options.start ?? 0;
 		if (!Number.isSafeInteger(start) || start < 0)
-			throw new RangeError('history start must be nonnegative');
-		const lines: HistoryLine[] = [];
+			throw new CoordinateRangeError('history start must be nonnegative');
+		let lines: HistoryLine[] = [];
 		let generation = options.expectedGeneration;
 		for (let offset = start; offset < start + maxRows; offset += 1000) {
 			const page = await this.readHistory({
@@ -778,22 +812,23 @@ export class TerminalSession implements AsyncTerminal {
 			lines.push(...page.lines);
 			if (page.lines.length < 1000) break;
 		}
-		if (options.direction === 'newest-first') lines.reverse();
+		if (options.direction === 'newest-first') lines = lines.toReversed();
 		const results: HistoryMatch[] = [];
 		for (const line of lines) {
 			let textOffset = 0;
 			const segments = line.cells
 				.filter((cell) => !cell.continuation)
 				.map((cell) => {
-					const start = textOffset;
+					const segmentStart = textOffset;
 					textOffset += (cell.style.invisible ? ' ' : cell.text || ' ').length;
-					return { cell, start, end: textOffset };
+					return { cell, start: segmentStart, end: textOffset };
 				});
 			let matchAt = 0;
 			while (results.length < limit && (matchAt = line.text.indexOf(text, matchAt)) >= 0) {
 				const first = segments.find((segment) => matchAt < segment.end) ?? segments.at(-1);
 				const last =
-					[...segments].reverse().find((segment) => matchAt + text.length > segment.start) ?? first;
+					[...segments].toReversed().find((segment) => matchAt + text.length > segment.start) ??
+					first;
 				const column = first?.cell.column ?? 0,
 					endColumn = last ? last.cell.column + Math.max(1, last.cell.width) : column + 1;
 				results.push(
@@ -867,7 +902,9 @@ export class TerminalSession implements AsyncTerminal {
 		clipboard: () => this.#engine.clipboard(),
 	};
 }
+/** Text locator that finds matching strings in the terminal viewport. */
 export class Locator implements AsyncLocator {
+	// oxlint-disable-next-line max-params -- public API
 	constructor(
 		readonly session: TerminalSession,
 		readonly query: string,
@@ -875,16 +912,16 @@ export class Locator implements AsyncLocator {
 		readonly index?: number,
 		readonly bounds?: Rect,
 	) {}
-	nth(index: number) {
+	nth(index: number): Locator {
 		if (!Number.isInteger(index) || index < 0)
-			throw new RangeError('nth index must be nonnegative');
+			throw new CoordinateRangeError('nth index must be nonnegative');
 		return new Locator(this.session, this.query, this.options, index, this.bounds);
 	}
-	region(rect: Rect) {
+	region(rect: Rect): Locator {
 		this.session.validateRegion(rect);
 		return new Locator(this.session, this.query, this.options, this.index, rect);
 	}
-	matches() {
+	matches(): readonly LocatorMatch[] {
 		const s = this.session.screen.current(),
 			out: LocatorMatch[] = [];
 		for (const line of s.lines) {
@@ -906,7 +943,7 @@ export class Locator implements AsyncLocator {
 			}
 			const rangeFor = (from: number, to: number): Rect => {
 				const first = segments.find((segment) => from < segment.end) ?? segments.at(-1),
-					last = [...segments].reverse().find((segment) => to > segment.start) ?? first,
+					last = [...segments].toReversed().find((segment) => to > segment.start) ?? first,
 					column = first?.cell.column ?? start,
 					lastEnd = last ? last.cell.column + Math.max(1, last.cell.width) : column + 1;
 				return { column, row: line.row, width: Math.max(1, lastEnd - column), height: 1 };

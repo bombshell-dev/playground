@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { readFile, realpath } from 'node:fs/promises';
+// oxlint-disable-next-line no-restricted-imports -- path module needed for path resolution
 import { dirname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -29,11 +30,12 @@ export function usePtyHostForTesting(path: string | undefined) {
 		testPtyHostPath = previous;
 	};
 }
-function versionAtLeast(actual: string, required: readonly [number, number]) {
+function versionAtLeast(actual: string, required: readonly [number, number]): boolean {
 	const [major = 0, minor = 0] = actual.replace(/^v/, '').split('.').map(Number);
 	return major > required[0] || (major === required[0] && minor >= required[1]);
 }
-export function assertSupportedRuntime() {
+/** Assert the current runtime meets Ghostwright minimum version requirements. */
+export function assertSupportedRuntime(): void {
 	const deno = (globalThis as unknown as { Deno?: { version: { deno: string } } }).Deno,
 		bun = (globalThis as unknown as { Bun?: { version: string } }).Bun;
 	if (deno && !versionAtLeast(deno.version.deno, [2, 2]))
@@ -43,6 +45,7 @@ export function assertSupportedRuntime() {
 	if (!deno && !bun && !versionAtLeast(process.versions.node, [22, 0]))
 		throw new LaunchError(`Ghostwright requires Node 22 or newer; found ${process.versions.node}`);
 }
+/** Normalize a partial viewport to required dimensions with defaults. */
 export function normalizeViewport(input?: Viewport): Required<Viewport> {
 	const columns = input?.columns ?? 80,
 		rows = input?.rows ?? 24;
@@ -54,7 +57,7 @@ export function normalizeViewport(input?: Viewport): Required<Viewport> {
 		columns > 65535 ||
 		rows > 65535
 	)
-		throw new RangeError(`Invalid viewport ${columns}x${rows}`);
+		throw new CoordinateRangeError(`Invalid viewport ${columns}x${rows}`);
 	const widthPixels = input?.widthPixels ?? columns * 10,
 		heightPixels = input?.heightPixels ?? rows * 20;
 	if (
@@ -65,9 +68,10 @@ export function normalizeViewport(input?: Viewport): Required<Viewport> {
 		widthPixels > 65535 ||
 		heightPixels > 65535
 	)
-		throw new RangeError(`Invalid pixel viewport ${widthPixels}x${heightPixels}`);
+		throw new CoordinateRangeError(`Invalid pixel viewport ${widthPixels}x${heightPixels}`);
 	return { columns, rows, widthPixels, heightPixels };
 }
+/** Build the environment object with ghostwright terminal profile variables. */
 export function profileEnvironment(
 	explicit: Readonly<Record<string, string>> | undefined,
 	terminfo: string,
@@ -87,7 +91,8 @@ export function profileEnvironment(
 		TERM_PROGRAM_VERSION: PACKAGE_VERSION,
 	} as Record<string, string>;
 }
-export function target(os = process.platform, arch = process.arch) {
+/** Return the platform key for the current or specified OS/arch. */
+export function target(os = process.platform, arch = process.arch): string {
 	const key = `${os}-${arch}`;
 	const supported = ['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64'];
 	if (!supported.includes(key))
@@ -96,7 +101,10 @@ export function target(os = process.platform, arch = process.arch) {
 		);
 	return key;
 }
-export async function resolveAssets(options: TerminalLaunchOptions) {
+/** Resolve and validate all required runtime assets. */
+export async function resolveAssets(
+	_options: TerminalLaunchOptions,
+): Promise<{ root: string; host: string; terminfo: string; wasm: string }> {
 	const root = resolve(dirname(fileURLToPath(import.meta.url)), '../artifacts'),
 		bundledHost = resolve(root, `pty-host-${target()}`),
 		host = testPtyHostPath ?? bundledHost,
