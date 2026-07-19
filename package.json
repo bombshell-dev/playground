@@ -23,6 +23,7 @@
 	"scripts": {
 		"playground": "NODE_NO_WARNINGS=1 node --experimental-transform-types ./scripts/playground.ts",
 		"format": "bsh format",
+		"format:check": "bsh format --check",
 		"lint": "bsh lint .",
 		"test": "bsh test --exclude 'experiments/ghostwright/**'"
 	},
