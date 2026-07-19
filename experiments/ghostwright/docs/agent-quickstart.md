@@ -62,30 +62,30 @@ Do not combine an executable and arguments into an implicit shell string.
 ## First Bun test
 
 ```ts
-import { expect, test } from "bun:test";
-import { expectTerminal, withTerminalAsync } from "ghostwright";
+import { expect, test } from 'bun:test';
+import { expectTerminal, withTerminalAsync } from 'ghostwright';
 
-test("CLI starts and accepts input", async () => {
-  await withTerminalAsync(
-    {
-      command: "bun",
-      args: ["src/cli.ts"],
-      cwd: process.cwd(),
-      viewport: { columns: 80, rows: 24 },
-    },
-    async (terminal) => {
-      await expectTerminal(terminal.getByText("Ready")).toBePresent();
+test('CLI starts and accepts input', async () => {
+	await withTerminalAsync(
+		{
+			command: 'bun',
+			args: ['src/cli.ts'],
+			cwd: process.cwd(),
+			viewport: { columns: 80, rows: 24 },
+		},
+		async (terminal) => {
+			await expectTerminal(terminal.getByText('Ready')).toBePresent();
 
-      await terminal.keyboard.type("hello");
-      await terminal.keyboard.press("Enter");
+			await terminal.keyboard.type('hello');
+			await terminal.keyboard.press('Enter');
 
-      await expectTerminal(terminal.getByText("Received: hello")).toBeStable();
+			await expectTerminal(terminal.getByText('Received: hello')).toBeStable();
 
-      const status = await terminal.process.waitForExit();
-      expect(status.exitCode).toBe(0);
-      expect(status.ptyEof).toBe(true);
-    },
-  );
+			const status = await terminal.process.waitForExit();
+			expect(status.exitCode).toBe(0);
+			expect(status.ptyEof).toBe(true);
+		},
+	);
 });
 ```
 
@@ -100,19 +100,19 @@ bun test test/cli.blackbox.test.ts
 Ghostwright assertions throw ordinary typed errors and require no runner plugin:
 
 ```ts
-import assert from "node:assert/strict";
-import test from "node:test";
-import { expectTerminal, withTerminalAsync } from "ghostwright";
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { expectTerminal, withTerminalAsync } from 'ghostwright';
 
-test("CLI help", async () => {
-  await withTerminalAsync(
-    { command: "node", args: ["dist/cli.js", "--help"] },
-    async (terminal) => {
-      await expectTerminal(terminal.getByText("Usage:")).toBePresent();
-      const status = await terminal.process.waitForExit();
-      assert.equal(status.exitCode, 0);
-    },
-  );
+test('CLI help', async () => {
+	await withTerminalAsync(
+		{ command: 'node', args: ['dist/cli.js', '--help'] },
+		async (terminal) => {
+			await expectTerminal(terminal.getByText('Usage:')).toBePresent();
+			const status = await terminal.process.waitForExit();
+			assert.equal(status.exitCode, 0);
+		},
+	);
 });
 ```
 
@@ -145,16 +145,16 @@ Wait for readiness, perform one keyboard or mouse interaction, and assert the fi
 Save the action receipt, assert the fleeting progress state from history, then assert the final state:
 
 ```ts
-const action = await terminal.keyboard.press("Enter");
-await expectTerminal(terminal).toHaveShownText("Working", { since: action });
-await expectTerminal(terminal.getByText("Done")).toBeStable();
+const action = await terminal.keyboard.press('Enter');
+await expectTerminal(terminal).toHaveShownText('Working', { since: action });
+await expectTerminal(terminal.getByText('Done')).toBeStable();
 ```
 
 ### 4. Resize
 
 ```ts
 await terminal.resize({ columns: 100, rows: 30 });
-await expectTerminal(terminal.getByText("100x30")).toBeStable();
+await expectTerminal(terminal.getByText('100x30')).toBeStable();
 ```
 
 Ghostwright uses real PTY resize and `SIGWINCH`; it does not inject synthetic resize bytes.

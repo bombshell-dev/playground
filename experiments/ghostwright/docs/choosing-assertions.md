@@ -4,22 +4,22 @@ Ghostwright separates first appearance, visual convergence, stable absence, and 
 
 ## Decision table
 
-| Question | Assertion |
-|---|---|
-| Has this text appeared yet? | `toBePresent()` |
-| Has the final visible UI settled? | `toBeStable()` |
-| Has this text remained gone? | `toBeAbsent()` |
-| Have several visible conditions converged together? | `toSatisfy()` |
-| Did a fleeting screen state occur after an action? | `toHaveShown()` |
-| Did fleeting text occur after an action? | `toHaveShownText()` |
+| Question                                            | Assertion           |
+| --------------------------------------------------- | ------------------- |
+| Has this text appeared yet?                         | `toBePresent()`     |
+| Has the final visible UI settled?                   | `toBeStable()`      |
+| Has this text remained gone?                        | `toBeAbsent()`      |
+| Have several visible conditions converged together? | `toSatisfy()`       |
+| Did a fleeting screen state occur after an action?  | `toHaveShown()`     |
+| Did fleeting text occur after an action?            | `toHaveShownText()` |
 
 All waits evaluate current state and subscribe to revisions. They do not use fixed-interval polling.
 
 ## `toBePresent`: readiness and first appearance
 
 ```ts
-await expectTerminal(terminal.getByText("Ready")).toBePresent({
-  timeoutMs: 5_000,
+await expectTerminal(terminal.getByText('Ready')).toBePresent({
+	timeoutMs: 5_000,
 });
 ```
 
@@ -28,9 +28,9 @@ Use this as a readiness barrier or when first appearance is sufficient. It compl
 ## `toBeStable`: final visible state
 
 ```ts
-await expectTerminal(terminal.getByText("Saved")).toBeStable({
-  timeoutMs: 5_000,
-  settleMs: 100,
+await expectTerminal(terminal.getByText('Saved')).toBeStable({
+	timeoutMs: 5_000,
+	settleMs: 100,
 });
 ```
 
@@ -48,9 +48,9 @@ The settle clock starts at the session's last visual change, not at assertion in
 ## `toBeAbsent`: stable disappearance
 
 ```ts
-await expectTerminal(terminal.getByText("Loading")).toBeAbsent({
-  timeoutMs: 5_000,
-  settleMs: 100,
+await expectTerminal(terminal.getByText('Loading')).toBeAbsent({
+	timeoutMs: 5_000,
+	settleMs: 100,
 });
 ```
 
@@ -62,11 +62,11 @@ Use a terminal predicate when one stable screen must satisfy several conditions:
 
 ```ts
 await expectTerminal(terminal).toSatisfy(
-  (snapshot) => {
-    const text = snapshot.lines.map((line) => line.text).join("\n");
-    return text.includes("Status: complete") && text.includes("Items: 12");
-  },
-  { timeoutMs: 5_000, settleMs: 100 },
+	(snapshot) => {
+		const text = snapshot.lines.map((line) => line.text).join('\n');
+		return text.includes('Status: complete') && text.includes('Items: 12');
+	},
+	{ timeoutMs: 5_000, settleMs: 100 },
 );
 ```
 
@@ -85,19 +85,19 @@ idle → saving → complete
 Capture the action receipt and search retained revisions from that boundary:
 
 ```ts
-const action = await terminal.keyboard.press("Enter");
+const action = await terminal.keyboard.press('Enter');
 
 await expectTerminal(terminal).toHaveShown(
-  (snapshot) => snapshot.lines.some((line) => line.text.includes("Saving")),
-  { since: action, timeoutMs: 5_000 },
+	(snapshot) => snapshot.lines.some((line) => line.text.includes('Saving')),
+	{ since: action, timeoutMs: 5_000 },
 );
 ```
 
 For text only:
 
 ```ts
-await expectTerminal(terminal).toHaveShownText("Saving", {
-  since: action,
+await expectTerminal(terminal).toHaveShownText('Saving', {
+	since: action,
 });
 ```
 
@@ -108,7 +108,7 @@ Transient assertions search revision history; they do not require the matching s
 ## Strict text locators
 
 ```ts
-const locator = terminal.getByText("Open");
+const locator = terminal.getByText('Open');
 ```
 
 Locators are:
@@ -125,11 +125,9 @@ Zero matches wait until timeout. Multiple matches fail immediately with candidat
 Resolve duplicates deliberately:
 
 ```ts
-terminal.getByText("Open").nth(1);
+terminal.getByText('Open').nth(1);
 
-terminal
-  .getByText("Open")
-  .region({ column: 40, row: 0, width: 40, height: 24 });
+terminal.getByText('Open').region({ column: 40, row: 0, width: 40, height: 24 });
 ```
 
 `nth()` uses zero-based row-major ordering. `region()` uses zero-based cell coordinates.
@@ -137,7 +135,7 @@ terminal
 Exact matching compares the full physical row after trailing spaces are removed:
 
 ```ts
-terminal.getByText("Ready", { exact: true });
+terminal.getByText('Ready', { exact: true });
 ```
 
 Ghostwright does not normalize Unicode, fold case, cross rows, or search scrollback for actionable locators.
@@ -173,8 +171,8 @@ Ghostwright never debounces or combines separate sidecar output frames.
 Do not poll:
 
 ```ts
-while (!terminal.screen.getText().includes("Ready")) {
-  await sleep(25);
+while (!terminal.screen.getText().includes('Ready')) {
+	await sleep(25);
 }
 ```
 
@@ -182,7 +180,7 @@ Do not add readiness sleeps:
 
 ```ts
 await sleep(500);
-expect(terminal.screen.getText()).toContain("Ready");
+expect(terminal.screen.getText()).toContain('Ready');
 ```
 
 Use the corresponding revision assertion instead. A real sleep is appropriate only when elapsed time itself is the behavior under test or a negative scenario has no positive revision signal; document why it is necessary.

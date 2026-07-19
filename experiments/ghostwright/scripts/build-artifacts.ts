@@ -1,7 +1,7 @@
-import { $ } from "bun";
+import { $ } from 'bun';
 
-const root = new URL("..", import.meta.url).pathname,
-  artifacts = `${root}/artifacts`;
+const root = new URL('..', import.meta.url).pathname,
+	artifacts = `${root}/artifacts`;
 
 // The packaged default remains the pure-C implementation while the Rust host
 // is evaluated side by side. This script never invokes Zig for PTY-host code.

@@ -8,13 +8,13 @@ The default trace policy is `retain-on-failure`:
 
 ```ts
 await withTerminalAsync(
-  {
-    command: "my-cli",
-    name: "save-flow",
-  },
-  async (terminal) => {
-    // ...
-  },
+	{
+		command: 'my-cli',
+		name: 'save-flow',
+	},
+	async (terminal) => {
+		// ...
+	},
 );
 ```
 
@@ -120,11 +120,9 @@ Environment values and the complete inherited environment are not serialized.
 The query matched more than one visible range. Read the candidate ranges and disambiguate:
 
 ```ts
-terminal.getByText("Open").nth(1);
+terminal.getByText('Open').nth(1);
 
-terminal
-  .getByText("Open")
-  .region({ column: 40, row: 0, width: 40, height: 24 });
+terminal.getByText('Open').region({ column: 40, row: 0, width: 40, height: 24 });
 ```
 
 Do not choose an arbitrary duplicate implicitly.
@@ -176,8 +174,8 @@ Run again with the exact path-scoped `--allow-read`, `--allow-run`, and environm
 Common secret-like environment keys are redacted from trace metadata. Mark typed or pasted input explicitly:
 
 ```ts
-await terminal.keyboard.type(password, { trace: "redact" });
-await terminal.keyboard.paste(token, { trace: "redact" });
+await terminal.keyboard.type(password, { trace: 'redact' });
+await terminal.keyboard.paste(token, { trace: 'redact' });
 ```
 
 Redacted events retain type and length but not content. Application output, unmarked input, command arguments, and cwd may still contain secrets. Use argument-index redaction and `trace: "off"` where appropriate.
