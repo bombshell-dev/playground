@@ -18,6 +18,8 @@ export {
   current,
   focus,
   focusable,
+  focusPush,
+  type PopFocus,
   retreat,
   useFocus,
 } from "./focus.ts";

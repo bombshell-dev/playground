@@ -31,7 +31,6 @@ import {
 import { stdin, stdout } from "node:process";
 import { useInput as decodeBytes } from "./use-input.ts";
 import { useStdin } from "./use-stdin.ts";
-import { logKeys } from "./key-logger.ts";
 
 const GRAY = rgba(100, 100, 100);
 
@@ -123,14 +122,9 @@ await main(function* () {
 
   const root = createRoot();
 
-  logKeys(root.node);
-
   // Route keyboard events to the focused input's editing behavior.
   useInput(root);
   useReadlineKeymap(root.node);
-
-  // Debug: log every key + resulting value/caret to `input-keylog.jsonl`.
-  // Installed first so it wraps everything below. Comment out to disable.
 
   // Tab/Backtab move focus between inputs. Installed at the root scope so it
   // wraps the focused input's editing behavior (root is an ancestor of where

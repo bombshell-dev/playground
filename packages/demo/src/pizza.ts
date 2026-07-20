@@ -1,23 +1,26 @@
 // oxlint-disable bombshell-dev/no-generic-error
-import { each, ensure, main, sleep, spawn, until } from "effection";
-import { createApi } from "effection/experimental";
+import { each, ensure, main, spawn, until } from "effection";
 import {
   advance,
   createNodeData,
   createRoot,
-  current,
-  DispatchApi,
   focusable,
+  focusPush,
   type Node,
   retreat,
   type Root,
   useFocus,
 } from "@bomb.sh/freedom";
 import {
+  initInput,
+  KeyboardApi,
+  useInput as installInput,
+  useReadlineKeymap,
+} from "@bomb.sh/input";
+import {
   alternateBuffer,
   close,
   createTerm,
-  cursor,
   fit,
   grow,
   type KeyEvent,
@@ -34,16 +37,6 @@ import { useStdin } from "./use-stdin.ts";
 
 const WHITE = rgba(255, 255, 255); // all text, and the focused border
 const GRAY = rgba(100, 100, 100); // unfocused border only
-
-const FRAME = 16; // ms between render frames (~60fps)
-
-// Synchronous input API. Core methods are no-ops; behaviour is installed by
-// interceptors on each node's scope and invoked at the focused node.
-const InputApi = createApi("demo:input", {
-  keydown(_event: KeyEvent): void {},
-  keyup(_event: KeyEvent): void {},
-  keyrepeat(_event: KeyEvent): void {},
-});
 
 interface LayoutOptions {
   node: Node;
@@ -83,19 +76,19 @@ function formBody({ node, children }: LayoutOptions): Op[] {
         gap: 1,
       },
     }),
-    text("Pizza Order", { color: WHITE }),
+    text("Pizza Delivery", { color: WHITE }),
     ...children,
     close(),
   ];
 }
 
-// A labelled text input. Focused: white border + a background that eases in.
+// A labelled text input. Readline editing is provided by @bomb.sh/input; the
+// focused field renders a native cursor via the value text's `caret`.
 function makeField(node: Node, label: string): void {
-  focusable(node);
-  node.set("label", label);
-  node.set("value", "");
+  initInput(node); // focusable + input:true + value:"" + caret:0
   layout(node, () => {
-    const border = node.props.focused === true ? WHITE : GRAY;
+    const focused = node.props.focused === true;
+    const border = focused ? WHITE : GRAY;
     return [
       open(`${node.id}-field`, {
         layout: { direction: "ttb", width: grow(), padding: { left: 1, right: 1 } },
@@ -109,21 +102,13 @@ function makeField(node: Node, label: string): void {
           padding: { top: 1, right: 1, bottom: 1, left: 1 },
         },
       }),
-      text(String(node.props.value ?? ""), { color: WHITE }),
+      text(String(node.props.value ?? ""), {
+        color: WHITE,
+        caret: focused ? Number(node.props.caret ?? 0) : undefined,
+      }),
       close(),
       close(),
     ];
-  });
-  node.scope.around(InputApi, {
-    keydown([event], next) {
-      if (event.key.length === 1) {
-        node.update("value", (v) => `${v ?? ""}${event.key}`);
-      } else if (event.code === "Backspace") {
-        node.update("value", (v) => String(v ?? "").slice(0, -1));
-      } else {
-        next(event);
-      }
-    },
   });
 }
 
@@ -134,8 +119,9 @@ function makeControl(node: Node, label: string): void {
   node.set("label", label);
   layout(node, () => {
     const focused = node.props.focused === true;
+    const caption = String(node.props.label ?? "");
     // Reserve the caret columns in both states so the label never shifts.
-    const content = focused ? `› ${label} ‹` : `  ${label}  `;
+    const content = focused ? `› ${caption} ‹` : `  ${caption}  `;
     return [
       open(node.id, {
         layout: { width: grow(), padding: { left: 1, right: 1 } },
@@ -146,34 +132,99 @@ function makeControl(node: Node, label: string): void {
   });
 }
 
+// Fire `onActivate` when the focused control receives Enter or Space; other
+// keys bubble so Tab/Backtab still navigate.
+function activatable(node: Node, onActivate: () => void): void {
+  node.scope.around(KeyboardApi, {
+    keydown([n, event], next) {
+      if (event.code === "Enter" || event.code === " ") {
+        onActivate();
+      } else {
+        next(n, event);
+      }
+    },
+  });
+}
+
+// The credit-card modal: a floating panel centered over (and occluding) the
+// form, on top via zIndex. Its own focus root traps Tab/Backtab (§12).
+function cardModalBody({ node, children }: LayoutOptions): Op[] {
+  return [
+    open(node.id, {
+      border: { color: WHITE, top: 1, right: 1, bottom: 1, left: 1 },
+      bg: rgba(0, 0, 0),
+      floating: {
+        attachTo: "root",
+        attachPoints: { element: "center-center", parent: "center-center" },
+        zIndex: 10,
+      },
+      layout: {
+        direction: "ttb",
+        width: fit(40),
+        height: fit(),
+        padding: { top: 1, right: 1, bottom: 1, left: 1 },
+        gap: 1,
+      },
+    }),
+    text("Card details", { color: WHITE }),
+    ...children,
+    close(),
+  ];
+}
+
+function isConfirmed(value: unknown): value is { last4: string } {
+  return !!value && typeof value === "object" && "last4" in value;
+}
+
+// Open the card modal: build its subtree, push it as the focus root, and wire
+// Cancel/Confirm to pop with a result the push callback acts on.
+function openCardModal(root: Root, card: Node): void {
+  const modal = root.node.createChild("card-modal");
+  layout(modal, cardModalBody);
+  const number = modal.createChild("card-number");
+  makeField(number, "Card number");
+  makeField(modal.createChild("expiry"), "Expiry");
+  makeField(modal.createChild("cvc"), "CVC");
+  const cancel = modal.createChild("cancel");
+  makeControl(cancel, "Cancel");
+  const confirm = modal.createChild("confirm");
+  makeControl(confirm, "Confirm");
+
+  const pop = focusPush(modal, (value) => {
+    if (isConfirmed(value)) {
+      card.set("label", `Edit card •••• ${value.last4}`);
+    }
+    void modal.remove(); // focus already restored to the card link
+  });
+
+  activatable(cancel, () => pop({ cancelled: true }));
+  activatable(confirm, () => {
+    const digits = String(number.props.value ?? "").replace(/\D/g, "");
+    pop({ last4: digits.slice(-4) || "????" });
+  });
+}
+
 // Build the pizza form's node tree: a centered panel holding two text fields
 // and two activatable controls, with Tab/Backtab focus navigation installed.
 export function buildPizza(): Root {
   const root = createRoot();
 
-  // Demux: route keyboard events to the focused node's input chain.
-  root.node.scope.around(DispatchApi, {
-    *dispatch([event], next) {
-      if (isKeyboardEvent(event)) {
-        InputApi.invoke(current(root.node).scope, event.type, [event]);
-        return { ok: true, value: true };
-      } else {
-        return yield* next(event);
-      }
-    },
-  });
+  // Demux + readline editing (insert-at-caret, Backspace/Delete, arrows,
+  // Home/End) from @bomb.sh/input, plus its emacs Ctrl-A/E/F/B/D keymap.
+  installInput(root);
+  useReadlineKeymap(root.node);
 
-  // Tab/Backtab navigation, bubbled up from controls that don't consume the key.
-  function tab([event]: [KeyEvent], next: (event: KeyEvent) => void): void {
+  // Tab/Backtab navigation, bubbled up from nodes that don't consume the key.
+  function tab([node, event]: [Node, KeyEvent], next: (node: Node, event: KeyEvent) => void): void {
     if (event.code === "Tab") {
       advance(root.node);
     } else if (event.code === "Backtab") {
       retreat(root.node);
     } else {
-      next(event);
+      next(node, event);
     }
   }
-  root.node.scope.around(InputApi, { keydown: tab, keyrepeat: tab });
+  root.node.scope.around(KeyboardApi, { keydown: tab });
 
   layout(root.node, screenBody);
 
@@ -182,7 +233,9 @@ export function buildPizza(): Root {
 
   makeField(panel.createChild("name"), "Name");
   makeField(panel.createChild("address"), "Address");
-  makeControl(panel.createChild("card"), "Add card");
+  const card = panel.createChild("card");
+  makeControl(card, "Add card");
+  activatable(card, () => openCardModal(root, card));
   makeControl(panel.createChild("submit"), "Submit");
 
   useFocus(root.node); // seed focus now that focusable controls exist (name)
@@ -197,12 +250,6 @@ export function walk(node: Node): Op[] {
   }
   const body = node.data.get(layoutKey);
   return body ? body({ node, children }) : children;
-}
-
-function isKeyboardEvent(event: unknown): event is KeyEvent {
-  const x = event as KeyEvent;
-  return !!x && typeof x.key === "string" && typeof x.code === "string" &&
-    ["keyup", "keydown", "keyrepeat"].includes(x.type);
 }
 
 function* run() {
@@ -227,28 +274,26 @@ function* run() {
 
   let term = yield* until(createTerm({ height: rows, width: columns }));
 
-  let last = performance.now();
   function render(): void {
-    const now = performance.now();
-    const delta = now - last;
-    last = now;
-    const { output } = term.render(walk(root.node), { deltaTime: delta });
+    const { output } = term.render(walk(root.node), { deltaTime: 0 });
     if (output.length > 0) {
       stdout.write(output);
     }
   }
 
-  const tty = settings(cursor(false), alternateBuffer());
+  const tty = settings(alternateBuffer()); // native cursor shown via text carets
 
   try {
     stdout.write(tty.apply);
 
-    // Sole renderer: a frame ticker. Idle re-renders diff to zero bytes, so
-    // this is cheap when nothing changes and drives transitions when they do.
+    // Event-driven: paint once, then only when the tree changes. Rendering
+    // every frame would re-emit the cursor position each tick and reset the
+    // terminal's blink timer, so an idle cursor would never blink.
+    render();
     yield* spawn(function* () {
-      while (true) {
+      for (const _ of yield* each(root)) {
         render();
-        yield* sleep(FRAME);
+        yield* each.next();
       }
     });
 
@@ -261,6 +306,7 @@ function* run() {
           height: event.height,
           width: event.width,
         }));
+        render();
       }
       root.dispatch(event);
       yield* each.next();
