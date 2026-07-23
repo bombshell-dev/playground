@@ -18,6 +18,9 @@ catalogs:
     '@clack/ui':
       specifier: https://pkg.pr.new/bombshell-dev/ui/@clack/ui@a60ac12
       version: 0.0.0
+    alien-signals:
+      specifier: ^2.0.0
+      version: 2.0.8
 
 importers:
 
@@ -44,9 +47,15 @@ importers:
 
   examples/input:
     dependencies:
+      '@bomb.sh/tty':
+        specifier: 'catalog:'
+        version: 0.8.0
       '@clack/ui':
         specifier: 'catalog:'
         version: https://pkg.pr.new/bombshell-dev/ui/@clack/ui@a60ac12
+      alien-signals:
+        specifier: 'catalog:'
+        version: 2.0.8
 
   experiments/ghostwright:
     dependencies:
@@ -986,6 +995,9 @@ packages:
 
   '@yuku-toolchain/types@0.5.43':
     resolution: {integrity: sha512-kSpvPntnXw5+lYjO71ffBEnQ5ycQ74KGIYknh0TS4xeyCuBkOqxyJumxZkMhLBBUCLjDAbx2+Icnr3Zh4ftjpQ==}
+
+  alien-signals@2.0.8:
+    resolution: {integrity: sha512-844G1VLkk0Pe2SJjY0J8vp8ADI73IM4KliNu2OGlYzWpO28NexEUvjHTcFjFX3VXoiUtwTbHxLNI9ImkcoBqzA==}
 
   ansis@4.3.1:
     resolution: {integrity: sha512-BJ8/l4R5LRE7hW9WdSuGYrLSHi2ynxeFpDFbH0K/CgNeY/tyhk+vO6TYxXC5r5CpUhNVX310xzPsN/H9lCdfOA==}
@@ -2168,6 +2180,8 @@ snapshots:
     optional: true
 
   '@yuku-toolchain/types@0.5.43': {}
+
+  alien-signals@2.0.8: {}
 
   ansis@4.3.1: {}
 

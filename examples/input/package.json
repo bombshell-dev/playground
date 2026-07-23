@@ -3,10 +3,16 @@
 	"private": true,
 	"type": "module",
 	"exports": {
-		"./ui/raw": "./ui/raw.ts",
+		"./1-raw": "./ui/1-raw.ts",
+		"./2-parser": "./ui/2-parser.ts",
+		"./3-signals": "./ui/3-signals.ts",
+		"./4-modes": "./ui/4-modes.ts",
+		"./5-stream": "./ui/5-stream.ts",
 		"./package.json": "./package.json"
 	},
 	"dependencies": {
-		"@clack/ui": "catalog:"
+		"@bomb.sh/tty": "catalog:",
+		"@clack/ui": "catalog:",
+		"alien-signals": "catalog:"
 	}
 }
