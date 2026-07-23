@@ -3,11 +3,11 @@
 	"private": true,
 	"type": "module",
 	"exports": {
-		"./1-raw": "./ui/1-raw.ts",
-		"./2-parser": "./ui/2-parser.ts",
-		"./3-signals": "./ui/3-signals.ts",
-		"./4-modes": "./ui/4-modes.ts",
-		"./5-stream": "./ui/5-stream.ts",
+		"./1-raw": "./src/1-raw.ts",
+		"./2-parser": "./src/2-parser.ts",
+		"./3-signals": "./src/3-signals.ts",
+		"./4-modes": "./src/4-modes.ts",
+		"./5-stream": "./src/5-stream.ts",
 		"./package.json": "./package.json"
 	},
 	"dependencies": {
