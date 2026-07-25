@@ -50,9 +50,28 @@ test('Freedom semantics expose modal focus capture through CSS-like selectors', 
 		expect(freedom.locator('card-modal:focus-root > *').matches()).toHaveLength(5);
 		expect(freedom.locator('card-modal > [role=textbox]').matches()).toHaveLength(3);
 		expect(freedom.locator('[role=dialog]:focus-root').matches()).toHaveLength(1);
+		expect(freedom.locator('card-modal:has(> card-number:focus)').matches()).toHaveLength(1);
+		expect(freedom.locator('card-modal > :nth-child(1):focus').matches()).toHaveLength(1);
+		expect(freedom.locator('card-number + expiry').matches()).toHaveLength(1);
+		expect(freedom.locator('card-number ~ confirm').matches()).toHaveLength(1);
+		expect(freedom.locator('card-number, expiry').matches()).toHaveLength(2);
+		expect(freedom.locator('card-modal [role^=text]:not(cvc)').matches()).toHaveLength(2);
 		expect(freedom.locator(`#${modal.unique().key}`).matches()).toHaveLength(1);
 		expect(freedom.current()?.focusStack).toEqual([modal.unique().key]);
 		expect(freedom.locator('form :focus').matches()).toHaveLength(0);
+		expect(() => freedom.locator('card-modal::before')).toThrow(
+			'Pseudo-elements are not supported',
+		);
+		expect(() => freedom.locator('card-modal:contains(Card)')).toThrow(
+			'Pseudo-class :contains is not supported',
+		);
+		expect(() => freedom.locator('card-modal < :focus')).toThrow(
+			'Selector traversal parent is not supported',
+		);
+		expect(() => freedom.locator('x'.repeat(4097))).toThrow('Selector exceeds 4096 bytes');
+		expect(() => freedom.locator('root:has(root:has(root:has(root)))')).toThrow(
+			'Nested :has() exceeds depth 2',
+		);
 		expect(focused.matches().map((node) => node.name)).toEqual(['card-number']);
 
 		// Freedom contributes identity/focus state; tty contributes geometry.

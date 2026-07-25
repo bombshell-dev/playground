@@ -31,6 +31,8 @@
     },
     "devDependencies": {
         "@bomb.sh/tools": "latest",
+        "css-select": "^7.0.0",
+        "css-what": "^8.0.0",
         "ghostwright": "workspace:*"
     },
     "repository": {

@@ -1,4 +1,6 @@
 // oxlint-disable bombshell-dev/exported-function-async -- pure synchronous snapshot queries
+import { compile, type Options } from 'css-select';
+import { AttributeAction, parse, SelectorType, type Selector } from 'css-what';
 import type {
 	AsyncLocator,
 	AsyncRegion,
@@ -7,7 +9,12 @@ import type {
 	TextLocatorOptions,
 } from 'ghostwright';
 
-const PREFIX = '\u001b]7777;ghostwright.freedom-tty;v=';
+const PREFIX = '\u001b]7777;ghostwright.freedom-tty;v=',
+	MAX_SELECTOR_BYTES = 4096,
+	MAX_SELECTOR_TOKENS = 256,
+	MAX_SELECTOR_LISTS = 32,
+	MAX_SELECTOR_DEPTH = 8,
+	MAX_HAS_DEPTH = 2;
 
 export interface FreedomTtyNodeMetadata {
 	key: string;
@@ -34,7 +41,7 @@ export interface FreedomTtyFrameMetadata {
 	nodes: FreedomTtyNodeMetadata[];
 }
 
-/** Selector syntax or strictness error from the spike extension. */
+/** Selector syntax, complexity, or strictness error from the spike extension. */
 export class FreedomTtyLocatorError extends Error {
 	readonly code = 'FREEDOM_TTY_LOCATOR';
 }
@@ -87,126 +94,164 @@ export function parseFreedomTtyFrames(bytes: Uint8Array): FreedomTtyFrameMetadat
 	return frames;
 }
 
-interface CompoundSelector {
-	name?: string;
-	id?: string;
-	attributes: Array<{ name: string; value?: string }>;
-	pseudos: Array<'focus' | 'focus-root' | 'root'>;
+interface SelectorNode extends FreedomTtyNodeMetadata {
+	parentNode: SelectorNode | null;
+	children: SelectorNode[];
 }
 
-type Combinator = 'child' | 'descendant';
-
-interface ParsedSelector {
-	compounds: CompoundSelector[];
-	combinators: Combinator[];
+interface SelectorDocument {
+	nodes: SelectorNode[];
+	roots: SelectorNode[];
 }
 
-function parseCompound(source: string): CompoundSelector {
-	const result: CompoundSelector = { attributes: [], pseudos: [] };
-	let rest = source;
-	const name = /^(\*|[A-Za-z_][A-Za-z0-9_-]*)/.exec(rest);
-	if (name) {
-		if (name[1] !== '*') result.name = name[1];
-		rest = rest.slice(name[0].length);
-	}
-	while (rest) {
-		const id = /^#([A-Za-z0-9_-]+)/.exec(rest);
-		if (id) {
-			result.id = id[1];
-			rest = rest.slice(id[0].length);
-			continue;
-		}
-		const pseudo = /^:(focus-root|focus|root)/.exec(rest);
-		if (pseudo) {
-			result.pseudos.push(pseudo[1] as CompoundSelector['pseudos'][number]);
-			rest = rest.slice(pseudo[0].length);
-			continue;
-		}
-		const attribute = /^\[([A-Za-z0-9_-]+)(?:=(?:"([^"]*)"|'([^']*)'|([^\]]+)))?\]/.exec(rest);
-		if (attribute) {
-			result.attributes.push({
-				name: attribute[1],
-				value: attribute[2] ?? attribute[3] ?? attribute[4]?.trim(),
-			});
-			rest = rest.slice(attribute[0].length);
-			continue;
-		}
-		throw new FreedomTtyLocatorError(`Unsupported selector syntax near ${JSON.stringify(rest)}`);
-	}
-	return result;
-}
-
-function parseSelector(source: string): ParsedSelector {
-	const normalized = source.trim().replace(/\s*>\s*/g, '>');
-	if (!normalized) throw new FreedomTtyLocatorError('Selector cannot be empty');
-	const compounds: CompoundSelector[] = [],
-		combinators: Combinator[] = [];
-	let token = '';
-	for (let index = 0; index < normalized.length; index++) {
-		const char = normalized[index];
-		if (char === '>' || /\s/.test(char)) {
-			if (!token) continue;
-			compounds.push(parseCompound(token));
-			token = '';
-			combinators.push(char === '>' ? 'child' : 'descendant');
-			while (/\s/.test(normalized[index + 1] ?? '')) index++;
+function materialize(frame: FreedomTtyFrameMetadata): SelectorDocument {
+	const nodes: SelectorNode[] = frame.nodes.map((node) => ({
+		...node,
+		parentNode: null,
+		children: [],
+	}));
+	const byKey = new Map(nodes.map((node) => [node.key, node])),
+		roots: SelectorNode[] = [];
+	for (const node of nodes) {
+		const parent = node.parent ? byKey.get(node.parent) : undefined;
+		if (parent) {
+			node.parentNode = parent;
+			parent.children.push(node);
 		} else {
-			token += char;
+			roots.push(node);
 		}
 	}
-	if (token) compounds.push(parseCompound(token));
-	if (compounds.length === 0 || combinators.length !== compounds.length - 1)
-		throw new FreedomTtyLocatorError(`Malformed selector ${JSON.stringify(source)}`);
-	return { compounds, combinators };
+	for (const node of nodes) node.children.sort((left, right) => left.order - right.order);
+	return { nodes, roots };
 }
 
-function attributeValue(node: FreedomTtyNodeMetadata, name: string): unknown {
+function attributeValue(node: SelectorNode, name: string): string | undefined {
+	if (name === 'id') return node.key;
 	if (name === 'name') return node.name;
-	if (name === 'focused') return node.states.focused;
-	if (name === 'focus-root') return node.states.focusRoot;
-	return node.attributes[name as keyof FreedomTtyNodeMetadata['attributes']];
+	if (name === 'focused') return String(node.states.focused);
+	if (name === 'focus-root') return String(node.states.focusRoot);
+	const value = (node.attributes as Readonly<Record<string, unknown>>)[name];
+	return value === undefined ? undefined : String(value);
 }
 
-function matchesCompound(node: FreedomTtyNodeMetadata, selector: CompoundSelector): boolean {
-	if (selector.name && node.name !== selector.name) return false;
-	if (selector.id && node.key !== selector.id) return false;
-	for (const pseudo of selector.pseudos) {
-		if (pseudo === 'focus' && !node.states.focused) return false;
-		if (pseudo === 'focus-root' && !node.states.focusRoot) return false;
-		if (pseudo === 'root' && node.parent !== null) return false;
-	}
-	for (const attribute of selector.attributes) {
-		const actual = attributeValue(node, attribute.name);
-		if (actual === undefined) return false;
-		if (attribute.value !== undefined && String(actual) !== attribute.value) return false;
-	}
-	return true;
+function textContent(node: SelectorNode): string {
+	return [node.attributes.label ?? '', ...node.children.map(textContent)].filter(Boolean).join(' ');
 }
 
-function query(frame: FreedomTtyFrameMetadata, source: string): FreedomTtyNodeMetadata[] {
-	const selector = parseSelector(source),
-		byKey = new Map(frame.nodes.map((node) => [node.key, node]));
+const adapter: NonNullable<Options<SelectorNode, SelectorNode>['adapter']> = {
+	isTag: (node): node is SelectorNode => !!node,
+	getName: (node) => node.name || 'freedom-root',
+	getChildren: (node) => node.children,
+	getParent: (node) => node.parentNode,
+	getSiblings: (node) => node.parentNode?.children ?? [node],
+	prevElementSibling: (node) => {
+		const siblings = node.parentNode?.children ?? [node],
+			index = siblings.indexOf(node);
+		return index > 0 ? siblings[index - 1] : null;
+	},
+	getAttributeValue: attributeValue,
+	hasAttrib: (node, name) => attributeValue(node, name) !== undefined,
+	getText: textContent,
+	removeSubsets: (nodes) => {
+		const selected = new Set(nodes);
+		return nodes.filter((node) => {
+			for (let parent = node.parentNode; parent; parent = parent.parentNode)
+				if (selected.has(parent)) return false;
+			return true;
+		});
+	},
+	equals: (left, right) => left.key === right.key,
+};
 
-	function matchesAt(node: FreedomTtyNodeMetadata, index: number): boolean {
-		if (!matchesCompound(node, selector.compounds[index])) return false;
-		if (index === 0) return true;
-		const combinator = selector.combinators[index - 1];
-		let parent = node.parent ? byKey.get(node.parent) : undefined;
-		if (combinator === 'child') return !!parent && matchesAt(parent, index - 1);
-		while (parent) {
-			if (matchesAt(parent, index - 1)) return true;
-			parent = parent.parent ? byKey.get(parent.parent) : undefined;
+const selectorOptions: Options<SelectorNode, SelectorNode> = {
+	adapter,
+	xmlMode: true,
+	cacheResults: false,
+	pseudos: {
+		focus: (node) => node.states.focused,
+		'focus-root': (node) => node.states.focusRoot,
+		visible: (node) => !!node.rect && node.rect[2] > 0 && node.rect[3] > 0,
+	},
+};
+
+const allowedPseudos = new Set([
+	'not',
+	'is',
+	'where',
+	'has',
+	'root',
+	'empty',
+	'first-child',
+	'last-child',
+	'first-of-type',
+	'last-of-type',
+	'only-child',
+	'only-of-type',
+	'nth-child',
+	'nth-last-child',
+	'nth-of-type',
+	'nth-last-of-type',
+	'focus',
+	'focus-root',
+	'visible',
+]);
+
+/** Parse and enforce the selector subset and complexity limits owned by this extension. */
+function validateSelector(source: string): Selector[][] {
+	if (Buffer.byteLength(source, 'utf8') > MAX_SELECTOR_BYTES)
+		throw new FreedomTtyLocatorError(`Selector exceeds ${MAX_SELECTOR_BYTES} bytes`);
+	let ast: Selector[][];
+	try {
+		ast = parse(source);
+	} catch (error) {
+		throw new FreedomTtyLocatorError(
+			`Invalid selector ${JSON.stringify(source)}: ${error instanceof Error ? error.message : String(error)}`,
+		);
+	}
+	let tokens = 0,
+		lists = 0;
+	function visit(selectors: Selector[][], state: { depth: number; hasDepth: number }): void {
+		const { depth, hasDepth } = state;
+		if (depth > MAX_SELECTOR_DEPTH)
+			throw new FreedomTtyLocatorError(`Selector nesting exceeds ${MAX_SELECTOR_DEPTH}`);
+		lists += selectors.length;
+		if (lists > MAX_SELECTOR_LISTS)
+			throw new FreedomTtyLocatorError(`Selector lists exceed ${MAX_SELECTOR_LISTS}`);
+		for (const selector of selectors) {
+			for (const token of selector) {
+				if (++tokens > MAX_SELECTOR_TOKENS)
+					throw new FreedomTtyLocatorError(`Selector tokens exceed ${MAX_SELECTOR_TOKENS}`);
+				if (token.type === SelectorType.PseudoElement)
+					throw new FreedomTtyLocatorError('Pseudo-elements are not supported');
+				if (token.type === SelectorType.Parent || token.type === SelectorType.ColumnCombinator)
+					throw new FreedomTtyLocatorError(`Selector traversal ${token.type} is not supported`);
+				if (token.type === SelectorType.Attribute && token.action === AttributeAction.Not)
+					throw new FreedomTtyLocatorError(
+						'The nonstandard != attribute operator is not supported',
+					);
+				if (token.type === SelectorType.Pseudo) {
+					if (!allowedPseudos.has(token.name))
+						throw new FreedomTtyLocatorError(`Pseudo-class :${token.name} is not supported`);
+					if (token.name === 'has' && hasDepth >= MAX_HAS_DEPTH)
+						throw new FreedomTtyLocatorError(`Nested :has() exceeds depth ${MAX_HAS_DEPTH}`);
+					if (Array.isArray(token.data))
+						visit(token.data, {
+							depth: depth + 1,
+							hasDepth: token.name === 'has' ? hasDepth + 1 : hasDepth,
+						});
+				}
+			}
 		}
-		return false;
 	}
-
-	return frame.nodes.filter((node) => matchesAt(node, selector.compounds.length - 1));
+	visit(ast, { depth: 0, hasDepth: 0 });
+	return ast;
 }
 
-/** Lazy CSS-like locator that re-resolves against the latest semantic frame. */
+/** Lazy CSS locator that re-runs a compiled selector against the newest semantic frame. */
 export class FreedomTtyLocator {
 	readonly selector: string;
 	readonly index: number | undefined;
+	readonly #predicate: (node: SelectorNode) => boolean;
 
 	constructor(
 		readonly extension: FreedomTtyExtension,
@@ -214,13 +259,16 @@ export class FreedomTtyLocator {
 	) {
 		this.selector = options.selector;
 		this.index = options.index;
-		parseSelector(this.selector);
+		this.#predicate = compile<SelectorNode, SelectorNode>(
+			validateSelector(this.selector),
+			selectorOptions,
+		);
 	}
 
 	matches(): readonly FreedomTtyNodeMetadata[] {
-		const frame = this.extension.current();
-		if (!frame) return [];
-		const matches = query(frame, this.selector);
+		const document = this.extension.document();
+		if (!document) return [];
+		const matches = document.nodes.filter(this.#predicate);
 		return this.index === undefined ? matches : matches[this.index] ? [matches[this.index]] : [];
 	}
 
@@ -271,14 +319,34 @@ export class FreedomTtyLocator {
 
 /** Minimal stand-in for a Ghostwright semantic-tree extension instance. */
 export class FreedomTtyExtension {
+	#rawLength = -1;
+	#frames: readonly FreedomTtyFrameMetadata[] = [];
+	#documentFrame = -1;
+	#document: SelectorDocument | undefined;
+
 	constructor(readonly terminal: AsyncTerminal) {}
 
 	frames(): readonly FreedomTtyFrameMetadata[] {
-		return parseFreedomTtyFrames(this.terminal.screen.rawOutput());
+		const raw = this.terminal.screen.rawOutput();
+		if (raw.length !== this.#rawLength) {
+			this.#rawLength = raw.length;
+			this.#frames = parseFreedomTtyFrames(raw);
+		}
+		return this.#frames;
 	}
 
 	current(): FreedomTtyFrameMetadata | undefined {
 		return this.frames().at(-1);
+	}
+
+	document(): SelectorDocument | undefined {
+		const frame = this.current();
+		if (!frame) return undefined;
+		if (frame.frame !== this.#documentFrame) {
+			this.#documentFrame = frame.frame;
+			this.#document = materialize(frame);
+		}
+		return this.#document;
 	}
 
 	locator(selector: string): FreedomTtyLocator {
