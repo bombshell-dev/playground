@@ -37,6 +37,16 @@ export class ReservedEnvironmentError extends errorType(
 export class LaunchError extends errorType('LaunchError', 'GW_LAUNCH') {}
 /** Error for protocol violations. */
 export class ProtocolError extends errorType('ProtocolError', 'GW_PROTOCOL') {}
+/** Error for conflicting extension registrations. */
+export class ExtensionDuplicateError extends errorType(
+	'ExtensionDuplicateError',
+	'GW_EXTENSION_DUPLICATE',
+) {}
+/** Error for a registered OSC sequence exceeding its bounded buffer. */
+export class ExtensionOscLimitError extends errorType(
+	'ExtensionOscLimitError',
+	'GW_EXTENSION_OSC_LIMIT',
+) {}
 /** Error when host command exceeds timeout. */
 export class HostCommandTimeoutError extends errorType(
 	'HostCommandTimeoutError',

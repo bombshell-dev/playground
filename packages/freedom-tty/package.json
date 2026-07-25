@@ -1,0 +1,19 @@
+{
+  "name": "@ghostwright/freedom-tty",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./producer": "./src/producer.ts"
+  },
+  "dependencies": {
+    "css-select": "^7.0.0",
+    "css-what": "^8.0.0",
+    "ghostwright": "workspace:*"
+  },
+  "peerDependencies": {
+    "@bomb.sh/freedom": "*",
+    "@bomb.sh/tty": "*"
+  }
+}

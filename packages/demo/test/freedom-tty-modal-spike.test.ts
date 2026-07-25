@@ -1,6 +1,8 @@
 import { expect, test } from 'bun:test';
 import { expectTerminal, withTerminalAsync, type AsyncTerminal } from 'ghostwright';
-import { FreedomTtyExtension } from './support/freedom-tty-extension.ts';
+import { freedomTtyExtension, type FreedomTtySession } from '@ghostwright/freedom-tty';
+
+const freedomExtension = freedomTtyExtension();
 
 const pizza = {
 	command: 'bun',
@@ -9,16 +11,19 @@ const pizza = {
 	env: { GHOSTWRIGHT_FREEDOM_TTY: '1' },
 	viewport: { columns: 80, rows: 24 },
 	trace: 'off' as const,
+	extensions: [freedomExtension],
 };
 
 /** Bind semantic-count assertions to one terminal session. */
 function semanticCountExpectation(terminal: AsyncTerminal) {
 	return async (
-		selector: ReturnType<FreedomTtyExtension['locator']>,
+		selector: ReturnType<FreedomTtySession['locator']>,
 		count: number,
 	): Promise<void> => {
 		await expectTerminal(terminal).toSatisfy(() => selector.matches().length === count, {
-			settleMs: 100,
+			// A semantic commit is immutable; waiting for visual settlement would
+			// unnecessarily add 100 ms to every focus transition.
+			settleMs: 0,
 		});
 	};
 }
@@ -27,7 +32,7 @@ test('Freedom semantics expose modal focus capture through CSS-like selectors', 
 	await withTerminalAsync(pizza, async (terminal) => {
 		await expectTerminal(terminal.getByText('Pizza Delivery')).toBeStable();
 
-		const freedom = new FreedomTtyExtension(terminal),
+		const freedom = terminal.extension(freedomExtension),
 			expectCount = semanticCountExpectation(terminal),
 			modal = freedom.locator('card-modal:focus-root'),
 			focused = freedom.locator(':focus');
@@ -74,12 +79,11 @@ test('Freedom semantics expose modal focus capture through CSS-like selectors', 
 		);
 		expect(focused.matches().map((node) => node.name)).toEqual(['card-number']);
 
-		// Freedom contributes identity/focus state; tty contributes geometry.
-		// Those two views point at the same visible modal and native caret.
-		await expectTerminal(modal.getByText('Card details')).toBePresent();
-		expect(freedom.locator('card-modal > card-number').containsCursor()).toBe(true);
-		expect(modal.bounds()).toBeDefined();
-		expect(freedom.locator('card-modal > card-number').bounds()).toBeDefined();
+		// Geometry stays available for diagnostics. visibleBounds is deliberately
+		// omitted until tty supplies authoritative clipping intersections.
+		expect(modal.layoutBounds()).toBeDefined();
+		expect(modal.terminalBounds()).toBeDefined();
+		expect(modal.visibleBounds()).toBeUndefined();
 
 		// Input values are intentionally not part of the semantic payload. This
 		// must remain true even after sensitive-looking data enters the model.
@@ -112,7 +116,7 @@ test('Freedom semantics expose modal focus capture through CSS-like selectors', 
 
 		// Every live semantic node in the final frame has corresponding Clay
 		// geometry. The removed modal nodes are absent rather than stale.
-		expect(freedom.current()?.nodes.every((node) => node.rect !== undefined)).toBe(true);
+		expect(freedom.current()?.nodes.every((node) => node.geometry !== undefined)).toBe(true);
 		expect(freedom.locator('card-modal *').matches()).toHaveLength(0);
 		const frameNumbers = freedom.frames().map((frame) => frame.frame);
 		expect(

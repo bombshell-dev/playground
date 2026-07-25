@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import {
 	CoordinateRangeError,
 	DenoPermissionError,
+	ExtensionDuplicateError,
 	GhostwrightError,
 	HistoryChangedError,
 	HistoryEvictedError,
@@ -53,10 +54,16 @@ import type {
 	ScreenSnapshot,
 	TerminalLaunchOptions,
 	TextLocatorOptions,
+	TerminalExtensionDefinition,
+	ExtensionCommit,
+	ExtensionRevision,
+	ExtensionSessionContext,
+	RegisteredOscMessage,
 	TraceableInputOptions,
 	Viewport,
 	WheelOptions,
 } from '../types.ts';
+import { RegisteredOscStream } from './extensions.ts';
 import { GhosttyWasmTerminal } from './wasm.ts';
 function concatBytes(parts: readonly Uint8Array[]) {
 	const result = new Uint8Array(parts.reduce((total, part) => total + part.length, 0));
@@ -102,9 +109,42 @@ export class TerminalSession implements AsyncTerminal {
 	#trace: SessionTrace;
 	#viewport;
 	#fatalError?: Error;
+	#extensions = new Map<
+		string,
+		{
+			definition: TerminalExtensionDefinition<unknown, unknown>;
+			session: unknown;
+			revisions: ExtensionRevision<unknown>[];
+			sequence: number;
+		}
+	>();
+	#osc?: RegisteredOscStream;
 	#exitResolve!: (s: ProcessStatus) => void;
 	#exitPromise: Promise<ProcessStatus>;
 	private constructor(readonly options: TerminalLaunchOptions) {
+		const extensions = options.extensions ?? [];
+		const identities = new Set<string>();
+		for (const definition of extensions) {
+			const identity = `${definition.id}:${definition.osc?.number ?? ''}:${definition.osc?.namespace ?? ''}`;
+			if (this.#extensions.has(definition.id) || identities.has(identity))
+				throw new ExtensionDuplicateError(`Duplicate extension registration ${definition.id}`);
+			identities.add(identity);
+			this.#extensions.set(definition.id, {
+				definition,
+				session: undefined,
+				revisions: [],
+				sequence: 0,
+			});
+		}
+		const registrations = extensions.flatMap((definition) =>
+			definition.osc ? [definition.osc] : [],
+		);
+		const oscKeys = new Set(
+			registrations.map((registration) => `${registration.number};${registration.namespace}`),
+		);
+		if (oscKeys.size !== registrations.length)
+			throw new ExtensionDuplicateError('Duplicate registered OSC number and namespace');
+		this.#osc = registrations.length ? new RegisteredOscStream(registrations) : undefined;
 		this.#viewport = normalizeViewport(options.viewport);
 		const t =
 				typeof options.trace === 'string'
@@ -170,6 +210,7 @@ export class TerminalSession implements AsyncTerminal {
 			options.graphics?.storageLimitBytes ?? 64 * 1024 * 1024,
 		);
 		self.#snapshot = self.#engine.snapshot();
+		self.#initializeExtensions();
 		self.#trace.add('kitty-capability', {
 			supported: self.#snapshot.graphics.supported,
 			storageLimitBytes: self.#snapshot.graphics.storageLimitBytes,
@@ -256,6 +297,87 @@ export class TerminalSession implements AsyncTerminal {
 	get lastAction() {
 		return this.#lastAction;
 	}
+	extension<T>(definition: TerminalExtensionDefinition<T, unknown>): T {
+		const registered = this.#extensions.get(definition.id);
+		if (!registered || registered.definition !== definition)
+			throw new GhostwrightError({
+				code: 'GW_EXTENSION_NOT_REGISTERED',
+				message: `Extension ${definition.id} was not registered for this terminal`,
+			});
+		return registered.session as T;
+	}
+	#initializeExtensions() {
+		for (const [id, record] of this.#extensions) {
+			const context = this.#extensionContext(id);
+			record.session = record.definition.createSession(context);
+		}
+	}
+	#extensionContext(id: string): ExtensionSessionContext<unknown> {
+		return Object.freeze({
+			terminal: this,
+			screen: this.screen,
+			publish: (commit: ExtensionCommit<unknown>) => this.#publishExtension(id, commit),
+			diagnostic: (error: GhostwrightError) => {
+				this.#trace.add('extension-diagnostic', {
+					extensionId: id,
+					code: error.code,
+					message: error.message.slice(0, 1024),
+				});
+			},
+		});
+	}
+	#publishExtension(id: string, commit: ExtensionCommit<unknown>): ExtensionRevision<unknown> {
+		const record = this.#extensions.get(id);
+		if (!record)
+			throw new GhostwrightError({
+				code: 'GW_EXTENSION_NOT_REGISTERED',
+				message: `Unknown extension ${id}`,
+			});
+		const revision = Object.freeze({
+			sequence: ++record.sequence,
+			timestamp: this.#engine.now(),
+			extensionId: id,
+			protocolFrame: commit.protocolFrame,
+			screenSequence: this.#snapshot.sequence,
+			value: commit.value,
+		});
+		record.revisions.push(revision);
+		this.#trace.add('extension-revision', {
+			extensionId: id,
+			sequence: revision.sequence,
+			protocolFrame: revision.protocolFrame,
+			screenSequence: revision.screenSequence,
+		});
+		this.#notify();
+		return revision;
+	}
+	#acceptOsc(
+		registration: TerminalExtensionDefinition<unknown, unknown>['osc'],
+		message: RegisteredOscMessage,
+	) {
+		if (!registration) return;
+		const record = [...this.#extensions.values()].find(
+			(candidate) => candidate.definition.osc === registration,
+		);
+		if (!record) return;
+		const context = this.#extensionContext(record.definition.id);
+		try {
+			const commit = registration.decode(message);
+			record.definition.accept?.(record.session, commit, context);
+		} catch (cause) {
+			const error =
+				cause instanceof GhostwrightError
+					? cause
+					: new GhostwrightError({
+							code: 'GW_EXTENSION_OSC',
+							message:
+								cause instanceof Error
+									? cause.message.slice(0, 1024)
+									: 'Extension OSC decode failed',
+						});
+			context.diagnostic(error);
+		}
+	}
 	now() {
 		return this.#engine.now();
 	}
@@ -272,11 +394,24 @@ export class TerminalSession implements AsyncTerminal {
 		this.#raw.push(bytes.slice());
 		const max = this.options.history?.maxRawBytes ?? 4 * 1024 * 1024;
 		while (this.#raw.reduce((n, b) => n + b.length, 0) > max) this.#raw.shift();
-		this.#engine.write(bytes);
-		// Any output can append, prune, reflow, reset, or switch Ghostty's active page list.
-		// Incrementing conservatively prevents a caller from mixing pagination layouts.
-		this.#terminalHistoryGeneration++;
-		this.#publish('pty-output', sourceFrameSequence);
+		const parsed = this.#osc?.push(bytes) ?? { items: [{ kind: 'ordinary' as const, bytes }] };
+		for (const item of parsed.items) {
+			if (item.kind === 'ordinary') {
+				if (!item.bytes.length) continue;
+				this.#engine.write(item.bytes);
+				// Publish before a following OSC commit so its screen association is the
+				// exact state produced by preceding bytes in the same PTY host frame.
+				this.#terminalHistoryGeneration++;
+				this.#publish('pty-output', sourceFrameSequence);
+			} else if (item.kind === 'event') {
+				this.#acceptOsc(item.event.registration, item.event.message);
+			} else {
+				this.#trace.add('extension-diagnostic', {
+					code: item.error instanceof GhostwrightError ? item.error.code : 'GW_EXTENSION_OSC',
+					message: item.error.message.slice(0, 1024),
+				});
+			}
+		}
 		for (const effect of this.#engine.takeEffects()) {
 			this.#trace.add('terminal-effect', {
 				effect: effect.type,

@@ -1,0 +1,6 @@
+{
+  "imports": {
+    "ghostwright": "../../experiments/ghostwright/src/index.ts"
+  },
+  "nodeModulesDir": "auto"
+}

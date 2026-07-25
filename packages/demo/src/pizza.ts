@@ -32,7 +32,7 @@ import {
 } from '@bomb.sh/tty';
 import { env, stdin, stdout } from 'node:process';
 import { pathToFileURL } from 'node:url';
-import { encodeFreedomTtyFrame, inspectFreedomTty } from './freedom-tty-inspector.ts';
+import { encodeFreedomTtyFrame, inspectFreedomTty } from '@ghostwright/freedom-tty/producer';
 import { useInput } from './use-input.ts';
 import { useStdin } from './use-stdin.ts';
 
@@ -264,9 +264,10 @@ function* run() {
 
 	const root = buildPizza();
 
-	const { columns, rows } = stdout.isTTY
+	const initialViewport = stdout.isTTY
 		? { columns: stdout.columns, rows: stdout.rows }
 		: { columns: 80, rows: 24 };
+	let { columns, rows } = initialViewport;
 
 	stdin.setRawMode(true);
 	yield* ensure(() => {
@@ -288,13 +289,12 @@ function* run() {
 				root: root.node,
 				info: result.info,
 				frame: ++inspectionFrame,
+				renderSurface: { columns, rows },
 			});
-			// Metadata precedes the visual bytes it describes. A PTY may split this
-			// single write; ordering it first lets a receiver hold the semantic frame
-			// as pending and attach it to the next visual revision without mutating a
-			// revision after publication.
+			// The OSC follows its visual bytes. Its completion is the exact ordered
+			// commit boundary consumed by the Ghostwright extension.
 			stdout.write(
-				Buffer.concat([Buffer.from(encodeFreedomTtyFrame(metadata)), Buffer.from(result.output)]),
+				Buffer.concat([Buffer.from(result.output), Buffer.from(encodeFreedomTtyFrame(metadata))]),
 			);
 		} else if (result.output.length > 0) {
 			stdout.write(result.output);
@@ -322,10 +322,12 @@ function* run() {
 				break;
 			}
 			if (event.type === 'resize') {
+				rows = event.height;
+				columns = event.width;
 				term = yield* until(
 					createTerm({
-						height: event.height,
-						width: event.width,
+						height: rows,
+						width: columns,
 					}),
 				);
 				render();

@@ -65,6 +65,9 @@ importers:
       '@bomb.sh/tty':
         specifier: https://pkg.pr.new/@bomb.sh/tty@103
         version: https://pkg.pr.new/@bomb.sh/tty@103
+      '@ghostwright/freedom-tty':
+        specifier: workspace:*
+        version: link:../freedom-tty
       '@types/node':
         specifier: ^26.0.0
         version: 26.1.1
@@ -131,6 +134,24 @@ importers:
       tsx:
         specifier: ^4.19.2
         version: 4.23.1
+
+  packages/freedom-tty:
+    dependencies:
+      '@bomb.sh/freedom':
+        specifier: '*'
+        version: link:../freedom
+      '@bomb.sh/tty':
+        specifier: '*'
+        version: 0.8.0
+      css-select:
+        specifier: ^7.0.0
+        version: 7.0.0
+      css-what:
+        specifier: ^8.0.0
+        version: 8.0.0
+      ghostwright:
+        specifier: workspace:*
+        version: link:../../experiments/ghostwright
 
   packages/input:
     dependencies:
