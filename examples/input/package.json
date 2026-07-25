@@ -8,11 +8,14 @@
 		"./3-signals": "./src/3-signals.ts",
 		"./4-modes": "./src/4-modes.ts",
 		"./5-stream": "./src/5-stream.ts",
+		"./6-events": "./src/6-events.ts",
+		"./7-focus": "./src/7-focus.ts",
 		"./package.json": "./package.json"
 	},
 	"dependencies": {
 		"@bomb.sh/tty": "catalog:",
 		"@clack/ui": "catalog:",
+		"@clack/vendored.ui": "workspace:",
 		"alien-signals": "catalog:"
 	}
 }

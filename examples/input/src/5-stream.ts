@@ -86,12 +86,12 @@ effect(() => {
 // We could choose to make this a function within `@clack/ui` and
 // have it return an AsyncIterable<InputEvent> directly.
 const queue: InputEvent[] = [];
-let resolve: (() => void) | null = null;
+let resolver = Promise.withResolvers<void>();
 
 function push(events: InputEvent[]): void {
 	queue.push(...events);
-	resolve?.();
-	resolve = null;
+	resolver.resolve();
+	resolver = Promise.withResolvers<void>();
 }
 
 function stdinEvents(): AsyncIterable<InputEvent> {
@@ -100,9 +100,7 @@ function stdinEvents(): AsyncIterable<InputEvent> {
 			return {
 				async next() {
 					while (queue.length === 0) {
-						await new Promise<void>((r) => {
-							resolve = r;
-						});
+						await resolver.promise;
 					}
 					return { value: queue.shift()!, done: false };
 				},

@@ -53,6 +53,9 @@ importers:
       '@clack/ui':
         specifier: 'catalog:'
         version: https://pkg.pr.new/bombshell-dev/ui/@clack/ui@a60ac12
+      '@clack/vendored.ui':
+        specifier: 'workspace:'
+        version: link:../../vendor/ui
       alien-signals:
         specifier: 'catalog:'
         version: 2.0.8
@@ -62,6 +65,22 @@ importers:
       effection:
         specifier: ^4.0.2
         version: 4.0.3
+
+  vendor/ui:
+    dependencies:
+      '@bomb.sh/tty':
+        specifier: ^0.8.0
+        version: 0.8.0
+      '@types/node':
+        specifier: ^22.20.0
+        version: 22.20.1
+    devDependencies:
+      '@bomb.sh/tools':
+        specifier: ^0.5.4
+        version: 0.5.4(@types/node@22.20.1)(oxc-resolver@11.21.3)(unrun@0.2.39)(vite@8.1.0(@types/node@22.20.1)(jiti@2.7.0)(yaml@2.9.0))
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@types/node@22.20.1)(vite@8.1.0(@types/node@22.20.1)(jiti@2.7.0)(yaml@2.9.0))
 
 packages:
 
@@ -2615,7 +2634,7 @@ snapshots:
       magic-string: 0.30.21
       obug: 2.1.3
       pathe: 2.0.3
-      picomatch: 4.0.4
+      picomatch: 4.0.5
       std-env: 4.1.0
       tinybench: 2.9.0
       tinyexec: 1.2.4
