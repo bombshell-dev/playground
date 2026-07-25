@@ -1,0 +1,38 @@
+# Ghostwright stage-1 freestanding Kitty patch.
+# The enabled direct raw storage/placement profile is clock-free at the pinned
+# commit; terminal-driven animation/playback remains out of profile and must
+# add the explicit session-relative host clock required by DR-004 before use.
+diff --git a/src/terminal/build_options.zig b/src/terminal/build_options.zig
+index 136e0f101..ac855d343 100644
+--- a/src/terminal/build_options.zig
++++ b/src/terminal/build_options.zig
+@@ -64,11 +64,11 @@ pub const Options = struct {
+-        // We disable it on wasm32-freestanding because we at the least
+-        // require the ability to get timestamps and there is no way to
+-        // do that with freestanding targets.
+-        const target = m.resolved_target.?.result;
++        // The direct raw-storage/placement subset used by Ghostwright does
++        // not invoke a clock at this pinned commit. Animation/playback paths
++        // remain out of profile and require an explicit embedder clock before
++        // they can be enabled for freestanding WASM.
+         opts.addOption(
+             bool,
+             "kitty_graphics",
+-            !(target.cpu.arch == .wasm32 and target.os.tag == .freestanding),
++            true,
+         );
+ 
+         // These are synthesized based on other options.
+diff --git a/src/terminal/kitty/graphics_image.zig b/src/terminal/kitty/graphics_image.zig
+index b6f44fac2..e0bace87c 100644
+--- a/src/terminal/kitty/graphics_image.zig
++++ b/src/terminal/kitty/graphics_image.zig
+@@ -122,6 +122,8 @@ pub const LoadingImage = struct {
+ 
+         // Otherwise, the payload data is guaranteed to be a path.
+ 
++        if (comptime builtin.target.os.tag == .freestanding) return error.UnsupportedMedium;
++
+         if (comptime builtin.os.tag != .windows) {
+             if (std.mem.indexOfScalar(u8, cmd.data, 0) != null) {
+                 // posix.realpath *asserts* that the path does not have

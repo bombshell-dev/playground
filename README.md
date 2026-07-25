@@ -1,22 +1,17 @@
 # `@bomb.sh/playground`
 
-## Install
+## Development
 
-You can install `@bomb.sh/playground` manually by running this command:
+This is in-place example and experimental repository. Requirements to run these examples are within the `devEngines` in `package.json`.
 
 ```sh
-npm install @bomb.sh/playground
+pnpm install
+# then run
+pnpm playground # returns an example selector
 ```
-
-Looking for help? Start with our [Getting Started][docs] guide.
-
-## Documentation
-
-Visit our [official documentation][docs].
 
 ## Support
 
 Having trouble? Get help in the official [Bombshell Discord][discord].
 
-[docs]: https://bomb.sh/docs/playground
 [discord]: https://bomb.sh/chat

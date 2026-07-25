@@ -1,0 +1,12 @@
+{
+	"name": "@examples/input",
+	"private": true,
+	"type": "module",
+	"exports": {
+		"./ui/raw": "./ui/raw.ts",
+		"./package.json": "./package.json"
+	},
+	"dependencies": {
+		"@clack/ui": "catalog:"
+	}
+}
