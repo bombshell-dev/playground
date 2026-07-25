@@ -49,6 +49,7 @@ export class ProcessExitedError extends errorType('ProcessExitedError', 'GW_PROC
 /** Error when session is already closed. */
 export class SessionClosedError extends errorType('SessionClosedError', 'GW_SESSION_CLOSED') {}
 /** Error for coordinate out-of-range. */
+/** Error for coordinates outside the viewport. */
 export class CoordinateRangeError extends errorType(
 	'CoordinateRangeError',
 	'GW_COORDINATE_RANGE',
@@ -63,5 +64,7 @@ export class HistoryEvictedError extends errorType('HistoryEvictedError', 'GW_HI
 export class HistoryChangedError extends errorType('HistoryChangedError', 'GW_HISTORY_CHANGED') {}
 /** Error writing trace files. */
 export class TraceWriteError extends errorType('TraceWriteError', 'GW_TRACE_WRITE') {}
+/** Error for a key name the encoder cannot represent. */
+export class InvalidKeyError extends errorType('InvalidKeyError', 'GW_INVALID_KEY') {}
 /** Error during cleanup operations. */
 export class CleanupError extends errorType('CleanupError', 'GW_CLEANUP') {}

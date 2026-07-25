@@ -57,6 +57,14 @@ export interface ActionReceipt {
 	deliveredToChild: boolean;
 	bytesWritten: number;
 }
+/**
+ * Default assertion timeout.
+ *
+ * Deliberately below the 5000 ms default of Bun, Jest, and Vitest: if the two
+ * are equal the runner's timeout wins the race and reports a bare "timed out"
+ * instead of Ghostwright's screen diagnostic.
+ */
+export const DEFAULT_ASSERTION_TIMEOUT_MS = 4000;
 export type KeyName =
 	| 'Enter'
 	| 'Tab'
@@ -105,11 +113,38 @@ export interface TransientAssertionOptions extends AssertionOptions {
 }
 export interface TextLocatorOptions {
 	exact?: boolean;
+	/**
+	 * Only match text whose cells all satisfy this style. Useful for
+	 * disambiguating the same string rendered in different states, such as a
+	 * focused versus unfocused label.
+	 */
+	style?: StyleQuery;
+}
+/**
+ * A colour to match against. Accepts the structured {@link TerminalColor} form
+ * or the shorthands `'#rrggbb'`, `'rgb(r,g,b)'`, `'default'`, and `'palette:N'`.
+ */
+export type ColorQuery = TerminalColor | string;
+/** A partial {@link CellStyle} to match against. Omitted fields are ignored. */
+export interface StyleQuery {
+	bold?: boolean;
+	italic?: boolean;
+	faint?: boolean;
+	blink?: boolean;
+	inverse?: boolean;
+	invisible?: boolean;
+	strikethrough?: boolean;
+	overline?: boolean;
+	underline?: number;
+	foreground?: ColorQuery;
+	background?: ColorQuery;
 }
 export interface LocatorMatch {
 	text: string;
 	range: Rect;
 	rowText: string;
+	/** The cells backing this match, in column order, for style inspection. */
+	cells: readonly ScreenCell[];
 }
 export interface ProcessStatus {
 	state: 'starting' | 'running' | 'exited' | 'closed' | 'failed';
@@ -282,7 +317,11 @@ export interface CellChange {
 }
 export interface ScreenReader {
 	current(): ScreenSnapshot;
+	/** Alias of {@link ScreenReader.current}, matching `AsyncRegion.snapshot()`. */
+	snapshot(): ScreenSnapshot;
 	getCell(point: Point): ScreenCell;
+	/** Every cell inside `rect`, row-major, for style and border inspection. */
+	getCells(rect: Rect): readonly ScreenCell[];
 	getText(rect?: Rect): string;
 	changedCells(since: ScreenSnapshot | number): readonly CellChange[];
 	rawOutput(): Uint8Array;
@@ -403,11 +442,19 @@ export interface OperationLocatorExpectation {
 	toBePresent(options?: AssertionOptions): Operation<LocatorMatch>;
 	toBeAbsent(options?: StableAssertionOptions): Operation<void>;
 	toBeStable(options?: StableAssertionOptions): Operation<LocatorMatch>;
+	/** Every cell of the match must satisfy `style`. */
+	toHaveStyle(style: StyleQuery, options?: AssertionOptions): Operation<LocatorMatch>;
+	/** The terminal cursor must sit inside the match's range. */
+	toContainCursor(options?: AssertionOptions): Operation<LocatorMatch>;
 }
 export interface AsyncLocatorExpectation {
 	toBePresent(options?: AssertionOptions): Promise<LocatorMatch>;
 	toBeAbsent(options?: StableAssertionOptions): Promise<void>;
 	toBeStable(options?: StableAssertionOptions): Promise<LocatorMatch>;
+	/** Every cell of the match must satisfy `style`. */
+	toHaveStyle(style: StyleQuery, options?: AssertionOptions): Promise<LocatorMatch>;
+	/** The terminal cursor must sit inside the match's range. */
+	toContainCursor(options?: AssertionOptions): Promise<LocatorMatch>;
 }
 export interface OperationTerminalExpectation {
 	toSatisfy(

@@ -9,11 +9,15 @@ Ghostwright separates first appearance, visual convergence, stable absence, and 
 | Has this text appeared yet?                         | `toBePresent()`     |
 | Has the final visible UI settled?                   | `toBeStable()`      |
 | Has this text remained gone?                        | `toBeAbsent()`      |
+| Is this text drawn with a given style?              | `toHaveStyle()`     |
+| Is the cursor on this text?                         | `toContainCursor()` |
 | Have several visible conditions converged together? | `toSatisfy()`       |
 | Did a fleeting screen state occur after an action?  | `toHaveShown()`     |
 | Did fleeting text occur after an action?            | `toHaveShownText()` |
 
 All waits evaluate current state and subscribe to revisions. They do not use fixed-interval polling.
+
+The default timeout is `DEFAULT_ASSERTION_TIMEOUT_MS` (4000 ms), chosen to stay below the 5000 ms default of Bun, Jest, and Vitest so that a failure reports Ghostwright's screen diagnostic rather than the runner's bare timeout.
 
 ## `toBePresent`: readiness and first appearance
 
@@ -72,7 +76,33 @@ await expectTerminal(terminal).toSatisfy(
 
 The predicate is evaluated against immutable `ScreenSnapshot` values and must remain true through visual settlement.
 
+Predicates run against **every** revision, including the blank frames before the application has painted anything. A predicate that throws is treated as "not satisfied" rather than aborting the assertion, so reading a not yet rendered layout is safe. If the assertion never converges, the most recent thrown error is included in the diagnostic:
+
+```
+expected: screen predicate to converge
+predicate threw (treated as unsatisfied): Cannot read properties of undefined
+```
+
 Prefer multiple locators when the conditions are independently meaningful. Use `toSatisfy` when their atomic relationship is the behavior under test.
+
+## `toHaveStyle` and `toContainCursor`: visual state
+
+TUIs express focus, selection, and severity through styling rather than text. Assert it directly instead of scraping cells:
+
+```ts
+await expectTerminal(terminal.getByText('Submit')).toHaveStyle({ inverse: true });
+await expectTerminal(terminal.getByText('Error')).toHaveStyle({ foreground: '#ff0000' });
+await expectTerminal(terminal.getByText('Name')).toContainCursor();
+```
+
+`toHaveStyle` requires every cell of the match to satisfy the query, and reports the actual style on failure. Omitted fields are ignored, so `{ bold: true }` says nothing about colour.
+
+A `style` filter on the locator itself disambiguates repeated text:
+
+```ts
+// Two "Save" labels, one highlighted.
+terminal.getByText('Save', { style: { inverse: true } });
+```
 
 ## `toHaveShown`: transient revision history
 

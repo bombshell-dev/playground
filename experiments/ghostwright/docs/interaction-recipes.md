@@ -40,6 +40,18 @@ await terminal.keyboard.press({ key: 'Tab', shift: true });
 await terminal.keyboard.press({ key: 'x', alt: true });
 ```
 
+The equivalent string form is also accepted:
+
+```ts
+await terminal.keyboard.press('Ctrl+c');
+await terminal.keyboard.press('Shift+Tab');
+await terminal.keyboard.press('Alt+x');
+```
+
+Recognized modifier prefixes are `Shift+`, `Ctrl+`/`Control+`, `Alt+`/`Option+`, and `Cmd+`/`Command+`/`Super+`/`Meta+`, in any case. The key itself keeps its case, since case is significant for characters.
+
+Unknown key names throw `InvalidKeyError` immediately rather than encoding nothing and surfacing later as an assertion timeout. Valid keys are the functional names (`Enter`, `Tab`, `Escape`, `Backspace`, `Delete`, `Home`, `End`, `PageUp`, `PageDown`, the four arrows), `F1`-`F25`, or any single character. Note that `KeyName` widens to `string`, so TypeScript cannot catch a typo for you.
+
 Keyboard encoding uses current Ghostty terminal modes, including application cursor keys, backarrow mode, and Kitty keyboard flags.
 
 User Control-C is terminal input. In canonical mode with `ISIG`, line discipline normally delivers `SIGINT`; in raw mode the application receives byte `0x03`. Administrative signaling is separate:

@@ -5,10 +5,43 @@ import type {
 	ScreenRevision,
 	ScreenSnapshot,
 	StableAssertionOptions,
+	StyleQuery,
 	TransientAssertionOptions,
 } from '../types.ts';
+import { DEFAULT_ASSERTION_TIMEOUT_MS } from '../types.ts';
+import { cellsMatchStyle, describeColor } from '../styles.ts';
 import { Locator } from '../terminal/session.ts';
 import type { TerminalSession } from '../terminal/session.ts';
+
+/**
+ * Wrap a user predicate so it can be evaluated against any screen revision.
+ *
+ * Predicates run against every revision, including the blank frames before the
+ * application has painted anything. A predicate that reads a not yet rendered
+ * layout would otherwise throw and abort the whole assertion, surfacing as an
+ * unrelated failure. Throwing is treated as "not satisfied", and the most
+ * recent error is reported in the diagnostic if the assertion never converges.
+ */
+function safePredicate(predicate: (snapshot: ScreenSnapshot) => boolean): {
+	test: (snapshot: ScreenSnapshot) => boolean;
+	note: () => string;
+} {
+	let lastError: unknown;
+	return {
+		test: (snapshot) => {
+			try {
+				return predicate(snapshot);
+			} catch (error) {
+				lastError = error;
+				return false;
+			}
+		},
+		note: () =>
+			lastError === undefined
+				? ''
+				: `\npredicate threw (treated as unsatisfied): ${lastError instanceof Error ? lastError.message : String(lastError)}`,
+	};
+}
 // oxlint-disable-next-line max-params -- diagnostic needs all four params for failure reporting
 function diagnostic(
 	session: TerminalSession,
@@ -54,7 +87,10 @@ async function wait(
 class LocatorExpectation implements AsyncLocatorExpectation {
 	constructor(readonly locator: Locator) {}
 	async toBePresent(options: AssertionOptions = {}): Promise<Locator> {
-		const timeout = options.timeoutMs ?? this.locator.session.options.assertionTimeoutMs ?? 5000;
+		const timeout =
+			options.timeoutMs ??
+			this.locator.session.options.assertionTimeoutMs ??
+			DEFAULT_ASSERTION_TIMEOUT_MS;
 		try {
 			return await this.locator.unique(timeout);
 		} catch (cause) {
@@ -70,7 +106,10 @@ class LocatorExpectation implements AsyncLocatorExpectation {
 		}
 	}
 	async toBeStable(options: StableAssertionOptions = {}): Promise<Locator> {
-		const timeout = options.timeoutMs ?? this.locator.session.options.assertionTimeoutMs ?? 5000,
+		const timeout =
+				options.timeoutMs ??
+				this.locator.session.options.assertionTimeoutMs ??
+				DEFAULT_ASSERTION_TIMEOUT_MS,
 			settle = options.settleMs ?? this.locator.session.options.settleMs ?? 100,
 			start = performance.now();
 		let match = await this.toBePresent({ timeoutMs: timeout });
@@ -112,7 +151,10 @@ class LocatorExpectation implements AsyncLocatorExpectation {
 		}
 	}
 	async toBeAbsent(options: StableAssertionOptions = {}): Promise<void> {
-		const timeout = options.timeoutMs ?? this.locator.session.options.assertionTimeoutMs ?? 5000,
+		const timeout =
+				options.timeoutMs ??
+				this.locator.session.options.assertionTimeoutMs ??
+				DEFAULT_ASSERTION_TIMEOUT_MS,
 			settle = options.settleMs ?? this.locator.session.options.settleMs ?? 100,
 			start = performance.now();
 		for (;;) {
@@ -162,6 +204,71 @@ class LocatorExpectation implements AsyncLocatorExpectation {
 			);
 		}
 	}
+	async toHaveStyle(style: StyleQuery, options: AssertionOptions = {}): Promise<Locator> {
+		const timeout =
+				options.timeoutMs ??
+				this.locator.session.options.assertionTimeoutMs ??
+				DEFAULT_ASSERTION_TIMEOUT_MS,
+			start = performance.now(),
+			satisfied = () => {
+				const m = this.locator.matches();
+				return m.length === 1 && cellsMatchStyle(m[0].cells, style);
+			};
+		await this.toBePresent({ timeoutMs: timeout });
+		if (!satisfied())
+			await wait(
+				this.locator.session,
+				satisfied,
+				Math.max(1, timeout - (performance.now() - start)),
+				() => {
+					const m = this.locator.matches(),
+						actual = m[0]?.cells.find((cell) => !cell.continuation)?.style;
+					return `${diagnostic(
+						this.locator.session,
+						`${JSON.stringify(this.locator.query)} to have style ${JSON.stringify(style)}`,
+						timeout,
+					)}\nactual style: ${
+						actual
+							? `foreground=${describeColor(actual.foreground)} background=${describeColor(actual.background)} bold=${actual.bold} inverse=${actual.inverse} underline=${actual.underline}`
+							: 'no match'
+					}`;
+				},
+			);
+		return this.locator.matches()[0];
+	}
+	async toContainCursor(options: AssertionOptions = {}): Promise<Locator> {
+		const timeout =
+				options.timeoutMs ??
+				this.locator.session.options.assertionTimeoutMs ??
+				DEFAULT_ASSERTION_TIMEOUT_MS,
+			start = performance.now(),
+			satisfied = () => {
+				const m = this.locator.matches();
+				if (m.length !== 1) return false;
+				const { range } = m[0],
+					{ cursor } = this.locator.session.screen.current();
+				return (
+					cursor.row >= range.row &&
+					cursor.row < range.row + range.height &&
+					cursor.column >= range.column &&
+					cursor.column < range.column + range.width
+				);
+			};
+		await this.toBePresent({ timeoutMs: timeout });
+		if (!satisfied())
+			await wait(
+				this.locator.session,
+				satisfied,
+				Math.max(1, timeout - (performance.now() - start)),
+				() =>
+					diagnostic(
+						this.locator.session,
+						`${JSON.stringify(this.locator.query)} to contain the cursor`,
+						timeout,
+					),
+			);
+		return this.locator.matches()[0];
+	}
 }
 class TerminalExpectation implements AsyncTerminalExpectation {
 	constructor(readonly session: TerminalSession) {}
@@ -169,17 +276,21 @@ class TerminalExpectation implements AsyncTerminalExpectation {
 		predicate: (snapshot: ScreenSnapshot) => boolean,
 		options: StableAssertionOptions = {},
 	): Promise<ScreenSnapshot> {
-		const timeout = options.timeoutMs ?? this.session.options.assertionTimeoutMs ?? 5000,
+		const timeout =
+				options.timeoutMs ??
+				this.session.options.assertionTimeoutMs ??
+				DEFAULT_ASSERTION_TIMEOUT_MS,
 			settle = options.settleMs ?? this.session.options.settleMs ?? 100,
-			started = performance.now();
+			started = performance.now(),
+			safe = safePredicate(predicate);
 		for (;;) {
 			const snapshot = this.session.screen.current();
-			if (predicate(snapshot)) {
+			if (safe.test(snapshot)) {
 				const remaining = Math.max(0, settle - (this.session.now() - snapshot.lastVisualChangeAt));
 				if (remaining === 0) return snapshot;
 				if (performance.now() - started + remaining > timeout)
 					throw new TerminalAssertionError(
-						diagnostic(this.session, 'screen predicate to converge', timeout, settle),
+						diagnostic(this.session, 'screen predicate to converge', timeout, settle) + safe.note(),
 					);
 				await new Promise<void>((resolve) => {
 					const unsubscribe = this.session.subscribe(() => {
@@ -196,9 +307,10 @@ class TerminalExpectation implements AsyncTerminalExpectation {
 			}
 			await wait(
 				this.session,
-				() => predicate(this.session.screen.current()),
+				() => safe.test(this.session.screen.current()),
 				Math.max(1, timeout - (performance.now() - started)),
-				() => diagnostic(this.session, 'screen predicate to converge', timeout, settle),
+				() =>
+					diagnostic(this.session, 'screen predicate to converge', timeout, settle) + safe.note(),
 			);
 		}
 	}
@@ -206,22 +318,28 @@ class TerminalExpectation implements AsyncTerminalExpectation {
 		predicate: (snapshot: ScreenSnapshot) => boolean,
 		options: TransientAssertionOptions = {},
 	): Promise<ScreenRevision> {
-		const timeout = options.timeoutMs ?? this.session.options.assertionTimeoutMs ?? 5000,
+		const timeout =
+				options.timeoutMs ??
+				this.session.options.assertionTimeoutMs ??
+				DEFAULT_ASSERTION_TIMEOUT_MS,
 			baseline =
 				typeof options.since === 'number'
 					? options.since
 					: (options.since?.screenSequenceBefore ??
 						this.session.lastAction?.screenSequenceBefore ??
 						this.session.screen.current().sequence);
-		const find = () =>
-			this.session.revisionsSince(baseline).find((revision) => predicate(revision.snapshot));
+		const safe = safePredicate(predicate),
+			find = () =>
+				this.session.revisionsSince(baseline).find((revision) => safe.test(revision.snapshot));
 		let result = find();
 		if (!result)
 			await wait(
 				this.session,
 				() => !!(result = find()),
 				timeout,
-				() => diagnostic(this.session, `screen predicate since revision ${baseline}`, timeout),
+				() =>
+					diagnostic(this.session, `screen predicate since revision ${baseline}`, timeout) +
+					safe.note(),
 			);
 		return result as ScreenRevision;
 	}

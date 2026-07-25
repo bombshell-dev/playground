@@ -22,6 +22,9 @@ import {
 import { FrameKind } from '../pty/protocol.ts';
 import { SidecarClient } from '../pty/client.ts';
 import { SessionTrace } from '../tracing/trace.ts';
+import { parseKey } from '../keys.ts';
+import { cellsMatchStyle } from '../styles.ts';
+import { DEFAULT_ASSERTION_TIMEOUT_MS } from '../types.ts';
 import type {
 	ActionReceipt,
 	AsyncLocator,
@@ -419,7 +422,7 @@ export class TerminalSession implements AsyncTerminal {
 		return receipt;
 	}
 	keyboard = {
-		press: async (key: KeyName | KeyPress) => this.#write(this.#engine.encodeKey(key)),
+		press: async (key: KeyName | KeyPress) => this.#write(this.#engine.encodeKey(parseKey(key))),
 		type: async (text: string, options?: TraceableInputOptions) =>
 			this.#write(
 				concatBytes(Array.from(text, (key) => this.#engine.encodeKey(key))),
@@ -501,7 +504,7 @@ export class TerminalSession implements AsyncTerminal {
 		waitForExit: async (options?: { timeoutMs?: number }) =>
 			this.#timeout(
 				this.#exitPromise,
-				options?.timeoutMs ?? this.options.assertionTimeoutMs ?? 5000,
+				options?.timeoutMs ?? this.options.assertionTimeoutMs ?? DEFAULT_ASSERTION_TIMEOUT_MS,
 				() => new ProcessExitedError('Timed out waiting for process exit'),
 			),
 	};
@@ -681,7 +684,8 @@ export class TerminalSession implements AsyncTerminal {
 		const baseline = this.#baselineSequence(options.since),
 			max = options.maxRevisions ?? 1000,
 			configuredMax = this.options.history?.maxRevisions ?? 1000,
-			timeout = options.timeoutMs ?? this.options.assertionTimeoutMs ?? 5000,
+			timeout =
+				options.timeoutMs ?? this.options.assertionTimeoutMs ?? DEFAULT_ASSERTION_TIMEOUT_MS,
 			startedAt = this.now();
 		if (!Number.isSafeInteger(max) || max <= 0 || max > configuredMax)
 			throw new CoordinateRangeError(
@@ -852,9 +856,18 @@ export class TerminalSession implements AsyncTerminal {
 	}
 	screen: ScreenReader = {
 		current: () => this.#snapshot,
+		snapshot: () => this.#snapshot,
 		getCell: (p: Point) => {
 			this.#point(p);
 			return this.#snapshot.lines[p.row].cells[p.column];
+		},
+		getCells: (r: Rect) => {
+			this.#rect(r);
+			return Object.freeze(
+				this.#snapshot.lines
+					.slice(r.row, r.row + r.height)
+					.flatMap((line) => line.cells.slice(r.column, r.column + r.width)),
+			);
 		},
 		getText: (r?: Rect) => {
 			if (!r) return this.#snapshot.lines.map((l) => l.text).join('\n');
@@ -948,22 +961,39 @@ export class Locator implements AsyncLocator {
 					lastEnd = last ? last.cell.column + Math.max(1, last.cell.width) : column + 1;
 				return { column, row: line.row, width: Math.max(1, lastEnd - column), height: 1 };
 			};
+			// Cells backing a match, so callers can inspect styles without
+			// re-deriving geometry from the raw snapshot.
+			const cellsFor = (from: number, to: number): readonly ScreenCell[] =>
+				Object.freeze(
+					segments
+						.filter((segment) => from < segment.end && to > segment.start)
+						.map((segment) => segment.cell),
+				);
+			const accept = (cells: readonly ScreenCell[]): boolean =>
+				!this.options.style || cellsMatchStyle(cells, this.options.style);
 			if (this.options.exact) {
 				const trimmed = row.replace(/ +$/g, '');
-				if (trimmed === this.query)
-					out.push({
-						text: trimmed,
-						rowText: row,
-						range: rangeFor(0, trimmed.length),
-					});
+				if (trimmed === this.query) {
+					const cells = cellsFor(0, trimmed.length);
+					if (accept(cells))
+						out.push({
+							text: trimmed,
+							rowText: row,
+							range: rangeFor(0, trimmed.length),
+							cells,
+						});
+				}
 			} else {
 				let at = 0;
 				while (this.query.length && (at = row.indexOf(this.query, at)) >= 0) {
-					out.push({
-						text: this.query,
-						rowText: row,
-						range: rangeFor(at, at + this.query.length),
-					});
+					const cells = cellsFor(at, at + this.query.length);
+					if (accept(cells))
+						out.push({
+							text: this.query,
+							rowText: row,
+							range: rangeFor(at, at + this.query.length),
+							cells,
+						});
 					at += Math.max(1, this.query.length);
 				}
 			}
@@ -971,7 +1001,7 @@ export class Locator implements AsyncLocator {
 		const chosen = this.index === undefined ? out : out[this.index] ? [out[this.index]] : [];
 		return Object.freeze(chosen);
 	}
-	async unique(timeout = this.session.options.assertionTimeoutMs ?? 5000) {
+	async unique(timeout = this.session.options.assertionTimeoutMs ?? DEFAULT_ASSERTION_TIMEOUT_MS) {
 		const get = () => this.matches();
 		let m = get();
 		if (m.length > 1)

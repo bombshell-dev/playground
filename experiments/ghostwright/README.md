@@ -67,11 +67,46 @@ Ghostwright assertions are revision-driven rather than polling-based:
 | First visible appearance / readiness  | `toBePresent()`     |
 | Final visually settled state          | `toBeStable()`      |
 | Stable disappearance                  | `toBeAbsent()`      |
+| Text is drawn with a given style      | `toHaveStyle()`     |
+| The cursor sits on the match          | `toContainCursor()` |
 | Compound stable screen condition      | `toSatisfy()`       |
 | Fleeting screen state after an action | `toHaveShown()`     |
 | Fleeting text after an action         | `toHaveShownText()` |
 
-Text locators are lazy, current-visible-viewport only, grapheme-aware, and strict. Zero matches wait; multiple matches fail with candidate geometry. Use `.nth()` or `.region()` to disambiguate deliberately.
+Text locators are lazy, current-visible-viewport only, grapheme-aware, and strict. Zero matches wait; multiple matches fail with candidate geometry. Use `.nth()`, `.region()`, or a `style` filter to disambiguate deliberately.
+
+Assertions default to `DEFAULT_ASSERTION_TIMEOUT_MS` (4000 ms), deliberately below the 5000 ms default of Bun, Jest, and Vitest. If they were equal the runner's own timeout would win the race and report a bare "timed out" instead of Ghostwright's screen diagnostic. Raise it per assertion with `{ timeoutMs }`, or for a session with `assertionTimeoutMs`.
+
+## Inspecting styles, cursor, and cells
+
+Focus, selection, and error states in a TUI are usually expressed visually rather than as text. Locators can filter and assert on style:
+
+```ts
+// Assert how something is drawn.
+await expectTerminal(terminal.getByText('Save')).toHaveStyle({ foreground: '#ffffff' });
+
+// Disambiguate identical text by appearance.
+const active = terminal.getByText('Save', { style: { inverse: true } });
+
+// Assert where the caret is.
+await expectTerminal(terminal.getByText('Name')).toContainCursor();
+```
+
+Colours accept `'#rrggbb'`, `'rgb(r,g,b)'`, `'default'`, `'palette:N'`, or the structured `TerminalColor`. Any omitted `StyleQuery` field is ignored.
+
+For geometry and raw cells, `matches()` returns each hit's `range` and backing `cells`, and `screen.getCells(rect)` returns a rectangle:
+
+```ts
+const [match] = terminal.getByText('Name').matches();
+match.range; // { column, row, width, height }
+match.cells; // ScreenCell[], each with .style
+
+const border = terminal.screen.getCells({ column: 4, row: 7, width: 40, height: 3 });
+import { cellsMatchStyle } from 'ghostwright';
+cellsMatchStyle(border, { foreground: '#ffffff' });
+```
+
+`screen.snapshot()` is an alias of `screen.current()`, matching `AsyncRegion.snapshot()`.
 
 See [Choosing locators and assertions](docs/choosing-assertions.md).
 

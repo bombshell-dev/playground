@@ -4,12 +4,15 @@ import type {
 	ScreenRevision,
 	ScreenSnapshot,
 	StableAssertionOptions,
+	StyleQuery,
 	TransientAssertionOptions,
 } from '../types.ts';
 export interface AsyncLocatorExpectation {
 	toBePresent(options?: AssertionOptions): Promise<LocatorMatch>;
 	toBeAbsent(options?: StableAssertionOptions): Promise<void>;
 	toBeStable(options?: StableAssertionOptions): Promise<LocatorMatch>;
+	toHaveStyle(style: StyleQuery, options?: AssertionOptions): Promise<LocatorMatch>;
+	toContainCursor(options?: AssertionOptions): Promise<LocatorMatch>;
 }
 export interface AsyncTerminalExpectation {
 	toSatisfy(
