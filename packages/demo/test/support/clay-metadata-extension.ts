@@ -20,6 +20,8 @@ export interface ClayElementMetadata {
 export interface ClayFrameMetadata {
 	version: number;
 	frame: number;
+	mode?: string;
+	renderSurface?: { width: number; height: number; row: number };
 	elements: ClayElementMetadata[];
 }
 
