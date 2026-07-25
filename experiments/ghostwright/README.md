@@ -27,30 +27,30 @@ Consumers receive prebuilt WASM, terminfo, and the native host for each supporte
 ## First async test
 
 ```ts
-import { expect, test } from "bun:test";
-import { expectTerminal, withTerminalAsync } from "ghostwright";
+import { expect, test } from 'bun:test';
+import { expectTerminal, withTerminalAsync } from 'ghostwright';
 
-test("interactive CLI", async () => {
-  await withTerminalAsync(
-    {
-      command: "bun",
-      args: ["src/cli.ts"],
-      cwd: process.cwd(),
-      viewport: { columns: 80, rows: 24 },
-    },
-    async (terminal) => {
-      await expectTerminal(terminal.getByText("Ready")).toBePresent();
+test('interactive CLI', async () => {
+	await withTerminalAsync(
+		{
+			command: 'bun',
+			args: ['src/cli.ts'],
+			cwd: process.cwd(),
+			viewport: { columns: 80, rows: 24 },
+		},
+		async (terminal) => {
+			await expectTerminal(terminal.getByText('Ready')).toBePresent();
 
-      const action = await terminal.keyboard.press("Enter");
-      await expectTerminal(terminal).toHaveShownText("Working", {
-        since: action,
-      });
-      await expectTerminal(terminal.getByText("Complete")).toBeStable();
+			const action = await terminal.keyboard.press('Enter');
+			await expectTerminal(terminal).toHaveShownText('Working', {
+				since: action,
+			});
+			await expectTerminal(terminal.getByText('Complete')).toBeStable();
 
-      const status = await terminal.process.waitForExit();
-      expect(status.exitCode).toBe(0);
-    },
-  );
+			const status = await terminal.process.waitForExit();
+			expect(status.exitCode).toBe(0);
+		},
+	);
 });
 ```
 
@@ -62,14 +62,14 @@ Effection users get the same operations and lifecycle through `withTerminal`; se
 
 Ghostwright assertions are revision-driven rather than polling-based:
 
-| Intent | API |
-|---|---|
-| First visible appearance / readiness | `toBePresent()` |
-| Final visually settled state | `toBeStable()` |
-| Stable disappearance | `toBeAbsent()` |
-| Compound stable screen condition | `toSatisfy()` |
-| Fleeting screen state after an action | `toHaveShown()` |
-| Fleeting text after an action | `toHaveShownText()` |
+| Intent                                | API                 |
+| ------------------------------------- | ------------------- |
+| First visible appearance / readiness  | `toBePresent()`     |
+| Final visually settled state          | `toBeStable()`      |
+| Stable disappearance                  | `toBeAbsent()`      |
+| Compound stable screen condition      | `toSatisfy()`       |
+| Fleeting screen state after an action | `toHaveShown()`     |
+| Fleeting text after an action         | `toHaveShownText()` |
 
 Text locators are lazy, current-visible-viewport only, grapheme-aware, and strict. Zero matches wait; multiple matches fail with candidate geometry. Use `.nth()` or `.region()` to disambiguate deliberately.
 
@@ -82,8 +82,8 @@ Retained revision ranges use an explicit exclusive baseline, so animation tests 
 ```ts
 const samples = terminal.screen.revisions({ since: action });
 const collection = await terminal.revisions.collect({
-  since: action,
-  until: (snapshot) => snapshot.lines.some((line) => line.text.includes("Complete")),
+	since: action,
+	until: (snapshot) => snapshot.lines.some((line) => line.text.includes('Complete')),
 });
 ```
 
@@ -91,7 +91,7 @@ Terminal scrollback is a serialized, bounded observation of Ghostty history; it 
 
 ```ts
 const page = await terminal.history.read({ count: 200 });
-const matches = await terminal.history.findText("tool completed", { direction: "newest-first" });
+const matches = await terminal.history.findText('tool completed', { direction: 'newest-first' });
 ```
 
 `ScreenSnapshot.graphics` exposes active-screen renderer-ready Kitty placement/image metadata. The shipped deterministic profile accepts bounded direct raw RGB/RGBA/gray transfers (64 MiB per screen by default), hashes decoded pixels, and rejects file/shared-memory media. PNG transport/playback support is not enabled in this artifact. Graphics inspection proves Ghostty accepted and prepared image data for rendering; it does not prove font/GPU-composited pixels.

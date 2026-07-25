@@ -20,31 +20,31 @@ Test the application from the outside. Launch its real command under a PTY, inte
 ## Canonical async template
 
 ```ts
-import { expect, test } from "bun:test";
-import { expectTerminal, withTerminalAsync } from "ghostwright";
+import { expect, test } from 'bun:test';
+import { expectTerminal, withTerminalAsync } from 'ghostwright';
 
-test("interactive happy path", async () => {
-  await withTerminalAsync(
-    {
-      command: "bun",
-      args: ["src/cli.ts"],
-      cwd: process.cwd(),
-      viewport: { columns: 80, rows: 24 },
-    },
-    async (terminal) => {
-      await expectTerminal(terminal.getByText("Ready")).toBePresent();
+test('interactive happy path', async () => {
+	await withTerminalAsync(
+		{
+			command: 'bun',
+			args: ['src/cli.ts'],
+			cwd: process.cwd(),
+			viewport: { columns: 80, rows: 24 },
+		},
+		async (terminal) => {
+			await expectTerminal(terminal.getByText('Ready')).toBePresent();
 
-      const action = await terminal.keyboard.press("Enter");
+			const action = await terminal.keyboard.press('Enter');
 
-      await expectTerminal(terminal).toHaveShownText("Working", {
-        since: action,
-      });
-      await expectTerminal(terminal.getByText("Complete")).toBeStable();
+			await expectTerminal(terminal).toHaveShownText('Working', {
+				since: action,
+			});
+			await expectTerminal(terminal.getByText('Complete')).toBeStable();
 
-      const status = await terminal.process.waitForExit();
-      expect(status.exitCode).toBe(0);
-    },
-  );
+			const status = await terminal.process.waitForExit();
+			expect(status.exitCode).toBe(0);
+		},
+	);
 });
 ```
 
@@ -52,14 +52,14 @@ Replace the command, arguments, and visible strings with values from the target 
 
 ## Assertion selection
 
-| Intent | Use |
-|---|---|
-| First appearance or readiness barrier | `expectTerminal(locator).toBePresent()` |
-| Final visually settled state | `expectTerminal(locator).toBeStable()` |
-| Text must remain absent | `expectTerminal(locator).toBeAbsent()` |
-| Compound stable screen condition | `expectTerminal(terminal).toSatisfy(predicate)` |
+| Intent                                    | Use                                                          |
+| ----------------------------------------- | ------------------------------------------------------------ |
+| First appearance or readiness barrier     | `expectTerminal(locator).toBePresent()`                      |
+| Final visually settled state              | `expectTerminal(locator).toBeStable()`                       |
+| Text must remain absent                   | `expectTerminal(locator).toBeAbsent()`                       |
+| Compound stable screen condition          | `expectTerminal(terminal).toSatisfy(predicate)`              |
 | Fleeting screen condition after an action | `expectTerminal(terminal).toHaveShown(predicate, { since })` |
-| Fleeting text after an action | `expectTerminal(terminal).toHaveShownText(text, { since })` |
+| Fleeting text after an action             | `expectTerminal(terminal).toHaveShownText(text, { since })`  |
 
 Assertions are revision-driven. Do not add fixed sleeps for readiness or convergence. A sleep is acceptable only when elapsed time itself is the behavior under test or a negative assertion has no positive revision signal; leave a comment explaining that choice.
 
@@ -75,18 +75,18 @@ Assertions are revision-driven. Do not add fixed sleeps for readiness or converg
 ## Actions
 
 ```ts
-await terminal.keyboard.press("Enter");
-await terminal.keyboard.press({ key: "c", control: true });
-await terminal.keyboard.type("hello");
-await terminal.keyboard.paste("multiline\ntext");
+await terminal.keyboard.press('Enter');
+await terminal.keyboard.press({ key: 'c', control: true });
+await terminal.keyboard.type('hello');
+await terminal.keyboard.paste('multiline\ntext');
 await terminal.keyboard.write(new Uint8Array([0x1b]));
 
 await terminal.mouse.move({ column: 4, row: 2 });
-await terminal.mouse.click({ column: 4, row: 2 }, { button: "left" });
+await terminal.mouse.click({ column: 4, row: 2 }, { button: 'left' });
 await terminal.mouse.wheel({ column: 4, row: 2, deltaRows: 1 });
 
 await terminal.resize({ columns: 100, rows: 30 });
-await terminal.process.signal("SIGTERM", "process-group");
+await terminal.process.signal('SIGTERM', 'process-group');
 ```
 
 `keyboard.press({ key: "c", control: true })` travels through terminal input and line discipline. It is not equivalent to `process.signal("SIGINT")`.
@@ -96,12 +96,12 @@ await terminal.process.signal("SIGTERM", "process-group");
 Save an action receipt when the target state may appear and disappear quickly:
 
 ```ts
-const action = await terminal.keyboard.press("Enter");
+const action = await terminal.keyboard.press('Enter');
 
-await expectTerminal(terminal).toHaveShownText("Saving", {
-  since: action,
+await expectTerminal(terminal).toHaveShownText('Saving', {
+	since: action,
 });
-await expectTerminal(terminal.getByText("Saved")).toBeStable();
+await expectTerminal(terminal.getByText('Saved')).toBeStable();
 ```
 
 Do not replace `toHaveShownText` with a sleep followed by a current-screen read. The current snapshot may already have overwritten the transient state.
