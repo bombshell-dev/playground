@@ -30,7 +30,8 @@
         "effection": "4.1.0-alpha.9"
     },
     "devDependencies": {
-        "@bomb.sh/tools": "latest"
+        "@bomb.sh/tools": "latest",
+        "ghostwright": "workspace:*"
     },
     "repository": {
         "type": "git",
