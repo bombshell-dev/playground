@@ -136,6 +136,22 @@ Failure tracing defaults to `retain-on-failure`. Common secret-like environment 
 
 Generated `dist/`, `artifacts/`, Rust `target/`, and candidate host binaries are Git-ignored and assembled before packaging.
 
+Working on Ghostwright itself (as opposed to consuming it) requires building those artifacts once from a clean clone:
+
+```sh
+bun run setup
+```
+
+That fetches the pinned Ghostty source, builds `ghostty-vt.wasm` and the native PTY host, compiles terminfo, refreshes checksums, and verifies the result. It needs the exact Zig version recorded in `ghostty.lock.json` (currently 0.15.2) on `PATH`; nothing else is required. The command is idempotent and safe to re-run.
+
+Then run the tests:
+
+```sh
+bun test examples
+```
+
+`ghostty.lock.json` is the source of truth for the build contract and is edited by hand. `bun run update:manifest` only refreshes the `artifacts` checksum map, and only for targets built on the current machine; entries for targets built elsewhere (for example the Linux hosts when building on macOS) are preserved. `bun run verify:artifacts` skips and reports artifacts that are absent locally, and fails hard on any artifact that is present but does not match.
+
 The PTY host has two side-by-side implementations:
 
 - `native/pty-host-c`: packaged pure-C default, compiled with Apple Clang or native `musl-gcc`
