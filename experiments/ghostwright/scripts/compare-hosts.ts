@@ -1,128 +1,133 @@
-import { $ } from "bun";
-import { readdir, readFile, stat, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { TerminalSession } from "../src/terminal/session.ts";
-import { usePtyHostForTesting } from "../src/profile.ts";
-import { SidecarClient } from "../src/pty/client.ts";
-import { runHostContract } from "../test/host-contract.ts";
+import { $ } from 'bun';
+import { readdir, readFile, stat, writeFile } from 'node:fs/promises';
+// oxlint-disable-next-line no-restricted-imports -- path module needed for path resolution
+import { join } from 'node:path';
+import { TerminalSession } from '../src/terminal/session.ts';
+import { usePtyHostForTesting } from '../src/profile.ts';
+import { SidecarClient } from '../src/pty/client.ts';
+import { runHostContract } from '../test/host-contract.ts';
 
-const root = new URL("..", import.meta.url).pathname,
-  hosts = [
-    { name: "Pure C", key: "c", path: `${root}/.cache/hosts/pty-host-c` },
-    { name: "Rust", key: "rust", path: `${root}/.cache/hosts/pty-host-rust` },
-  ];
+const root = new URL('..', import.meta.url).pathname,
+	hosts = [
+		{ name: 'Pure C', key: 'c', path: `${root}/.cache/hosts/pty-host-c` },
+		{ name: 'Rust', key: 'rust', path: `${root}/.cache/hosts/pty-host-rust` },
+	];
 
-async function timed(operation: () => Promise<unknown>) {
-  const started = performance.now();
-  await operation();
-  return performance.now() - started;
+async function timed(operation: () => Promise<unknown>): Promise<number> {
+	const started = performance.now();
+	await operation();
+	return performance.now() - started;
 }
 
 const buildTimes = {
-  c: await timed(() => $`bun ${root}/scripts/build-host-c.ts`.quiet()),
-  rust: await timed(() => $`bun ${root}/scripts/build-host-rust.ts`.quiet()),
+	c: await timed(() => $`bun ${root}/scripts/build-host-c.ts`.quiet()),
+	rust: await timed(() => $`bun ${root}/scripts/build-host-rust.ts`.quiet()),
 };
 
 for (const host of hosts) await runHostContract(host.path);
 
-async function launchSamples(hostPath: string) {
-  const restore = usePtyHostForTesting(hostPath),
-    samples: number[] = [];
-  try {
-    for (let index = 0; index < 12; index++) {
-      const started = performance.now(),
-        terminal = await TerminalSession.launch({ command: "/usr/bin/true", trace: "off" });
-      await terminal.process.waitForExit();
-      await terminal.close();
-      samples.push(performance.now() - started);
-    }
-  } finally {
-    restore();
-  }
-  samples.sort((a, b) => a - b);
-  return samples[Math.floor(samples.length / 2)];
+async function launchSamples(hostPath: string): Promise<number> {
+	const restore = usePtyHostForTesting(hostPath),
+		samples: number[] = [];
+	try {
+		for (let index = 0; index < 12; index++) {
+			const started = performance.now(),
+				terminal = await TerminalSession.launch({ command: '/usr/bin/true', trace: 'off' });
+			await terminal.process.waitForExit();
+			await terminal.close();
+			samples.push(performance.now() - started);
+		}
+	} finally {
+		restore();
+	}
+	samples.sort((a, b) => a - b);
+	return samples[Math.floor(samples.length / 2)];
 }
 
-async function transportThroughput(hostPath: string) {
-  const environment = Object.fromEntries(
-      Object.entries(process.env).filter(
-        (entry): entry is [string, string] => entry[1] !== undefined,
-      ),
-    ),
-    client = await SidecarClient.start(hostPath),
-    started = performance.now();
-  let bytes = 0,
-    exited = false,
-    eof = false,
-    resolve!: () => void;
-  const completed = new Promise<void>((done) => (resolve = done)),
-    check = () => {
-      if (exited && eof) resolve();
-    };
-  client.on("output", (chunk) => (bytes += chunk.length));
-  client.on("exit", () => {
-    exited = true;
-    check();
-  });
-  client.on("eof", () => {
-    eof = true;
-    check();
-  });
-  await client.spawn({
-    command: process.execPath,
-    args: ["-e", `process.stdout.write("x".repeat(1024 * 1024))`],
-    cwd: process.cwd(),
-    env: environment,
-    viewport: { columns: 80, rows: 24, widthPixels: 800, heightPixels: 480 },
-    cleanup: { hangupGraceMs: 50, terminateGraceMs: 50, postExitDrainMs: 100 },
-  });
-  await completed;
-  const elapsed = performance.now() - started;
-  await client.close();
-  return { bytes, elapsed, mibPerSecond: bytes / (1024 * 1024) / (elapsed / 1000) };
+async function transportThroughput(
+	hostPath: string,
+): Promise<{ bytes: number; elapsed: number; mibPerSecond: number }> {
+	const environment = Object.fromEntries(
+			Object.entries(process.env).filter(
+				(entry): entry is [string, string] => entry[1] !== undefined,
+			),
+		),
+		client = await SidecarClient.start(hostPath),
+		started = performance.now();
+	let bytes = 0,
+		exited = false,
+		eof = false,
+		resolve!: () => void;
+	const completed = new Promise<void>((done) => (resolve = done)),
+		check = () => {
+			if (exited && eof) resolve();
+		};
+	client.on('output', (chunk) => (bytes += chunk.length));
+	client.on('exit', () => {
+		exited = true;
+		check();
+	});
+	client.on('eof', () => {
+		eof = true;
+		check();
+	});
+	await client.spawn({
+		command: process.execPath,
+		args: ['-e', `process.stdout.write("x".repeat(1024 * 1024))`],
+		cwd: process.cwd(),
+		env: environment,
+		viewport: { columns: 80, rows: 24, widthPixels: 800, heightPixels: 480 },
+		cleanup: { hangupGraceMs: 50, terminateGraceMs: 50, postExitDrainMs: 100 },
+	});
+	await completed;
+	const elapsed = performance.now() - started;
+	await client.close();
+	return { bytes, elapsed, mibPerSecond: bytes / (1024 * 1024) / (elapsed / 1000) };
 }
 
-async function sourceStats(directory: string) {
-  const names = (await readdir(directory)).filter((name) => /\.(c|h|rs)$/.test(name)),
-    sources = await Promise.all(names.map((name) => readFile(join(directory, name), "utf8")));
-  return {
-    files: names.length,
-    lines: sources.reduce((total, source) => total + source.split("\n").length, 0),
-    nonblank: sources.reduce(
-      (total, source) => total + source.split("\n").filter((line) => line.trim()).length,
-      0,
-    ),
-    unsafe: sources.reduce(
-      (total, source) => total + (source.match(/\bunsafe\b/g)?.length ?? 0),
-      0,
-    ),
-  };
+async function sourceStats(
+	directory: string,
+): Promise<{ files: number; lines: number; nonblank: number; unsafe: number }> {
+	const names = (await readdir(directory)).filter((name) => /\.(c|h|rs)$/.test(name)),
+		sources = await Promise.all(names.map((name) => readFile(join(directory, name), 'utf8')));
+	return {
+		files: names.length,
+		lines: sources.reduce((total, source) => total + source.split('\n').length, 0),
+		nonblank: sources.reduce(
+			(total, source) => total + source.split('\n').filter((line) => line.trim()).length,
+			0,
+		),
+		unsafe: sources.reduce(
+			(total, source) => total + (source.match(/\bunsafe\b/g)?.length ?? 0),
+			0,
+		),
+	};
 }
 
 const results = [];
 for (const host of hosts) {
-  const sourceDirectory =
-      host.key === "c" ? `${root}/native/pty-host-c` : `${root}/native/pty-host-rust/src`,
-    source = await sourceStats(sourceDirectory),
-    binary = await stat(host.path),
-    launchMedianMs = await launchSamples(host.path),
-    throughput = await transportThroughput(host.path);
-  results.push({
-    ...host,
-    source,
-    binaryBytes: binary.size,
-    buildMs: buildTimes[host.key as keyof typeof buildTimes],
-    launchMedianMs,
-    throughput,
-  });
+	const sourceDirectory =
+			host.key === 'c' ? `${root}/native/pty-host-c` : `${root}/native/pty-host-rust/src`,
+		source = await sourceStats(sourceDirectory),
+		binary = await stat(host.path),
+		launchMedianMs = await launchSamples(host.path),
+		throughput = await transportThroughput(host.path);
+	results.push({
+		...host,
+		source,
+		binaryBytes: binary.size,
+		buildMs: buildTimes[host.key as keyof typeof buildTimes],
+		launchMedianMs,
+		throughput,
+	});
 }
 
 const table = results
-  .map(
-    (result) =>
-      `| ${result.name} | ${result.source.files} | ${result.source.nonblank} | ${result.source.unsafe} | ${(result.binaryBytes / 1024).toFixed(1)} KiB | ${result.buildMs.toFixed(1)} ms | ${result.launchMedianMs.toFixed(1)} ms | ${result.throughput.mibPerSecond.toFixed(1)} MiB/s |`,
-  )
-  .join("\n");
+	.map(
+		(result) =>
+			`| ${result.name} | ${result.source.files} | ${result.source.nonblank} | ${result.source.unsafe} | ${(result.binaryBytes / 1024).toFixed(1)} KiB | ${result.buildMs.toFixed(1)} ms | ${result.launchMedianMs.toFixed(1)} ms | ${result.throughput.mibPerSecond.toFixed(1)} MiB/s |`,
+	)
+	.join('\n');
 const document = `# PTY Host C vs. Rust Comparison
 
 Generated on ${new Date().toISOString()} by \`bun run compare:hosts\` on ${process.platform}-${process.arch}.
@@ -154,4 +159,5 @@ ${table}
 - Zig remains a maintainer dependency only for building upstream \`ghostty-vt.wasm\`; it is absent from both PTY-host implementations.
 `;
 await writeFile(`${root}/HOST-COMPARISON.md`, document);
+// oxlint-disable-next-line no-console -- comparison script
 console.log(document);

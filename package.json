@@ -23,12 +23,13 @@
 	"scripts": {
 		"playground": "NODE_NO_WARNINGS=1 node --experimental-transform-types ./scripts/playground.ts",
 		"format": "bsh format",
+		"format:check": "bsh format --check",
 		"lint": "bsh lint .",
 		"test": "bsh test --exclude 'experiments/ghostwright/**'"
 	},
 	"devDependencies": {
 		"@bomb.sh/args": "catalog:",
-		"@bomb.sh/tools": "^0.5.4",
+		"@bomb.sh/tools": "^0.5.5",
 		"@clack/prompts": "catalog:",
 		"@types/node": "^22"
 	},
