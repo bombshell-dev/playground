@@ -16,9 +16,10 @@ describe('resolveIds — hierarchical key paths', () => {
 
 	test('a kept sibling keeps its id when a conditional sibling is dropped', () => {
 		const withSidebar = box({ key: 'app' }, box({ key: 'sidebar' }), box({ key: 'body' }));
+		const conditionalSidebar = false;
 		const withoutSidebar = box(
 			{ key: 'app' },
-			false && box({ key: 'sidebar' }),
+			conditionalSidebar ? box({ key: 'sidebar' }) : null,
 			box({ key: 'body' }),
 		);
 		const bodyId = (resolved: string[]) => resolved.find((id) => id.endsWith('body'));
