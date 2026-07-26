@@ -9,7 +9,7 @@ import {
 import { signal, effect } from 'alien-signals';
 import { cyan, white, gray, green, blue } from './helper.ts';
 
-// 6-events.ts showed one reactive box responding to keyboard, mouse, and resize.
+// 6-events.ts showed one input reacting with transitions responding to keyboard, mouse, and resize.
 // This example adds another input. Two panels, same state model, same transitions.
 // With two inputs, a focus index determines which panel receives keystrokes.
 // Everything else is identical to ./6-events.ts.
@@ -58,29 +58,43 @@ function processEvent(s: State, event: InputEvent): State {
 
 		// Everything below applies to the focused panel — identical to ./6-events.ts
 		const now = performance.now();
-		const fi = s.focusIndex;
-		const p = s.panels[fi]!;
-		const elapsed = now - p.lastKeyAt;
-		const decayed = Math.max(0, p.keyIntensity * Math.exp(-elapsed / typingDecay));
+		const currentFocusedIndex = s.focusIndex;
+		const currentFocusedPanel = s.panels[currentFocusedIndex]!;
+		const elapsed = now - currentFocusedPanel.lastKeyAt;
+		const decayed = Math.max(
+			0,
+			currentFocusedPanel.keyIntensity * Math.exp(-elapsed / typingDecay),
+		);
 		const next = Math.min(decayed + intensityPerKey, maxKeyIntensity);
 
 		let updated: Panel;
 		if (event.code === 'Backspace') {
 			updated = {
-				...p,
-				inputBuffer: p.inputBuffer.slice(0, -1),
+				...currentFocusedPanel,
+				inputBuffer: currentFocusedPanel.inputBuffer.slice(0, -1),
 				lastKey: 'Backspace',
 				keyIntensity: next,
 				lastKeyAt: now,
 			};
 		} else if (event.code === 'Enter') {
-			updated = { ...p, inputBuffer: '', lastKey: 'Enter', keyIntensity: next, lastKeyAt: now };
+			updated = {
+				...currentFocusedPanel,
+				inputBuffer: '',
+				lastKey: 'Enter',
+				keyIntensity: next,
+				lastKeyAt: now,
+			};
 		} else if (event.code.startsWith('Arrow')) {
-			updated = { ...p, lastKey: event.code as string, keyIntensity: next, lastKeyAt: now };
+			updated = {
+				...currentFocusedPanel,
+				lastKey: event.code as string,
+				keyIntensity: next,
+				lastKeyAt: now,
+			};
 		} else if (event.text) {
 			updated = {
-				...p,
-				inputBuffer: p.inputBuffer + event.text,
+				...currentFocusedPanel,
+				inputBuffer: currentFocusedPanel.inputBuffer + event.text,
 				lastKey: `Char: ${JSON.stringify(event.text)}`,
 				keyIntensity: next,
 				lastKeyAt: now,
@@ -90,7 +104,7 @@ function processEvent(s: State, event: InputEvent): State {
 		}
 
 		const panels: [Panel, Panel] = [...s.panels] as [Panel, Panel];
-		panels[fi] = updated;
+		panels[currentFocusedIndex] = updated;
 		return { ...s, panels };
 	}
 	if (event.type === 'mousemove' || event.type === 'mousedown' || event.type === 'mouseup') {
