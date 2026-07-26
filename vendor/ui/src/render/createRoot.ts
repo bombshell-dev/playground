@@ -3,6 +3,15 @@ import { createTerm, type Op, type Term } from '@bomb.sh/tty';
 import { type Child, normalizeChildren } from '../children.ts';
 import { resolveIds } from './ids.ts';
 
+/** Thrown when {@link RenderRoot.render} is called before {@link RenderRoot.ready} completes. */
+export class RenderRootNotReadyError extends Error {
+	readonly code = 'CLACK_RENDER_ROOT_NOT_READY';
+	constructor() {
+		super('RenderRoot is not ready: await `ready()` (or use `createRoot`) before `render`.');
+		this.name = 'RenderRootNotReadyError';
+	}
+}
+
 export interface RenderRootOptions {
 	/** Stream to write rendered frames to. Defaults to `process.stdout`. */
 	output?: WriteStream;
@@ -45,10 +54,7 @@ export class RenderRoot {
 	 * so animations play out without the caller needing to drive the loop.
 	 */
 	render(...children: Child[]): void {
-		if (!this.#term)
-			throw new Error(
-				'RenderRoot is not ready: await `ready()` (or use `createRoot`) before `render`.',
-			);
+		if (!this.#term) throw new RenderRootNotReadyError();
 		if (children.length > 0) this.#children = resolveIds(normalizeChildren(children));
 		if (this.#rafId !== null) {
 			clearTimeout(this.#rafId);
