@@ -1,4 +1,4 @@
-import config from '@bomb.sh/tools/oxlintrc.json' with { type: 'json' };
+import config from './node_modules/@bomb.sh/tools/oxlintrc.json' with { type: 'json' };
 
 export default {
 	...config,
