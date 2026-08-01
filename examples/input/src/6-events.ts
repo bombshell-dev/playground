@@ -194,21 +194,29 @@ function stdinEvents(): AsyncIterable<InputEvent> {
 	};
 }
 
-let pending: ReturnType<typeof input.scan>['pending'];
+// A flush timer is only outstanding while the parser holds a partial sequence.
+// Every new chunk clears an outstanding flush timer as it is no longer relevant.
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleFlush(pending: ReturnType<typeof input.scan>['pending']): void {
+	if (flushTimer !== null) clearTimeout(flushTimer);
+	if (!pending) {
+		flushTimer = null;
+		return;
+	}
+	flushTimer = setTimeout(() => {
+		flushTimer = null;
+		const flush = input.scan();
+		push(flush.events);
+		// Still partial? Schedule another flush
+		scheduleFlush(flush.pending);
+	}, pending.delay);
+}
 
 function processChunk(buf: Uint8Array): void {
-	const { events, pending: p } = input.scan(buf);
+	const { events, pending } = input.scan(buf);
 	push(events);
-	if (pending) return;
-	pending = p;
-	if (pending) {
-		setTimeout(() => {
-			const flush = input.scan();
-			push(flush.events);
-			pending = flush.pending;
-			if (pending) processChunk(new Uint8Array());
-		}, pending.delay);
-	}
+	scheduleFlush(pending);
 }
 
 process.stdin.setRawMode(true);
