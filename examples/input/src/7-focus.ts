@@ -53,8 +53,12 @@ function processEvent(s: State, event: InputEvent): State {
 	if (event.type === 'keydown') {
 		if (event.ctrl && event.code === 'c') return { ...s, quit: true };
 		if (event.code === 'Escape') return { ...s, quit: true };
-		if (event.code === 'Tab') return { ...s, focusIndex: (s.focusIndex + 1) % 2 };
-		if (event.code === 'Backtab') return { ...s, focusIndex: (s.focusIndex + 1) % 2 };
+		// Cue manual focus management. This is easy to handle in small, naive examples like this,
+		// but real TUIs with many focusable elements and complex tab order may benefit from a more
+		// robust solution. In a browser, the DOM handles this for you through the tree of DOM nodes.
+		if (event.code === 'Tab') return { ...s, focusIndex: (s.focusIndex + 1) % s.panels.length };
+		if (event.code === 'Backtab')
+			return { ...s, focusIndex: (s.focusIndex - 1 + s.panels.length) % s.panels.length };
 
 		// Everything below applies to the focused panel — identical to ./6-events.ts
 		const now = performance.now();
