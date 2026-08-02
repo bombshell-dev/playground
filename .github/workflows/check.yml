@@ -7,6 +7,9 @@ on:
 
 permissions: {}
 
+env:
+  MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS: node,pnpm
+
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -15,10 +18,6 @@ jobs:
         with:
           persist-credentials: false
       - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
-        with:
-          mise_toml: |
-            [settings]
-            idiomatic_version_file_enable_tools = ["node", "pnpm"]
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
 
@@ -29,10 +28,6 @@ jobs:
         with:
           persist-credentials: false
       - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
-        with:
-          mise_toml: |
-            [settings]
-            idiomatic_version_file_enable_tools = ["node", "pnpm"]
       - run: pnpm install --frozen-lockfile
       - run: pnpm format:check
 
@@ -43,9 +38,5 @@ jobs:
         with:
           persist-credentials: false
       - uses: jdx/mise-action@dad1bfd3df957f44999b559dd69dc1671cb4e9ea # v4.2.1
-        with:
-          mise_toml: |
-            [settings]
-            idiomatic_version_file_enable_tools = ["node", "pnpm"]
       - run: pnpm install --frozen-lockfile
       - run: pnpm test

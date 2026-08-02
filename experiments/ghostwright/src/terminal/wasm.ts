@@ -318,7 +318,7 @@ export class GhosttyWasmTerminal {
 			});
 		this.#configureMouseSize();
 	}
-	// oxlint-disable-next-line max-params -- installCallback wraps ghostty_terminal_set callback API
+	// oxlint-disable-next-line bombshell-dev/max-params -- installCallback wraps ghostty_terminal_set callback API
 	#installCallback(
 		option: number,
 		parameterCount: number,
@@ -338,7 +338,7 @@ export class GhosttyWasmTerminal {
 			throw new AssetIntegrityError(`Unable to configure Ghostty terminal effect ${option}`);
 	}
 	#configureEffects() {
-		// oxlint-disable-next-line max-params -- ghostty write-pty callback API
+		// oxlint-disable-next-line bombshell-dev/max-params -- ghostty write-pty callback API
 		this.#installCallback(1, 4, (_terminal, _userdata, data, length) => {
 			this.#effects.push({ type: 'write-pty', data: this.#bytes().slice(data, data + length) });
 		});
@@ -362,7 +362,7 @@ export class GhosttyWasmTerminal {
 		this.#installCallback(
 			6,
 			3,
-			// oxlint-disable-next-line max-params -- ghostty size report callback API
+			// oxlint-disable-next-line bombshell-dev/max-params -- ghostty size report callback API
 			(_terminal, _userdata, output) => {
 				const layout = this.#layouts.GhosttySizeReportSize,
 					field = (name: string) => layout.fields[name].offset,
@@ -378,7 +378,7 @@ export class GhosttyWasmTerminal {
 		this.#installCallback(
 			7,
 			3,
-			// oxlint-disable-next-line max-params -- ghostty terminal mode query callback API
+			// oxlint-disable-next-line bombshell-dev/max-params -- ghostty terminal mode query callback API
 			(_terminal, _userdata, _output) => {
 				return 1;
 			},
@@ -387,7 +387,7 @@ export class GhosttyWasmTerminal {
 		this.#installCallback(
 			8,
 			3,
-			// oxlint-disable-next-line max-params -- ghostty device attributes callback API
+			// oxlint-disable-next-line bombshell-dev/max-params -- ghostty device attributes callback API
 			(_terminal, _userdata, output) => {
 				const all = this.#layouts.GhosttyDeviceAttributes,
 					primary = this.#layouts.GhosttyDeviceAttributesPrimary,
@@ -411,7 +411,7 @@ export class GhosttyWasmTerminal {
 		this.#installCallback(
 			26,
 			3,
-			// oxlint-disable-next-line max-params -- ghostty clipboard write callback API
+			// oxlint-disable-next-line bombshell-dev/max-params -- ghostty clipboard write callback API
 			(_terminal, _userdata, write) => {
 				const writeLayout = this.#layouts.GhosttyClipboardWrite,
 					contentLayout = this.#layouts.GhosttyClipboardContent,
@@ -1284,7 +1284,7 @@ export class GhosttyWasmTerminal {
 			this.#release(length, 4);
 		}
 	}
-	// oxlint-disable-next-line max-params -- encodeMouse wraps ghostty mouse encoder API
+	// oxlint-disable-next-line bombshell-dev/max-params -- encodeMouse wraps ghostty mouse encoder API
 	encodeMouse(
 		action: 'move' | 'down' | 'up',
 		point: Point,

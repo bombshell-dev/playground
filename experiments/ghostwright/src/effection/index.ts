@@ -59,7 +59,7 @@ export class EffectionTerminal implements OperationTerminal {
 		up: (p: Point, o?: MouseOptions) => op(() => this.inner.mouse.up(p, o)),
 		click: (p: Point, o?: MouseOptions) => op(() => this.inner.mouse.click(p, o)),
 		doubleClick: (p: Point, o?: MouseOptions) => op(() => this.inner.mouse.doubleClick(p, o)),
-		// oxlint-disable-next-line max-params -- wraps mouse.drag(start, end, options) API
+		// oxlint-disable-next-line bombshell-dev/max-params -- wraps mouse.drag(start, end, options) API
 		drag: (a: Point, b: Point, o?: MouseOptions) => op(() => this.inner.mouse.drag(a, b, o)),
 		wheel: (o: WheelOptions) => op(() => this.inner.mouse.wheel(o)),
 	};
