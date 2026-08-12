@@ -57,7 +57,7 @@ export class SessionTrace {
 			raw: { offset, length: bytes.length, direction: 'from-pty' },
 		});
 	}
-	// oxlint-disable-next-line max-params -- input needs bytes, action sequence, and redaction flag
+	// oxlint-disable-next-line bombshell-dev/max-params -- input needs bytes, action sequence, and redaction flag
 	input(bytes: Uint8Array, actionSequence: number, redacted = false): void {
 		if (this.policy === 'off') return;
 		if (redacted) {
@@ -71,7 +71,7 @@ export class SessionTrace {
 			raw: { offset, length: bytes.length, direction: 'to-pty' },
 		});
 	}
-	// oxlint-disable-next-line max-params -- persist needs error, snapshot, and status for artifact writing
+	// oxlint-disable-next-line bombshell-dev/max-params -- persist needs error, snapshot, and status for artifact writing
 	async persist(
 		error: unknown,
 		snapshot: ScreenSnapshot,

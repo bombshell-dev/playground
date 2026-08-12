@@ -354,7 +354,7 @@ export class TerminalSession implements AsyncTerminal {
 	#ensure(op: string): void {
 		if (this.#closed) throw new SessionClosedError(`Cannot ${op}: terminal session is closed`);
 	}
-	// oxlint-disable-next-line max-params -- internal method
+	// oxlint-disable-next-line bombshell-dev/max-params -- internal method
 	async #send(
 		kind: FrameKind,
 		value: unknown,
@@ -387,7 +387,7 @@ export class TerminalSession implements AsyncTerminal {
 		});
 		return receipt as ActionReceipt;
 	}
-	// oxlint-disable-next-line max-params -- internal method
+	// oxlint-disable-next-line bombshell-dev/max-params -- internal method
 	async #write(
 		data: Uint8Array,
 		delivered = data.length > 0,
@@ -447,7 +447,7 @@ export class TerminalSession implements AsyncTerminal {
 				`Coordinate (${p.column},${p.row}) is outside ${this.#viewport.columns}x${this.#viewport.rows}`,
 			);
 	}
-	// oxlint-disable-next-line max-params -- internal method
+	// oxlint-disable-next-line bombshell-dev/max-params -- internal method
 	#mouse(action: 'move' | 'down' | 'up', p: Point, o: MouseOptions = {}): Promise<ActionReceipt> {
 		this.#point(p);
 		const wasDown = this.#mouseDown;
@@ -473,7 +473,7 @@ export class TerminalSession implements AsyncTerminal {
 			await this.mouse.click(p, o);
 			return this.mouse.click(p, o);
 		},
-		// oxlint-disable-next-line max-params -- wraps mouse API
+		// oxlint-disable-next-line bombshell-dev/max-params -- wraps mouse API
 		drag: async (a: Point, b: Point, o?: MouseOptions) => {
 			await this.#mouse('down', a, o);
 			await this.#mouse('move', b, o);
@@ -615,7 +615,7 @@ export class TerminalSession implements AsyncTerminal {
 				}, timeout);
 		});
 	}
-	// oxlint-disable-next-line max-params -- internal method
+	// oxlint-disable-next-line bombshell-dev/max-params -- internal method
 	async #timeout<T>(p: Promise<T>, ms: number, error: () => Error): Promise<T> {
 		return new Promise<T>((r, j) => {
 			const t = setTimeout(() => j(error()), ms);
@@ -904,7 +904,7 @@ export class TerminalSession implements AsyncTerminal {
 }
 /** Text locator that finds matching strings in the terminal viewport. */
 export class Locator implements AsyncLocator {
-	// oxlint-disable-next-line max-params -- public API
+	// oxlint-disable-next-line bombshell-dev/max-params -- public API
 	constructor(
 		readonly session: TerminalSession,
 		readonly query: string,

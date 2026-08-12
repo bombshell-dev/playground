@@ -9,7 +9,7 @@ import type {
 } from '../types.ts';
 import { Locator } from '../terminal/session.ts';
 import type { TerminalSession } from '../terminal/session.ts';
-// oxlint-disable-next-line max-params -- diagnostic needs all four params for failure reporting
+// oxlint-disable-next-line bombshell-dev/max-params -- diagnostic needs all four params for failure reporting
 function diagnostic(
 	session: TerminalSession,
 	expected: string,
@@ -37,7 +37,7 @@ function diagnostic(
 			.join(', ') || 'none'
 	}\n\n    ${tens}\n    ${ones}\n${rows}`;
 }
-// oxlint-disable-next-line max-params -- wait needs all four params for polling logic
+// oxlint-disable-next-line bombshell-dev/max-params -- wait needs all four params for polling logic
 async function wait(
 	session: TerminalSession,
 	test: () => boolean,

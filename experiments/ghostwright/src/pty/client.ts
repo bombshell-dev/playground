@@ -151,7 +151,7 @@ export class SidecarClient {
 		this.#emit('fatal', error);
 		this.#child.kill('SIGKILL');
 	}
-	// oxlint-disable-next-line max-params -- request needs kind, value, raw flag, and timeout
+	// oxlint-disable-next-line bombshell-dev/max-params -- request needs kind, value, raw flag, and timeout
 	request<T = unknown>(
 		kind: FrameKind,
 		value?: unknown,
