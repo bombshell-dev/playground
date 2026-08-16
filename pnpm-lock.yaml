@@ -18,6 +18,9 @@ catalogs:
     '@clack/ui':
       specifier: https://pkg.pr.new/bombshell-dev/ui/@clack/ui@a60ac12
       version: 0.0.0
+    alien-signals:
+      specifier: ^2.0.0
+      version: 2.0.8
 
 importers:
 
@@ -44,9 +47,18 @@ importers:
 
   examples/input:
     dependencies:
+      '@bomb.sh/tty':
+        specifier: 'catalog:'
+        version: 0.8.0
       '@clack/ui':
         specifier: 'catalog:'
         version: https://pkg.pr.new/bombshell-dev/ui/@clack/ui@a60ac12
+      '@clack/vendored.ui':
+        specifier: 'workspace:'
+        version: link:../../vendor/ui
+      alien-signals:
+        specifier: 'catalog:'
+        version: 2.0.8
 
   experiments/ghostwright:
     dependencies:
@@ -54,10 +66,30 @@ importers:
         specifier: ^4.0.2
         version: 4.0.3
 
+  vendor/ui:
+    dependencies:
+      '@bomb.sh/tty':
+        specifier: ^0.8.0
+        version: 0.8.0
+      '@types/node':
+        specifier: ^22.20.0
+        version: 22.20.1
+    devDependencies:
+      '@bomb.sh/tools':
+        specifier: ^0.5.4
+        version: 0.5.6(@types/node@22.20.1)(oxc-resolver@11.21.3)(unrun@0.2.39)(vite@8.1.0(@types/node@22.20.1)(jiti@2.7.0)(yaml@2.9.0))
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@types/node@22.20.1)(vite@8.1.0(@types/node@22.20.1)(jiti@2.7.0)(yaml@2.9.0))
+
 packages:
 
   '@bomb.sh/args@0.3.1':
     resolution: {integrity: sha512-CwxKrfgcorUPP6KfYD59aRdBYWBTsfsxT+GmoLVnKo5Tmyoqbpo0UNcjngRMyU+6tiPbd18RuIYxhgAn44wU/Q==}
+
+  '@bomb.sh/tools@0.5.6':
+    resolution: {integrity: sha512-bQffZ8EvaZ2G4p5Ksvr3HGaI5JLe7vqMn9n8+X6kmXQqqGT2Lsp2a0WYTlGWLMQk/VaRKHRMooSw6gCnUgWUxg==}
+    hasBin: true
 
   '@bomb.sh/tools@0.6.1':
     resolution: {integrity: sha512-p3dLXau2JygQ9DTErUvHSn7GwqpRraIjiXdj/xeAU0+7opUZrtiHe18FLrU5opCSr16WZep0p0/OBX1HgMjgJQ==}
@@ -981,6 +1013,9 @@ packages:
   '@yuku-toolchain/types@0.5.43':
     resolution: {integrity: sha512-kSpvPntnXw5+lYjO71ffBEnQ5ycQ74KGIYknh0TS4xeyCuBkOqxyJumxZkMhLBBUCLjDAbx2+Icnr3Zh4ftjpQ==}
 
+  alien-signals@2.0.8:
+    resolution: {integrity: sha512-844G1VLkk0Pe2SJjY0J8vp8ADI73IM4KliNu2OGlYzWpO28NexEUvjHTcFjFX3VXoiUtwTbHxLNI9ImkcoBqzA==}
+
   ansis@4.3.1:
     resolution: {integrity: sha512-BJ8/l4R5LRE7hW9WdSuGYrLSHi2ynxeFpDFbH0K/CgNeY/tyhk+vO6TYxXC5r5CpUhNVX310xzPsN/H9lCdfOA==}
     engines: {node: '>=14'}
@@ -1490,6 +1525,49 @@ packages:
 snapshots:
 
   '@bomb.sh/args@0.3.1': {}
+
+  '@bomb.sh/tools@0.5.6(@types/node@22.20.1)(oxc-resolver@11.21.3)(unrun@0.2.39)(vite@8.1.0(@types/node@22.20.1)(jiti@2.7.0)(yaml@2.9.0))':
+    dependencies:
+      '@bomb.sh/args': 0.3.1
+      '@humanfs/node': 0.16.8
+      '@humanfs/types': 0.15.0
+      '@typescript/native-preview': 7.0.0-dev.20260623.1
+      knip: 6.18.0
+      oxfmt: 0.47.0
+      oxlint: 1.74.0
+      publint: 0.3.21
+      tinyexec: 1.2.4
+      tsdown: 0.22.7(@typescript/native-preview@7.0.0-dev.20260623.1)(oxc-resolver@11.21.3)(publint@0.3.21)(unrun@0.2.39)
+      ultramatter: 0.0.4
+      vitest: 4.1.9(@types/node@22.20.1)(vite@8.1.0(@types/node@22.20.1)(jiti@2.7.0)(yaml@2.9.0))
+      vitest-ansi-serializer: 0.2.1(vitest@4.1.9(@types/node@22.20.1)(vite@8.1.0(@types/node@22.20.1)(jiti@2.7.0)(yaml@2.9.0)))
+    transitivePeerDependencies:
+      - '@arethetypeswrong/core'
+      - '@edge-runtime/vm'
+      - '@opentelemetry/api'
+      - '@ts-macro/tsc'
+      - '@tsdown/css'
+      - '@tsdown/exe'
+      - '@types/node'
+      - '@vitejs/devtools'
+      - '@vitest/browser-playwright'
+      - '@vitest/browser-preview'
+      - '@vitest/browser-webdriverio'
+      - '@vitest/coverage-istanbul'
+      - '@vitest/coverage-v8'
+      - '@vitest/ui'
+      - happy-dom
+      - jsdom
+      - msw
+      - oxc-resolver
+      - oxlint-tsgolint
+      - tsx
+      - typescript
+      - unplugin-unused
+      - unrun
+      - vite
+      - vite-plus
+      - vue-tsc
 
   '@bomb.sh/tools@0.6.1(@types/node@22.20.1)(oxc-resolver@11.21.3)(unrun@0.2.39)(vite@8.1.0(@types/node@22.20.1)(jiti@2.7.0)(yaml@2.9.0))':
     dependencies:
@@ -2151,6 +2229,8 @@ snapshots:
     optional: true
 
   '@yuku-toolchain/types@0.5.43': {}
+
+  alien-signals@2.0.8: {}
 
   ansis@4.3.1: {}
 
