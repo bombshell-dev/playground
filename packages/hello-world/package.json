@@ -1,35 +1,40 @@
 {
-	"name": "@ghostwright/hello-world",
-	"version": "0.0.0",
-	"description": "A plain clack/ui hello-world application, validated end to end with ghostwright tree locators",
-	"private": true,
-	"license": "MIT",
-	"type": "module",
-	"scripts": {
-		"start": "tsx src/hello-world.ts"
-	},
-	"dependencies": {
-		"@bomb.sh/tty": "^0.8.0",
-		"@clack/ui": "workspace:*",
-		"@ghostwright/clack-tty": "workspace:*"
-	},
-	"devDependencies": {
-		"@types/node": "^22.20.0",
-		"tsx": "^4.19.0"
-	},
-	"@clack/ui": {
-		"extensions": ["@ghostwright/clack-tty/auto"]
-	},
-	"devEngines": {
-		"packageManager": {
-			"name": "pnpm",
-			"version": "10.7.0",
-			"onFail": "error"
-		},
-		"runtime": {
-			"name": "node",
-			"version": "22.14.0",
-			"onFail": "error"
-		}
-	}
+ "name": "@ghostwright/hello-world",
+ "version": "0.0.0",
+ "description": "A plain clack/ui hello-world application, validated end to end with ghostwright tree locators",
+ "private": true,
+ "license": "MIT",
+ "type": "module",
+ "scripts": {
+  "start": "tsx src/hello-world.ts",
+  "test": "vitest run"
+ },
+ "dependencies": {
+  "@bomb.sh/tty": "^0.8.0",
+  "@clack/ui": "workspace:*",
+  "@ghostwright/clack-tty": "workspace:*"
+ },
+ "devDependencies": {
+  "@types/node": "^22.20.0",
+  "tsx": "^4.19.0",
+  "ghostwright": "workspace:*",
+  "vitest": "^4.1.9"
+ },
+ "@clack/ui": {
+  "extensions": [
+   "@ghostwright/clack-tty/auto"
+  ]
+ },
+ "devEngines": {
+  "packageManager": {
+   "name": "pnpm",
+   "version": "10.7.0",
+   "onFail": "error"
+  },
+  "runtime": {
+   "name": "node",
+   "version": "22.14.0",
+   "onFail": "error"
+  }
+ }
 }

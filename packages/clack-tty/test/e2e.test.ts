@@ -2,13 +2,21 @@ import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from 'vitest';
-import { expectTerminal, withTerminalAsync, type AsyncTerminal } from 'ghostwright';
-import { clackTtyExtension, type ClackTtyLocator, type ClackTtySession } from '../src/index.ts';
+import { expectTerminal, withTerminalAsync } from 'ghostwright';
+import {
+	clackTtyExtension,
+	expectFocused,
+	expectTreeCondition,
+	type ClackTtySession,
+} from '../src/index.ts';
 
 // The demo application is a separate package that only imports clack/ui;
 // semantic emission activates via the extension declared in its package.json
-// plus the launcher environment.
+// plus the launcher environment. This suite exercises extension mechanics:
+// frame ordering, counts, geometry honesty, and opt-in behavior. User-journey
+// tests in selector syntax live in packages/hello-world/test.
 const demoRoot = new URL('../../hello-world', import.meta.url).pathname;
+const extension = clackTtyExtension();
 
 const entry = (...extra: string[]) => ({
 	command: process.execPath,
@@ -17,117 +25,11 @@ const entry = (...extra: string[]) => ({
 	viewport: { columns: 80, rows: 24 },
 	env: { CLACK_UI_SEMANTIC: '1' },
 	trace: 'off' as const,
+	extensions: [extension],
 });
 
-const extension = clackTtyExtension();
-
-/**
- * Sleep-free tree wait. Each arm blocks on ghostwright's notification wait
- * (revision-driven), but a wake-up can be lost when it races the subscribe
- * window in `waitForChange` (upstream gap between the initial check and
- * `subscribe`); re-arming the wait recovers without polling intervals.
- */
-async function treeCondition(
-	terminal: AsyncTerminal,
-	condition: () => boolean,
-	description: string,
-	deadlineMs = 15000,
-): Promise<unknown> {
-	const deadline = Date.now() + deadlineMs;
-	for (;;) {
-		try {
-			return await expectTerminal(terminal).toSatisfy(condition, {
-				settleMs: 0,
-				timeoutMs: 1000,
-			});
-		} catch {
-			if (Date.now() > deadline) {
-				throw new Error(`${description}: condition never converged`);
-			}
-		}
-	}
-}
-
-function expectFocused(
-	terminal: AsyncTerminal,
-	locator: ClackTtyLocator,
-): Promise<unknown> {
-	return treeCondition(
-		terminal,
-		() => {
-			const matches = locator.matches();
-			return matches.length === 1 && matches[0]!.states.focused;
-		},
-		`${locator.source} to be focused`,
-	);
-}
-
-test('acceptance flow: tree locator end to end (TC-E1, REQ-017..REQ-023)', async () => {
-	await withTerminalAsync({ ...entry(), extensions: [extension] }, async (terminal) => {
-		const semantic = terminal.extension(extension) as ClackTtySession;
-
-		// Readiness: the greeting is on screen.
-		await expectTerminal(terminal.getByText('Hello, World!')).toBeStable();
-
-		// Tree presence, found via CSS against the semantic tree (frame barrier).
-		const group = semantic.locator('box[role="group"][label="hello"]');
-		expect(group.matches()).toHaveLength(1);
-		await treeCondition(
-			terminal,
-			() => group.matches().length === 1,
-			'group box present in semantic tree',
-		);
-
-		// Geometry bridge: text scoped to the group's on-screen rect (region barrier).
-		await expectTerminal(group.getByText('Hello, World!')).toBeStable();
-
-		// Focus truth: the first input auto-focused via clack/ui's focus API.
-		const say = semantic.locator('input[label="say"]');
-		const to = semantic.locator('input[label="to"]');
-		await expectFocused(terminal, say);
-
-		// Type into the focused say input; both the input model and the semantic
-		// tree's visible text must update.
-		await terminal.keyboard.type('Hi');
-		await expectTerminal(group.getByText('Hi, World!')).toBeStable();
-		await expectTerminal(say.getByText('Hi')).toBePresent();
-
-		// Tab moves focus; the frame's focusStack follows.
-		await terminal.keyboard.press('Tab');
-		await expectFocused(terminal, to);
-		expect(say.matches()[0]!.states.focused).toBe(false);
-
-		// Focus stack reflects the focused input's key.
-		const frame = semantic.current();
-		expect(frame?.focusStack).toEqual([to.matches()[0]!.key]);
-	});
-});
-
-test('ambiguous and never-matching locators fail with diagnostics (TC-E2, REQ-019)', async () => {
-	await withTerminalAsync({ ...entry(), extensions: [extension] }, async (terminal) => {
-		const semantic = terminal.extension(extension) as ClackTtySession;
-		await expectTerminal(terminal.getByText('Hello, World!')).toBeStable();
-
-		// Ambiguity: two inputs match; the strict requirement lists candidates.
-		try {
-			semantic.locator('input').unique();
-			expect.unreachable('unique() must throw on ambiguity');
-		} catch (error) {
-			expect((error as Error).message).toContain('matched 2');
-		}
-
-		// Never-matching: revision-driven wait times out with a diagnostic.
-		await expect(
-			treeCondition(terminal, () => semantic.locator('input[label="nope"]').matches().length > 0, 'never'),
-		).rejects.toThrow(/never/);
-
-		// Focus diagnostic: the unfocused input fails toBeFocused.
-		await expect(expectFocused(terminal, semantic.locator('input[label="to"]'))).rejects.toThrow();
-	});
-});
-
-test('idle app emits no frames; typing emits exactly one per render (TC-I2, TC-I3, REQ-011/REQ-015)', async () => {
-	await withTerminalAsync({ ...entry(), extensions: [extension] }, async (terminal) => {
+test('idle app emits no frames; typing emits frames per render (TC-I2, TC-I3, REQ-011/REQ-015)', async () => {
+	await withTerminalAsync(entry(), async (terminal) => {
 		const semantic = terminal.extension(extension) as ClackTtySession;
 		await expectTerminal(terminal.getByText('Hello, World!')).toBeStable();
 
@@ -143,7 +45,7 @@ test('idle app emits no frames; typing emits exactly one per render (TC-I2, TC-I
 		await terminal.keyboard.type('H');
 		// Each committed render emits exactly one frame (a keystroke may commit
 		// more than one render: the input model and the listening update).
-		await treeCondition(
+		await expectTreeCondition(
 			terminal,
 			() => semantic.frames().length >= before + 1,
 			'frames advance with renders',
@@ -161,7 +63,7 @@ test('idle app emits no frames; typing emits exactly one per render (TC-I2, TC-I
 });
 
 test('focus states derive from the frame; exactly one focused node (TC-I6, REQ-013)', async () => {
-	await withTerminalAsync({ ...entry(), extensions: [extension] }, async (terminal) => {
+	await withTerminalAsync(entry(), async (terminal) => {
 		const semantic = terminal.extension(extension) as ClackTtySession;
 		await expectTerminal(terminal.getByText('Hello, World!')).toBeStable();
 
@@ -173,7 +75,7 @@ test('focus states derive from the frame; exactly one focused node (TC-I6, REQ-0
 		expect(focused[0]!.name).toBe('input');
 
 		await terminal.keyboard.press('Tab');
-		await treeCondition(
+		await expectTreeCondition(
 			terminal,
 			() => {
 				const frame = semantic.current();
@@ -188,7 +90,7 @@ test('focus states derive from the frame; exactly one focused node (TC-I6, REQ-0
 });
 
 test('geometry matches the on-screen rects; attribute updates flow through (TC-I4, TC-I7, REQ-007/REQ-012)', async () => {
-	await withTerminalAsync({ ...entry(), extensions: [extension] }, async (terminal) => {
+	await withTerminalAsync(entry(), async (terminal) => {
 		const semantic = terminal.extension(extension) as ClackTtySession;
 		await expectTerminal(terminal.getByText('Hello, World!')).toBeStable();
 
@@ -207,7 +109,7 @@ test('geometry matches the on-screen rects; attribute updates flow through (TC-I
 	});
 });
 
-test('opt-in emission: no plugin, no OSC (TC-I5, REQ-014)', async () => {
+test('opt-in emission: no declaration, no env, no OSC (TC-I5, REQ-014)', async () => {
 	const noSemantic = {
 		command: process.execPath,
 		args: ['--import', 'tsx', 'test/fixtures/no-semantic.ts'],
@@ -227,11 +129,11 @@ test('opt-in emission: no plugin, no OSC (TC-I5, REQ-014)', async () => {
 
 test('frames follow their visual bytes in the raw stream (TC-I1, REQ-005)', async () => {
 	const capture = join(tmpdir(), `clack-tty-capture-${process.pid}.bin`);
-	await withTerminalAsync({ ...entry('--teed', capture), extensions: [extension] }, async (terminal) => {
+	await withTerminalAsync(entry('--teed', capture), async (terminal) => {
 		const semantic = terminal.extension(extension) as ClackTtySession;
 		await expectTerminal(terminal.getByText('Hello, World!')).toBeStable();
 		await terminal.keyboard.type('Hi');
-		await treeCondition(terminal, () => semantic.frames().length >= 3, 'at least three frames');
+		await expectTreeCondition(terminal, () => semantic.frames().length >= 3, 'at least three frames');
 	});
 	const raw = readFileSync(capture, 'latin1');
 	const altScreen = raw.indexOf('\u001b[?1049h');
