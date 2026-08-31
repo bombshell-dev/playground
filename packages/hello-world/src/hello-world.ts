@@ -1,8 +1,9 @@
 /**
- * Hello-world demo application: a clack/ui TUI with the semantic plugin
- * installed, serving as the end-to-end fixture for ghostwright tree locators.
+ * A plain clack/ui application. Nothing in this file knows about testing:
+ * semantic-tree emission is activated by the launcher (CLACK_UI_SEMANTIC=1)
+ * through the extension declared in package.json.
  *
- * Run: `node --import tsx src/hello-world.ts`
+ * Run: `tsx src/hello-world.ts`
  * With byte capture for ordering tests: `--teed <file>` appends every stdout
  * write to `<file>` (configuration seam, see the test plan rig section).
  */
@@ -10,7 +11,6 @@ import { appendFileSync, openSync } from 'node:fs';
 import { stdin, stdout } from 'node:process';
 import { fixed, grow, percent, rgba } from '@bomb.sh/tty';
 import { createUI, type HostElement, type TextProps } from '@clack/ui';
-import { useSemantic } from './producer.ts';
 
 const blue = rgba(0, 0, 238);
 const cyan = rgba(0, 205, 205);
@@ -35,10 +35,6 @@ const ui = await createUI({
 	output: stdout,
 	width: columns,
 	height: rows,
-});
-useSemantic(ui.host, {
-	surface: { columns, rows },
-	onDiagnostic: (error) => console.error('[clack-tty]', error),
 });
 
 const { host } = ui;

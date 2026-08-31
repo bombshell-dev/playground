@@ -17,8 +17,10 @@ import { useFocus } from './focus.ts';
 import { useHostRenderer } from './host-render.ts';
 import { createHost, type Host } from './host.ts';
 import { useKeyboard } from './keyboard.ts';
+import { loadDeclaredExtensions, registeredUIExtensions } from './extensions.ts';
 import { layout } from './layout.ts';
 import { RenderApi } from './render.ts';
+import type { UIExtension } from './extensions.ts';
 import { createInputLoop } from './input-loop.ts';
 
 export interface UIOptions {
@@ -27,6 +29,7 @@ export interface UIOptions {
 	width?: number;
 	input: ReadStream;
 	output: WriteStream;
+	extensions?: UIExtension[];
 }
 
 export interface UI extends AsyncDisposable {
@@ -86,6 +89,18 @@ export async function createUI(options: UIOptions): Promise<UI> {
 			return result;
 		},
 	});
+
+	// Extensions run after createUI's own middleware, so they resolve inner in
+	// the chain. Explicit first, then package.json declarations, then the
+	// out-of-band registry (later-installed = deeper).
+	const extensions: UIExtension[] = [
+		...(options.extensions ?? []),
+		...(await loadDeclaredExtensions(process.cwd())),
+		...registeredUIExtensions(),
+	];
+	for (const extension of extensions) {
+		extension({ host, input: options.input, output, width, height, inline });
+	}
 
 	output.write(setup.apply);
 

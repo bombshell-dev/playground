@@ -39,6 +39,10 @@
 			"types": "./src/render.ts",
 			"import": "./src/render.ts"
 		},
+		"./extensions": {
+			"types": "./src/extensions.ts",
+			"import": "./src/extensions.ts"
+		},
 		"./core": {
 			"types": "./src/core.ts",
 			"import": "./src/core.ts"

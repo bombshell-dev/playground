@@ -69,6 +69,29 @@ describe('freedom experiment removal (TC-P2, REQ-003)', () => {
 	});
 });
 
+describe('extension/application separation (Decision: husky-style activation)', () => {
+	const demoRoot = resolve(packageRoot, '../hello-world');
+
+	test('the demo application source imports nothing from the extension package', () => {
+		const source = readFileSync(`${demoRoot}/src/hello-world.ts`, 'utf8');
+		expect(source.includes('@ghostwright')).toBe(false);
+		expect(source.includes('useSemantic')).toBe(false);
+		expect(source).toContain("from '@clack/ui'");
+	});
+
+	test('the demo declares the extension in package.json, husky-style', () => {
+		const pkg = JSON.parse(readFileSync(`${demoRoot}/package.json`, 'utf8'));
+		expect(pkg['@clack/ui']?.extensions).toEqual(['@ghostwright/clack-tty/auto']);
+		expect(pkg.dependencies['@ghostwright/clack-tty']).toBe('workspace:*');
+		expect(pkg.dependencies['@clack/ui']).toBe('workspace:*');
+	});
+
+	test('the extension package itself declares no clack/ui extensions', () => {
+		const pkg = JSON.parse(readFileSync(`${packageRoot}/package.json`, 'utf8'));
+		expect(pkg['@clack/ui']).toBeUndefined();
+	});
+});
+
 describe('bun-free test path (TC-P3, REQ-004)', () => {
 	test('the package test script is vitest-only', () => {
 		const pkg = JSON.parse(readFileSync(`${packageRoot}/package.json`, 'utf8'));

@@ -5,13 +5,17 @@ import { expect, test } from 'vitest';
 import { expectTerminal, withTerminalAsync, type AsyncTerminal } from 'ghostwright';
 import { clackTtyExtension, type ClackTtyLocator, type ClackTtySession } from '../src/index.ts';
 
-const packageRoot = new URL('..', import.meta.url).pathname;
+// The demo application is a separate package that only imports clack/ui;
+// semantic emission activates via the extension declared in its package.json
+// plus the launcher environment.
+const demoRoot = new URL('../../hello-world', import.meta.url).pathname;
 
 const entry = (...extra: string[]) => ({
 	command: process.execPath,
 	args: ['--import', 'tsx', 'src/hello-world.ts', ...extra],
-	cwd: packageRoot,
+	cwd: demoRoot,
 	viewport: { columns: 80, rows: 24 },
+	env: { CLACK_UI_SEMANTIC: '1' },
 	trace: 'off' as const,
 });
 
@@ -207,7 +211,7 @@ test('opt-in emission: no plugin, no OSC (TC-I5, REQ-014)', async () => {
 	const noSemantic = {
 		command: process.execPath,
 		args: ['--import', 'tsx', 'test/fixtures/no-semantic.ts'],
-		cwd: packageRoot,
+		cwd: new URL('..', import.meta.url).pathname,
 		viewport: { columns: 80, rows: 24 },
 		trace: 'off' as const,
 		extensions: [extension],
