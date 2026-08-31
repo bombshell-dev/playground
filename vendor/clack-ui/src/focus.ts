@@ -14,13 +14,16 @@ export const FocusApi = createApi('focus', {
 		}
 	},
 	setFocus(node): void {
-		if (!isFocusable(node) && node !== getHost(node).root) {
+		if (!FocusApi.methods.isFocusable(node) && node !== getHost(node).root) {
 			throw new UnfocusableElementError(node);
 		}
 		FocusContext.expect(node).current = node;
 	},
 	getFocus(node): Node {
 		return FocusContext.expect(node).current;
+	},
+	isFocusable(node): boolean {
+		return FocusableContext.hasOwn(node) && FocusableContext.expect(node);
 	},
 
 	advanceFocus(node): void {
@@ -58,7 +61,7 @@ export const FocusApi = createApi('focus', {
 	},
 });
 
-export const { setFocusable, getFocus, setFocus, advanceFocus, retreatFocus } = FocusApi.methods;
+export const { setFocusable, getFocus, setFocus, isFocusable, advanceFocus, retreatFocus } = FocusApi.methods;
 
 export function useFocus(host: Host): void {
 	FocusContext.set(host.root, { current: host.root });
@@ -88,9 +91,6 @@ const { getHost } = HostApi.methods;
 const FocusContext = createContext<{ current: Node }>('focus');
 const FocusableContext = createContext<boolean>('focusable', false);
 
-function isFocusable(node: Node): boolean {
-	return FocusableContext.hasOwn(node) && FocusableContext.expect(node);
-}
 
 interface Range {
 	start: HostElementChild;
@@ -207,7 +207,7 @@ function* concat<A>(...iterables: Iterable<A>[]): Generator<A> {
 
 function findFocus(elements: Iterable<HostElement>): Node | undefined {
 	for (const element of elements) {
-		if (isFocusable(element.node!)) {
+		if (FocusApi.methods.isFocusable(element.node!)) {
 			return element.node!;
 		}
 	}

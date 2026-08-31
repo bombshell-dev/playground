@@ -5,7 +5,6 @@ import {
 	CSI,
 	cursor,
 	settings,
-	type Op,
 	type Setting,
 	type Term,
 } from '@bomb.sh/tty';
@@ -53,19 +52,38 @@ export async function createUI(options: UIOptions): Promise<UI> {
 	useInputElement(host);
 	useHostRenderer(host);
 
-	const rendererOptions = { height, output, term };
-	const { setup, render } = inline
-		? createInlineRenderer(rendererOptions)
-		: createFullscreenRenderer(rendererOptions);
+	const nextLine: Setting = {
+		apply: new Uint8Array(),
+		revert: new TextEncoder().encode('\r\n'),
+	};
+	const setup = inline
+		? settings(cursor(false), nextLine)
+		: settings(cursor(false), alternateBuffer());
+
 	let stopped = false;
+	let firstRender = true;
 
 	// Deliberately naive: every request immediately lays out and renders the entire Host tree.
 	RenderApi.around(host.root, {
 		requestRender([node], next) {
 			if (!stopped) {
 				next(node);
-				render([...layout(host.root)]);
+				RenderApi.methods.render(node, output, term, [...layout(host.root)]);
 			}
+		},
+		// Renderer strategy as middleware. Inline mode repositions the cursor and
+		// paints in line mode via a term facade; fullscreen delegates to the core.
+		render([_node, innerOutput, innerTerm, ops], next) {
+			if (inline && !firstRender) {
+				if (height > 1) {
+					innerOutput.write(CSI(`${height - 1}A`));
+				}
+				innerOutput.write(CSI('1G'));
+			}
+			const lineMode: Term = { render: (o) => innerTerm.render(o, { mode: 'line' }) };
+			const result = next(_node, innerOutput, inline ? lineMode : innerTerm, ops);
+			firstRender = false;
+			return result;
 		},
 	});
 
@@ -107,46 +125,4 @@ export async function createUI(options: UIOptions): Promise<UI> {
 			}
 		},
 	};
-}
-
-function createInlineRenderer({ height, output, term }: RendererOptions): Renderer {
-	let firstRender = true;
-	const nextLine: Setting = {
-		apply: new Uint8Array(),
-		revert: new TextEncoder().encode('\r\n'),
-	};
-
-	return {
-		setup: settings(cursor(false), nextLine),
-		render(ops) {
-			if (!firstRender) {
-				if (height > 1) {
-					output.write(CSI(`${height - 1}A`));
-				}
-				output.write(CSI('1G'));
-			}
-			output.write(term.render(ops, { mode: 'line' }).output);
-			firstRender = false;
-		},
-	};
-}
-
-function createFullscreenRenderer({ output, term }: RendererOptions): Renderer {
-	return {
-		setup: settings(cursor(false), alternateBuffer()),
-		render(ops) {
-			output.write(term.render(ops).output);
-		},
-	};
-}
-
-interface Renderer {
-	setup: Setting;
-	render(ops: Op[]): void;
-}
-
-interface RendererOptions {
-	height: number;
-	output: WriteStream;
-	term: Term;
 }

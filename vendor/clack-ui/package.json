@@ -3,7 +3,8 @@
 	"version": "0.0.0",
 	"keywords": [
 		"bombshell",
-		"cli"
+		"cli",
+		"vendored"
 	],
 	"homepage": "https://bomb.sh/docs/ui",
 	"license": "MIT",
@@ -13,22 +14,34 @@
 		"url": "https://bomb.sh"
 	},
 	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/bombshell-dev/ui.git"
+		"type": "git+https://github.com/bombshell-dev/ui.git",
+		"directory": "packages/ui"
 	},
 	"type": "module",
 	"exports": {
 		".": {
-			"types": "./dist/index.d.mts",
-			"import": "./dist/index.mjs"
+			"types": "./src/index.ts",
+			"import": "./src/index.ts"
 		},
 		"./elements": {
-			"types": "./dist/elements.d.mts",
-			"import": "./dist/elements.mjs"
+			"types": "./src/elements.ts",
+			"import": "./src/elements.ts"
 		},
 		"./events": {
-			"types": "./dist/events.d.mts",
-			"import": "./dist/events.mjs"
+			"types": "./src/events.ts",
+			"import": "./src/events.ts"
+		},
+		"./focus": {
+			"types": "./src/focus.ts",
+			"import": "./src/focus.ts"
+		},
+		"./render": {
+			"types": "./src/render.ts",
+			"import": "./src/render.ts"
+		},
+		"./core": {
+			"types": "./src/core.ts",
+			"import": "./src/core.ts"
 		},
 		"./package.json": "./package.json"
 	},
@@ -43,22 +56,18 @@
 		"test": "bsh test"
 	},
 	"dependencies": {
-		"@bomb.sh/tty": "^0.7.0",
+		"@bomb.sh/tty": "^0.8.0",
 		"@types/node": "^22.20.0"
-	},
-	"devDependencies": {
-		"@bomb.sh/tools": "^0.5.4",
-		"vitest": "^4.1.9"
 	},
 	"devEngines": {
 		"packageManager": {
 			"name": "pnpm",
-			"version": "^10.7.0",
+			"version": "10.7.0",
 			"onFail": "error"
 		},
 		"runtime": {
 			"name": "node",
-			"version": "^22.14.0",
+			"version": "22.14.0",
 			"onFail": "error"
 		}
 	}
