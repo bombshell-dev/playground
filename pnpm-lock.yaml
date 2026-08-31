@@ -66,6 +66,34 @@ importers:
         specifier: ^4.0.2
         version: 4.0.3
 
+  packages/clack-tty:
+    dependencies:
+      '@bomb.sh/tty':
+        specifier: ^0.8.0
+        version: 0.8.0
+      '@clack/ui':
+        specifier: workspace:*
+        version: link:../../vendor/clack-ui
+      css-select:
+        specifier: ^7.0.0
+        version: 7.0.0
+      css-what:
+        specifier: ^8.0.0
+        version: 8.0.0
+      ghostwright:
+        specifier: workspace:*
+        version: link:../../experiments/ghostwright
+    devDependencies:
+      '@types/node':
+        specifier: ^22.20.0
+        version: 22.20.1
+      tsx:
+        specifier: ^4.19.0
+        version: 4.23.13
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@types/node@22.20.1)(vite@8.1.0(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0))
+
   packages/demo:
     dependencies:
       '@bomb.sh/freedom':
@@ -77,9 +105,6 @@ importers:
       '@bomb.sh/tty':
         specifier: https://pkg.pr.new/@bomb.sh/tty@103
         version: https://pkg.pr.new/@bomb.sh/tty@103
-      '@ghostwright/freedom-tty':
-        specifier: workspace:*
-        version: link:../freedom-tty
       '@types/node':
         specifier: ^26.0.0
         version: 26.4.0
@@ -147,24 +172,6 @@ importers:
         specifier: ^4.19.2
         version: 4.23.13
 
-  packages/freedom-tty:
-    dependencies:
-      '@bomb.sh/freedom':
-        specifier: '*'
-        version: link:../freedom
-      '@bomb.sh/tty':
-        specifier: '*'
-        version: 0.8.0
-      css-select:
-        specifier: ^7.0.0
-        version: 7.0.0
-      css-what:
-        specifier: ^8.0.0
-        version: 8.0.0
-      ghostwright:
-        specifier: workspace:*
-        version: link:../../experiments/ghostwright
-
   packages/input:
     dependencies:
       '@bomb.sh/freedom':
@@ -186,6 +193,15 @@ importers:
       vitest:
         specifier: ^4.1.2
         version: 4.1.9(@types/node@26.4.0)(vite@8.1.0(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0))
+
+  vendor/clack-ui:
+    dependencies:
+      '@bomb.sh/tty':
+        specifier: ^0.8.0
+        version: 0.8.0
+      '@types/node':
+        specifier: ^22.20.0
+        version: 22.20.1
 
   vendor/ui:
     dependencies:
@@ -1998,7 +2014,7 @@ snapshots:
       tsdown: 0.22.7(@typescript/native-preview@7.0.0-dev.20260623.1)(oxc-resolver@11.21.3)(publint@0.3.21)(tsx@4.23.13)(unrun@0.2.39)
       ultramatter: 0.0.4
       vitest: 4.1.9(@types/node@26.4.0)(vite@8.1.0(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0))
-      vitest-ansi-serializer: 0.2.1(vitest@4.1.9(@types/node@26.4.0)(vite@8.1.0(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0)))
+      vitest-ansi-serializer: 0.2.1(vitest@4.1.9(@types/node@22.20.1)(vite@8.1.0(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0)))
     transitivePeerDependencies:
       - '@arethetypeswrong/core'
       - '@edge-runtime/vm'
@@ -3280,10 +3296,6 @@ snapshots:
   vitest-ansi-serializer@0.2.1(vitest@4.1.9(@types/node@22.20.1)(vite@8.1.0(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0))):
     dependencies:
       vitest: 4.1.9(@types/node@22.20.1)(vite@8.1.0(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0))
-
-  vitest-ansi-serializer@0.2.1(vitest@4.1.9(@types/node@26.4.0)(vite@8.1.0(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0))):
-    dependencies:
-      vitest: 4.1.9(@types/node@26.4.0)(vite@8.1.0(@types/node@26.4.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0))
 
   vitest@4.1.9(@types/node@22.20.1)(vite@8.1.0(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0)):
     dependencies:

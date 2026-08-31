@@ -1,0 +1,40 @@
+{
+	"name": "@ghostwright/clack-tty",
+	"version": "0.1.0",
+	"description": "Semantic tree locator for clack/ui applications, tested with ghostwright",
+	"private": true,
+	"license": "MIT",
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts",
+		"./protocol": "./src/protocol.ts",
+		"./producer": "./src/producer.ts"
+	},
+	"scripts": {
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@bomb.sh/tty": "^0.8.0",
+		"@clack/ui": "workspace:*",
+		"css-select": "^7.0.0",
+		"css-what": "^8.0.0",
+		"ghostwright": "workspace:*"
+	},
+	"devDependencies": {
+		"@types/node": "^22.20.0",
+		"tsx": "^4.19.0",
+		"vitest": "^4.1.9"
+	},
+	"devEngines": {
+		"packageManager": {
+			"name": "pnpm",
+			"version": "10.7.0",
+			"onFail": "error"
+		},
+		"runtime": {
+			"name": "node",
+			"version": "22.14.0",
+			"onFail": "error"
+		}
+	}
+}
