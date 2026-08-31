@@ -1,0 +1,65 @@
+{
+	"name": "@clack/ui",
+	"version": "0.0.0",
+	"keywords": [
+		"bombshell",
+		"cli"
+	],
+	"homepage": "https://bomb.sh/docs/ui",
+	"license": "MIT",
+	"author": {
+		"name": "Bombshell",
+		"email": "oss@bomb.sh",
+		"url": "https://bomb.sh"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/bombshell-dev/ui.git"
+	},
+	"type": "module",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.mts",
+			"import": "./dist/index.mjs"
+		},
+		"./elements": {
+			"types": "./dist/elements.d.mts",
+			"import": "./dist/elements.mjs"
+		},
+		"./events": {
+			"types": "./dist/events.d.mts",
+			"import": "./dist/events.mjs"
+		},
+		"./package.json": "./package.json"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"scripts": {
+		"dev": "bsh dev",
+		"build": "bsh build --dts",
+		"format": "bsh format",
+		"lint": "bsh lint",
+		"test": "bsh test"
+	},
+	"dependencies": {
+		"@bomb.sh/tty": "^0.7.0",
+		"@types/node": "^22.20.0"
+	},
+	"devDependencies": {
+		"@bomb.sh/tools": "^0.5.4",
+		"vitest": "^4.1.9"
+	},
+	"devEngines": {
+		"packageManager": {
+			"name": "pnpm",
+			"version": "^10.7.0",
+			"onFail": "error"
+		},
+		"runtime": {
+			"name": "node",
+			"version": "^22.14.0",
+			"onFail": "error"
+		}
+	}
+}
