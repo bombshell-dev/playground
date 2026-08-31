@@ -30,9 +30,8 @@ import {
 	settings,
 	text,
 } from '@bomb.sh/tty';
-import { env, stdin, stdout } from 'node:process';
+import { stdin, stdout } from 'node:process';
 import { pathToFileURL } from 'node:url';
-import { encodeFreedomTtyFrame, inspectFreedomTty } from '@ghostwright/freedom-tty/producer';
 import { useInput } from './use-input.ts';
 import { useStdin } from './use-stdin.ts';
 
@@ -279,24 +278,10 @@ function* run() {
 	const input = useInput(bytes);
 
 	let term = yield* until(createTerm({ height: rows, width: columns }));
-	const inspectionEnabled = env.GHOSTWRIGHT_FREEDOM_TTY === '1';
-	let inspectionFrame = 0;
 
 	function render(): void {
 		const result = term.render(walk(root.node), { deltaTime: 0 });
-		if (inspectionEnabled) {
-			const metadata = inspectFreedomTty({
-				root: root.node,
-				info: result.info,
-				frame: ++inspectionFrame,
-				renderSurface: { columns, rows },
-			});
-			// The OSC follows its visual bytes. Its completion is the exact ordered
-			// commit boundary consumed by the Ghostwright extension.
-			stdout.write(
-				Buffer.concat([Buffer.from(result.output), Buffer.from(encodeFreedomTtyFrame(metadata))]),
-			);
-		} else if (result.output.length > 0) {
+		if (result.output.length > 0) {
 			stdout.write(result.output);
 		}
 	}
