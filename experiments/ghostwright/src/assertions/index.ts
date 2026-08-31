@@ -12,7 +12,6 @@ import { DEFAULT_ASSERTION_TIMEOUT_MS } from '../types.ts';
 import { cellsMatchStyle, describeColor } from '../styles.ts';
 import { Locator } from '../terminal/session.ts';
 import type { TerminalSession } from '../terminal/session.ts';
-
 /**
  * Wrap a user predicate so it can be evaluated against any screen revision.
  *
@@ -42,7 +41,7 @@ function safePredicate(predicate: (snapshot: ScreenSnapshot) => boolean): {
 				: `\npredicate threw (treated as unsatisfied): ${lastError instanceof Error ? lastError.message : String(lastError)}`,
 	};
 }
-// oxlint-disable-next-line max-params -- diagnostic needs all four params for failure reporting
+// oxlint-disable-next-line bombshell-dev/max-params -- diagnostic needs all four params for failure reporting
 function diagnostic(
 	session: TerminalSession,
 	expected: string,
@@ -70,7 +69,7 @@ function diagnostic(
 			.join(', ') || 'none'
 	}\n\n    ${tens}\n    ${ones}\n${rows}`;
 }
-// oxlint-disable-next-line max-params -- wait needs all four params for polling logic
+// oxlint-disable-next-line bombshell-dev/max-params -- wait needs all four params for polling logic
 async function wait(
 	session: TerminalSession,
 	test: () => boolean,

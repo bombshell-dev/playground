@@ -1,3 +1,4 @@
+// oxlint-disable bombshell-dev/max-params, bombshell-dev/no-generic-error
 import { inspectFocus, type FocusBoundaryInspection, type Node } from '@bomb.sh/freedom';
 import type { RenderInfo } from '@bomb.sh/tty';
 import {

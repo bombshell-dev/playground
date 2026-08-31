@@ -464,7 +464,7 @@ FS12. `focus(target)` is constrained by the active focus root: a valid target
 MUST be a member of the active focus chain — focusable **and** a descendant of
 the active focus root. `focus()` on a node that is not focusable, or that is
 focusable but lies outside the active focus root, MUST raise an error (this
-revises F13). Because `pop` removes the top entry *before* restoring focus
+revises F13). Because `pop` removes the top entry _before_ restoring focus
 (FS10), the `restore` target is evaluated against the now-active root and is a
 valid target.
 

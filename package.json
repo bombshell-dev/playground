@@ -25,12 +25,12 @@
 		"format": "bsh format",
 		"format:check": "bsh format --check",
 		"lint": "bsh lint .",
-		"test": "bsh test --exclude 'experiments/ghostwright/**'",
+		"test": "bsh test --exclude 'experiments/ghostwright/**' --exclude 'packages/**'",
 		"demo": "node scripts/demo.mjs"
 	},
 	"devDependencies": {
 		"@bomb.sh/args": "catalog:",
-		"@bomb.sh/tools": "^0.5.5",
+		"@bomb.sh/tools": "^0.6.1",
 		"@clack/prompts": "catalog:",
 		"@types/node": "^22"
 	},

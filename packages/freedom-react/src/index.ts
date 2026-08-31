@@ -1,5 +1,5 @@
 // oxlint-disable bombshell-dev/no-generic-error
-// oxlint-disable max-params
+// oxlint-disable bombshell-dev/max-params
 import ReactReconciler from 'react-reconciler';
 import { DefaultEventPriority, LegacyRoot } from 'react-reconciler/constants.js';
 import type { ReactNode } from 'react';

@@ -1,3 +1,4 @@
+// oxlint-disable bombshell-dev/max-params
 import { compile, type Options } from 'css-select';
 import { AttributeAction, parse, SelectorType, type Selector } from 'css-what';
 import { GhostwrightError } from 'ghostwright';
