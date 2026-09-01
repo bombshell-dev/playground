@@ -219,6 +219,44 @@ test('Enter closes the dialog, keeps form values, and restores focus', async () 
 	});
 });
 
+test('button submission restores the delivery tab order', async () => {
+	await withTerminalAsync(entry(), async (terminal) => {
+		const session = semantic(terminal);
+		await expectTerminal(terminal.getByText('Pizza Delivery')).toBeStable();
+
+		const name = session.locator('input[label="name"]');
+		const address = session.locator('input[label="address"]');
+		const addCard = session.locator('button[label="add-card"]');
+		const cardNumber = session.locator('input[label="card-number"]');
+		const expiry = session.locator('input[label="expiry"]');
+		const cvc = session.locator('input[label="cvc"]');
+		const submitCard = session.locator('button[label="submit-card"]');
+		const dialog = session.locator('dialog[role="dialog"][label="card"]');
+
+		await expectFocused(terminal, name);
+		await tabTo(terminal, session, 'address');
+		await expectFocused(terminal, address);
+		await tabTo(terminal, session, 'add-card');
+		await expectFocused(terminal, addCard);
+		await terminal.keyboard.press('Enter');
+
+		await expectTreeCondition(terminal, () => dialog.matches().length === 1, 'dialog opens');
+		await expectFocused(terminal, cardNumber);
+		await tabTo(terminal, session, 'expiry');
+		await expectFocused(terminal, expiry);
+		await tabTo(terminal, session, 'cvc');
+		await expectFocused(terminal, cvc);
+		await tabTo(terminal, session, 'submit-card');
+		await expectFocused(terminal, submitCard);
+		await terminal.keyboard.press('Enter');
+
+		await expectTreeCondition(terminal, () => dialog.matches().length === 0, 'dialog closes');
+		await expectFocused(terminal, addCard);
+		await tabTo(terminal, session, 'name');
+		await expectFocused(terminal, name);
+	});
+});
+
 test('with the dialog open, Tab is contained by the modal', async () => {
 	await withTerminalAsync(entry(), async (terminal) => {
 		const session = semantic(terminal);

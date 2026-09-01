@@ -6,7 +6,7 @@ import { type Host, HostApi } from '../host.ts';
 import { LayoutApi } from '../layout.ts';
 import { getFocus, setFocusable } from '../focus.ts';
 import { KeyboardApi } from '../keyboard.ts';
-import type { KeyDown, KeyRepeat } from '@bomb.sh/tty';
+import type { KeyDown } from '@bomb.sh/tty';
 import { collectValues, nearestForm } from './form.ts';
 
 export interface ButtonPressEvent {
@@ -71,24 +71,20 @@ export function useButtonElement(host: Host): void {
 
 	KeyboardApi.around(host.root, {
 		keydown([node, event], next) {
-			activateIfButton(node, event as KeyDown);
-			return next(node, event);
-		},
-		keyrepeat([node, event], next) {
-			activateIfButton(node, event as KeyRepeat);
+			if (activateIfButton(node, event as KeyDown)) return;
 			return next(node, event);
 		},
 	});
 
-	function activateIfButton(node: object, event: KeyDown | KeyRepeat): void {
-		if (event.type !== 'keydown') return;
-		if (event.code !== 'Enter' && event.code !== 'Space') return;
+	function activateIfButton(node: object, event: KeyDown): boolean {
+		if (event.code !== 'Enter' && event.code !== 'Space') return false;
 		const element = getElement(node);
-		if (element.name !== 'button' || node !== getFocus(node)) return;
+		if (element.name !== 'button' || node !== getFocus(node)) return false;
 		emit(node, { type: 'press' });
 		if (element.properties.type === 'submit') {
 			const form = nearestForm(element);
 			if (form) emit(form.node!, { type: 'submit', values: collectValues(form) });
 		}
+		return true;
 	}
 }
