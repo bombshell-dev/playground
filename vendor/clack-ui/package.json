@@ -35,6 +35,10 @@
 			"types": "./src/focus.ts",
 			"import": "./src/focus.ts"
 		},
+		"./keyboard": {
+			"types": "./src/keyboard.ts",
+			"import": "./src/keyboard.ts"
+		},
 		"./render": {
 			"types": "./src/render.ts",
 			"import": "./src/render.ts"

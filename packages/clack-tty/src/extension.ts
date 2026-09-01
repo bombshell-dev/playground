@@ -91,9 +91,11 @@ function attribute(node: Element, name: string): string | undefined {
 			? node.attrs.role
 			: name === 'label'
 				? node.attrs.label
-				: name.startsWith('data-')
-					? node.attrs.custom?.[name.slice(5)]
-					: undefined;
+				: name === 'type'
+					? node.attrs.custom?.type
+					: name.startsWith('data-')
+						? node.attrs.custom?.[name.slice(5)]
+						: undefined;
 	return value === undefined ? undefined : String(value);
 }
 

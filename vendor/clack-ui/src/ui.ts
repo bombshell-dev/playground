@@ -10,6 +10,8 @@ import {
 } from '@bomb.sh/tty';
 import { DispatchApi, useDispatch } from './dispatch.ts';
 import { useBoxElement } from './elements/box.ts';
+import { useButtonElement } from './elements/button.ts';
+import { useFormElement } from './elements/form.ts';
 import { useInputElement } from './elements/input.ts';
 import { useTextElement } from './elements/text.ts';
 import { useFocusNavigation } from './focus-navigation.ts';
@@ -51,6 +53,8 @@ export async function createUI(options: UIOptions): Promise<UI> {
 	useKeyboard(host);
 	useFocusNavigation(host);
 	useBoxElement(host);
+	useButtonElement(host);
+	useFormElement(host);
 	useTextElement(host);
 	useInputElement(host);
 	useHostRenderer(host);
@@ -129,7 +133,7 @@ export async function createUI(options: UIOptions): Promise<UI> {
 
 						const dispatched = DispatchApi.methods.dispatch(host.root, event);
 						if (!dispatched.ok) {
-							// do something maybe?
+							console.error('[DISPATCH-ERR]', dispatched.reason);
 						}
 					}
 				}

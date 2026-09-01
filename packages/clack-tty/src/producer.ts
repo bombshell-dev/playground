@@ -89,24 +89,14 @@ export function useSemantic(host: Host, options: SemanticOptions): void {
 		}
 	}
 
-	function unregister(element: HostElement): void {
-		if (!element.node) return;
-		const entry = entries.get(element.node);
-		if (!entry) return;
-		for (const child of element.children) {
-			if (child.type === 'element') unregister(child);
-		}
+	function unregisterEntry(entry: Entry): void {
+		for (const child of entry.children) unregisterEntry(child);
+		entries.delete(entry.node);
 		if (entry.parent) {
 			const index = entry.parent.children.indexOf(entry);
 			if (index >= 0) entry.parent.children.splice(index, 1);
 		}
-		entries.delete(element.node);
 	}
-
-	// Adopt elements the application attached before the plugin installed.
-	const attached: HostElement[] = [];
-	collectAttached(host.element, attached);
-	for (const element of attached) register(element);
 
 	HostApi.around(host.root, {
 		insertBefore([_node, _parent, child], next) {
@@ -114,8 +104,11 @@ export function useSemantic(host: Host, options: SemanticOptions): void {
 			if (child.type === 'element') register(child);
 		},
 		removeChild([_node, _parent, child], next) {
+			// Capture the entry BEFORE the core removal: destroy() nulls element.node,
+			// so the lookup must happen while the node is still live.
+			const removed = child.type === 'element' && child.node ? entries.get(child.node) : undefined;
 			next(_node, _parent, child);
-			if (child.type === 'element') unregister(child);
+			if (removed) unregisterEntry(removed);
 		},
 		// Structural hooks only: attribute values ride the element property bag,
 		// which the host core keeps current. Registered so the middleware contract
@@ -127,6 +120,11 @@ export function useSemantic(host: Host, options: SemanticOptions): void {
 			next(node, text, content);
 		},
 	});
+
+	// Adopt elements the application attached before the plugin installed.
+	const attached: HostElement[] = [];
+	collectAttached(host.element, attached);
+	for (const element of attached) register(element);
 
 	function focusStack(): string[] {
 		const focus = FocusApi.methods.getFocus(host.root);
@@ -146,6 +144,7 @@ export function useSemantic(host: Host, options: SemanticOptions): void {
 			for (const [name, value] of Object.entries(entry.element.properties)) {
 				if (name === 'role' && typeof value === 'string') role = value;
 				else if (name === 'label' && typeof value === 'string') label = value;
+				else if (name === 'type' && typeof value === 'string') custom.type = value;
 				else if (name.startsWith('data-') && value !== null && value !== undefined)
 					custom[name.slice(5)] = value as JsonScalar;
 			}

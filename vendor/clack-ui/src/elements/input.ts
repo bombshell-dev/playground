@@ -6,6 +6,7 @@ import { getElement } from '../elements.ts';
 import { type Host, HostApi } from '../host.ts';
 import { LayoutApi } from '../layout.ts';
 import { getFocus, setFocusable } from '../focus.ts';
+import { requestRender } from '../render.ts';
 import { KeyboardApi } from '../keyboard.ts';
 
 export interface InputEvent extends HostEvent<'input'> {
@@ -196,6 +197,9 @@ function withModel(node: Node, fn: (model: InputModel) => void): void {
 				type: 'input',
 				value: model.content,
 			});
+			// Model changes are invisible until the tree repaints; every committed
+			// model mutation must request a frame.
+			requestRender(node);
 		}
 	}
 }
