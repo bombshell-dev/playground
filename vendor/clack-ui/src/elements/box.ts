@@ -1,4 +1,4 @@
-import { open, close, text, type OpenElement } from '@bomb.sh/tty';
+import { open, close, text, type OpenElement, type Op } from '@bomb.sh/tty';
 import { id, type Node } from '../core.ts';
 import { type Host } from '../host.ts';
 import { LayoutApi, layout } from '../layout.ts';
@@ -29,7 +29,7 @@ export function useBoxElement(host: Host) {
 export function* containerLayout(
 	node: Node,
 	element: HostElement,
-): Generator<ReturnType<typeof open> | ReturnType<typeof text> | ReturnType<typeof close>> {
+): Generator<Op> {
 	let content = '';
 	yield open(id(node), element.properties);
 	for (const child of element.children) {

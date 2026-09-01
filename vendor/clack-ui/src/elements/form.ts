@@ -4,7 +4,7 @@ import { LayoutApi } from '../layout.ts';
 import { emit } from '../emit.ts';
 import { getElement, type HostElement } from '../elements.ts';
 import { type Host } from '../host.ts';
-import { containerLayout } from './box.ts';
+import { containerLayout, type BoxProps } from './box.ts';
 
 export interface FormSubmitEvent {
 	type: 'submit';
@@ -19,14 +19,20 @@ declare module '@clack/ui/events' {
 	}
 }
 
+export interface FormProps extends BoxProps {
+	role?: string;
+	label?: string;
+	onsubmit?: (event: FormSubmitEvent) => void;
+}
+
 declare module '@clack/ui/elements' {
 	interface HostElements {
-		form: Record<string, unknown>;
+		form: FormProps;
 	}
 }
 
 export function nearestForm(element: HostElement): HostElement | undefined {
-	for (let current: HostElement | undefined = element; current; current = current.parent) {
+	for (let current: HostElement | null | undefined = element; current; current = current.parent) {
 		if (current.name === 'form') return current;
 	}
 	return undefined;

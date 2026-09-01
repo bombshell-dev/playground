@@ -1,5 +1,5 @@
-import { open, close, text, rgba } from '@bomb.sh/tty';
-import { id } from '../core.ts';
+import { open, close, text, rgba, type OpenElement } from '@bomb.sh/tty';
+import { id, type Node } from '../core.ts';
 import { emit } from '../emit.ts';
 import { getElement, type HostElement } from '../elements.ts';
 import { type Host, HostApi } from '../host.ts';
@@ -20,9 +20,17 @@ declare module '@clack/ui/events' {
 	}
 }
 
+export interface ButtonProps extends Omit<OpenElement, 'directive' | 'id'> {
+	role?: string;
+	label?: string;
+	type?: 'button' | 'submit';
+	color?: number;
+	onpress?: (event: ButtonPressEvent) => void;
+}
+
 declare module '@clack/ui/elements' {
 	interface HostElements {
-		button: Record<string, unknown>;
+		button: ButtonProps;
 	}
 }
 
@@ -76,8 +84,8 @@ export function useButtonElement(host: Host): void {
 		},
 	});
 
-	function activateIfButton(node: object, event: KeyDown): boolean {
-		if (event.code !== 'Enter' && event.code !== 'Space') return false;
+	function activateIfButton(node: Node, event: KeyDown): boolean {
+		if (event.code !== 'Enter' && event.code !== ' ') return false;
 		const element = getElement(node);
 		if (element.name !== 'button' || node !== getFocus(node)) return false;
 		emit(node, { type: 'press' });

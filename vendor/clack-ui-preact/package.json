@@ -1,0 +1,29 @@
+{
+	"name": "@clack/ui-preact",
+	"version": "0.0.0",
+	"description": "Vendored Preact adapter for @clack/ui",
+	"private": true,
+	"license": "MIT",
+	"type": "module",
+	"exports": {
+		".": {
+			"types": "./src/index.ts",
+			"import": "./src/index.ts"
+		},
+		"./jsx-runtime": {
+			"types": "./src/jsx-runtime.ts",
+			"import": "./src/jsx-runtime.ts"
+		},
+		"./jsx-dev-runtime": {
+			"types": "./src/jsx-dev-runtime.ts",
+			"import": "./src/jsx-dev-runtime.ts"
+		},
+		"./package.json": "./package.json"
+	},
+	"dependencies": {
+		"@clack/ui": "workspace:*"
+	},
+	"peerDependencies": {
+		"preact": ">=11.0.0-beta.2 <12"
+	}
+}

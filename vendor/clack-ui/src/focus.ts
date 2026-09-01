@@ -224,25 +224,31 @@ function contains(node: Node, descendant: Node): boolean {
 
 class DuplicateFocusScopeError extends TypeError {
 	readonly code = 'CLACK_UI_DUPLICATE_FOCUS_SCOPE';
-	constructor(readonly node: Node) {
+	readonly node: Node;
+	constructor(node: Node) {
 		super('attempted to activate an active focus scope');
 		this.name = 'DuplicateFocusScopeError';
+		this.node = node;
 	}
 }
 
 class EmptyFocusScopeError extends TypeError {
 	readonly code = 'CLACK_UI_EMPTY_FOCUS_SCOPE';
-	constructor(readonly node: Node) {
+	readonly node: Node;
+	constructor(node: Node) {
 		super('focus scope has no focusable descendants');
 		this.name = 'EmptyFocusScopeError';
+		this.node = node;
 	}
 }
 
 class FocusScopeOrderError extends TypeError {
 	readonly code = 'CLACK_UI_FOCUS_SCOPE_ORDER';
-	constructor(readonly node: Node) {
+	readonly node: Node;
+	constructor(node: Node) {
 		super('focus scopes must be deactivated in stack order');
 		this.name = 'FocusScopeOrderError';
+		this.node = node;
 	}
 }
 

@@ -2,11 +2,17 @@ import { LayoutApi } from '../layout.ts';
 import { getElement, type HostElement, type HostElementChild } from '../elements.ts';
 import { type Host, HostApi } from '../host.ts';
 import { activateFocusScope } from '../focus.ts';
-import { containerLayout } from './box.ts';
+import { containerLayout, type BoxProps } from './box.ts';
+
+export interface DialogProps extends BoxProps {
+	role?: string;
+	label?: string;
+	modal?: boolean;
+}
 
 declare module '@clack/ui/elements' {
 	interface HostElements {
-		dialog: Record<string, unknown>;
+		dialog: DialogProps;
 	}
 }
 

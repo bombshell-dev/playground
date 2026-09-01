@@ -17,15 +17,16 @@ export interface UIExtensionContext {
 export type UIExtension = (context: UIExtensionContext) => void;
 
 const REGISTRY = Symbol.for('@clack/ui/extensions');
+const globals = globalThis as typeof globalThis & Record<symbol, unknown>;
 
 /** Out-of-band registration: callable before clack/ui loads, cross-copy safe. */
 export function registerUIExtension(extension: UIExtension): void {
-	const registry = ((globalThis[REGISTRY] as UIExtension[] | undefined) ??= []);
+	const registry = ((globals[REGISTRY] as UIExtension[] | undefined) ??= []);
 	registry.push(extension);
 }
 
 export function registeredUIExtensions(): UIExtension[] {
-	return ((globalThis[REGISTRY] as UIExtension[] | undefined) ?? []).slice();
+	return ((globals[REGISTRY] as UIExtension[] | undefined) ?? []).slice();
 }
 
 function findPackageJson(from: string): string | undefined {

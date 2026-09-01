@@ -1,0 +1,32 @@
+{
+	"name": "@ghostwright/pizza-preact",
+	"version": "0.0.0",
+	"description": "A Preact clack/ui pizza delivery example tested outside-in with Ghostwright",
+	"private": true,
+	"license": "MIT",
+	"type": "module",
+	"scripts": {
+		"start": "tsx src/index.tsx",
+		"test": "vitest run",
+		"typecheck": "tsc -p tsconfig.json"
+	},
+	"dependencies": {
+		"@bomb.sh/tty": "^0.8.0",
+		"@clack/ui": "workspace:*",
+		"@clack/ui-preact": "workspace:*",
+		"@ghostwright/clack-tty": "workspace:*",
+		"preact": "11.0.0-beta.2"
+	},
+	"devDependencies": {
+		"@types/node": "^22.20.0",
+		"ghostwright": "workspace:*",
+		"tsx": "^4.19.0",
+		"typescript": "^5.7.2",
+		"vitest": "^4.1.9"
+	},
+	"@clack/ui": {
+		"extensions": [
+			"@ghostwright/clack-tty/auto"
+		]
+	}
+}

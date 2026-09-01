@@ -20,6 +20,8 @@ declare module '@clack/ui/events' {
 }
 
 export interface InputProps {
+	role?: string;
+	label?: string;
 	oninput?: (event: InputEvent) => void;
 }
 
