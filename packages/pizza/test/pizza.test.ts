@@ -103,7 +103,7 @@ test('reflows forms when the terminal resizes', async () => {
 		await terminal.keyboard.press('Enter');
 		await expectTreeCondition(
 			terminal,
-			() => fitsSurface('form[role="dialog"][label="card"]'),
+			() => fitsSurface('dialog[role="dialog"][label="card"]'),
 			'card dialog fits resized surface',
 		);
 	});
@@ -154,7 +154,7 @@ test('Enter opens the card dialog and focuses the card number', async () => {
 
 		await terminal.keyboard.press('Enter');
 
-		const dialog = session.locator('form[role="dialog"][label="card"]');
+		const dialog = session.locator('dialog[role="dialog"][label="card"]');
 		await expectTreeCondition(terminal, () => dialog.matches().length === 1, 'dialog opens');
 		expect(session.locator('input[label="card-number"]').matches()).toHaveLength(1);
 		expect(session.locator('input[label="expiry"]').matches()).toHaveLength(1);
@@ -171,7 +171,7 @@ test('the card journey: type through the dialog fields', async () => {
 		const session = semantic(terminal);
 		await expectTerminal(terminal.getByText('Pizza Delivery')).toBeStable();
 		await terminal.keyboard.press('Enter');
-		const dialog = session.locator('form[role="dialog"][label="card"]');
+		const dialog = session.locator('dialog[role="dialog"][label="card"]');
 		await expectTreeCondition(terminal, () => dialog.matches().length === 1, 'dialog opens');
 
 		const cardNumber = session.locator('input[label="card-number"]');
@@ -198,7 +198,7 @@ test('Enter closes the dialog, keeps form values, and restores focus', async () 
 		const session = semantic(terminal);
 		await expectTerminal(terminal.getByText('Pizza Delivery')).toBeStable();
 		const name = session.locator('input[label="name"]');
-		const dialog = session.locator('form[role="dialog"][label="card"]');
+		const dialog = session.locator('dialog[role="dialog"][label="card"]');
 
 		// build state: name typed, dialog opened
 		await terminal.keyboard.type('Ryan');
@@ -214,25 +214,17 @@ test('Enter closes the dialog, keeps form values, and restores focus', async () 
 		// form values survive the dialog round trip
 		await expectTerminal(name.getByText('Ryan')).toBePresent();
 
-		// focus is restored to a delivery field
-		await expectFocused(terminal, session.locator('input[label="address"]'));
+		// focus returns to the control that opened the modal
+		await expectFocused(terminal, name);
 	});
 });
 
-test('with the dialog open, Tab cycles through every control', async () => {
+test('with the dialog open, Tab is contained by the modal', async () => {
 	await withTerminalAsync(entry(), async (terminal) => {
 		const session = semantic(terminal);
 		await expectTerminal(terminal.getByText('Pizza Delivery')).toBeStable();
-		const dialog = session.locator('form[role="dialog"][label="card"]');
-		const order = [
-			'expiry',
-			'cvc',
-			'submit-card',
-			'name',
-			'address',
-			'add-card',
-			'card-number',
-		];
+		const dialog = session.locator('dialog[role="dialog"][label="card"]');
+		const order = ['expiry', 'cvc', 'submit-card', 'card-number'];
 
 		await terminal.keyboard.press('Enter');
 		await expectTreeCondition(terminal, () => dialog.matches().length === 1, 'dialog opens');
@@ -245,5 +237,8 @@ test('with the dialog open, Tab cycles through every control', async () => {
 			labels.push(session.locator('[focused]').matches()[0]?.attrs.label);
 		}
 		expect(labels).toEqual(order);
+
+		await terminal.keyboard.press('Shift+Tab');
+		await expectFocused(terminal, session.locator('button[label="submit-card"]'));
 	});
 });

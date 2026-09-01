@@ -9,7 +9,6 @@
 import { stdin, stdout } from 'node:process';
 import { fixed, grow, rgba } from '@bomb.sh/tty';
 import { createUI, type HostElement } from '@clack/ui';
-import { setFocus } from '@clack/ui/focus';
 
 const black = rgba(0, 0, 0);
 const blue = rgba(0, 0, 238);
@@ -111,23 +110,38 @@ const cardNumberInput = field('card-number');
 const expiryInput = field('expiry');
 const cvcInput = field('cvc');
 
-const card = host.createElement('form');
-host.setProperty(card, 'role', 'dialog');
-host.setProperty(card, 'label', 'card');
-host.setProperty(card, 'layout', {
+const cardDialog = host.createElement('dialog');
+host.setProperty(cardDialog, 'role', 'dialog');
+host.setProperty(cardDialog, 'label', 'card');
+host.setProperty(cardDialog, 'modal', true);
+host.setProperty(cardDialog, 'layout', {
 	direction: 'ttb',
-	gap: 1,
-	padding: { top: 1, bottom: 1, left: 2, right: 2 },
 	width: grow(32, 44),
 });
-host.setProperty(card, 'bg', black);
-host.setProperty(card, 'border', { color: blue, top: 1, right: 1, bottom: 1, left: 1 });
-// Float the dialog centered over the delivery form instead of stacking beside it.
-host.setProperty(card, 'floating', {
+host.setProperty(cardDialog, 'bg', black);
+host.setProperty(cardDialog, 'border', {
+	color: blue,
+	top: 1,
+	right: 1,
+	bottom: 1,
+	left: 1,
+});
+host.setProperty(cardDialog, 'floating', {
 	attachTo: 'parent',
 	attachPoints: { element: 'center-center', parent: 'center-center' },
 	zIndex: 1,
 });
+
+const card = host.createElement('form');
+host.setProperty(card, 'role', 'form');
+host.setProperty(card, 'label', 'card-payment');
+host.setProperty(card, 'layout', {
+	direction: 'ttb',
+	gap: 1,
+	padding: { top: 1, bottom: 1, left: 2, right: 2 },
+	width: grow(),
+});
+host.insertBefore(cardDialog, card);
 
 const cardHeader = host.createElement('text');
 host.setProperty(cardHeader, 'color', cyan);
@@ -163,15 +177,13 @@ let cardOpen = false;
 host.addEventListener(delivery, 'submit', () => {
 	if (cardOpen) return;
 	cardOpen = true;
-	host.insertBefore(screen, card);
-	setFocus(cardNumberInput.node!);
+	host.insertBefore(screen, cardDialog);
 });
 
 host.addEventListener(card, 'submit', () => {
 	if (!cardOpen) return;
 	cardOpen = false;
-	setFocus(addressInput.node!);
-	host.removeChild(screen, card);
+	host.removeChild(screen, cardDialog);
 });
 
 host.insertBefore(screen, delivery);

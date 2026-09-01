@@ -11,6 +11,7 @@ import {
 import { DispatchApi, useDispatch } from './dispatch.ts';
 import { useBoxElement } from './elements/box.ts';
 import { useButtonElement } from './elements/button.ts';
+import { useDialogElement } from './elements/dialog.ts';
 import { useFormElement } from './elements/form.ts';
 import { useInputElement } from './elements/input.ts';
 import { useTextElement } from './elements/text.ts';
@@ -57,6 +58,7 @@ export async function createUI(options: UIOptions): Promise<UI> {
 	useKeyboard(host);
 	useFocusNavigation(host);
 	useBoxElement(host);
+	useDialogElement(host);
 	useButtonElement(host);
 	useFormElement(host);
 	useTextElement(host);
