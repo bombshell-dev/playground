@@ -7,6 +7,7 @@ import { LayoutApi } from '../layout.ts';
 import { getFocus, setFocusable } from '../focus.ts';
 import { KeyboardApi } from '../keyboard.ts';
 import type { KeyDown, KeyRepeat } from '@bomb.sh/tty';
+import { collectValues, nearestForm } from './form.ts';
 
 export interface ButtonPressEvent {
 	type: 'press';
@@ -23,32 +24,6 @@ declare module '@clack/ui/elements' {
 	interface HostElements {
 		button: Record<string, unknown>;
 	}
-}
-
-function nearestForm(element: HostElement): HostElement | undefined {
-	for (let current: HostElement | undefined = element; current; current = current.parent) {
-		if (current.name === 'form') return current;
-	}
-	return undefined;
-}
-
-function collectValues(form: HostElement): Record<string, string> {
-	const values: Record<string, string> = {};
-	function visit(element: HostElement): void {
-		for (const child of element.children) {
-			if (child.type !== 'element') continue;
-			if (child.name === 'input') {
-				const key =
-					typeof child.properties.label === 'string'
-						? child.properties.label
-						: String(child.properties.key ?? 'field');
-				values[key] = String(child.properties.value ?? '');
-			}
-			visit(child);
-		}
-	}
-	visit(form);
-	return values;
 }
 
 /**
@@ -75,14 +50,18 @@ export function useButtonElement(host: Host): void {
 			const element = getElement(node);
 			if (element.name === 'button') {
 				const focused = node === getFocus(node);
-				const properties = { ...element.properties };
-				properties.color = focused ? rgba(255, 255, 255) : rgba(100, 100, 100);
+				const { color: configuredColor, ...properties } = element.properties;
+				const color = focused
+					? rgba(255, 255, 255)
+					: typeof configuredColor === 'number'
+						? configuredColor
+						: rgba(100, 100, 100);
 				yield open(id(node), properties);
 				let content = '';
 				for (const child of element.children) {
 					if (child.type === 'literal') content += child.content;
 				}
-				yield text(content || ' ');
+				yield text(content || ' ', { color });
 				yield close();
 			} else {
 				return yield* next(node);

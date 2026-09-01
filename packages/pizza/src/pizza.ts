@@ -7,11 +7,11 @@
  * Run: `tsx src/pizza.ts`
  */
 import { stdin, stdout } from 'node:process';
-import { appendFileSync } from 'node:fs';
-import { fixed, grow, percent, rgba } from '@bomb.sh/tty';
+import { fixed, grow, rgba } from '@bomb.sh/tty';
 import { createUI, type HostElement } from '@clack/ui';
 import { setFocus } from '@clack/ui/focus';
 
+const black = rgba(0, 0, 0);
 const blue = rgba(0, 0, 238);
 const cyan = rgba(0, 205, 205);
 const gray = rgba(127, 127, 127);
@@ -19,12 +19,32 @@ const gray = rgba(127, 127, 127);
 const ui = await createUI({ input: stdin, output: stdout });
 const { host } = ui;
 
+// Give the application one explicit, full-screen layout parent. Floating
+// children can then attach to this stable surface as the terminal resizes.
+const screen = host.createElement('box');
+host.setProperty(screen, 'layout', {
+	direction: 'ttb',
+	width: grow(),
+	height: grow(),
+});
+
 function button(labelText: string, name: string): HostElement {
 	const element = host.createElement('button');
 	host.setProperty(element, 'role', 'button');
 	host.setProperty(element, 'label', name);
 	host.setProperty(element, 'type', 'submit');
-	host.setProperty(element, 'layout', { width: fixed(12) });
+	host.setProperty(element, 'layout', {
+		width: fixed(16),
+		height: fixed(3),
+		padding: { top: 1, right: 1, bottom: 1, left: 1 },
+	});
+	host.setProperty(element, 'border', {
+		color: gray,
+		top: 1,
+		right: 1,
+		bottom: 1,
+		left: 1,
+	});
 	host.insertBefore(element, host.createLiteral(labelText));
 	return element;
 }
@@ -55,7 +75,7 @@ host.setProperty(delivery, 'layout', {
 	direction: 'ttb',
 	gap: 1,
 	padding: { top: 1, bottom: 1, left: 2, right: 2 },
-	width: fixed(44),
+	width: grow(32, 44),
 });
 host.setProperty(delivery, 'border', { color: blue, top: 1, right: 1, bottom: 1, left: 1 });
 
@@ -71,7 +91,7 @@ for (const [labelText, element] of [
 	const row = host.createElement('box');
 	host.setProperty(row, 'layout', { direction: 'ltr', gap: 1, width: grow() });
 	const label = host.createElement('box');
-	host.setProperty(label, 'layout', { width: percent(0.25) });
+	host.setProperty(label, 'layout', { width: fixed(9) });
 	const label2 = host.createElement('text');
 	host.setProperty(label2, 'color', gray);
 	host.insertBefore(label2, host.createLiteral(labelText));
@@ -98,9 +118,16 @@ host.setProperty(card, 'layout', {
 	direction: 'ttb',
 	gap: 1,
 	padding: { top: 1, bottom: 1, left: 2, right: 2 },
-	width: fixed(44),
+	width: grow(32, 44),
 });
+host.setProperty(card, 'bg', black);
 host.setProperty(card, 'border', { color: blue, top: 1, right: 1, bottom: 1, left: 1 });
+// Float the dialog centered over the delivery form instead of stacking beside it.
+host.setProperty(card, 'floating', {
+	attachTo: 'parent',
+	attachPoints: { element: 'center-center', parent: 'center-center' },
+	zIndex: 1,
+});
 
 const cardHeader = host.createElement('text');
 host.setProperty(cardHeader, 'color', cyan);
@@ -115,7 +142,7 @@ for (const [labelText, element] of [
 	const row = host.createElement('box');
 	host.setProperty(row, 'layout', { direction: 'ltr', gap: 1, width: grow() });
 	const label = host.createElement('box');
-	host.setProperty(label, 'layout', { width: percent(0.3) });
+	host.setProperty(label, 'layout', { width: fixed(13) });
 	const label2 = host.createElement('text');
 	host.setProperty(label2, 'color', gray);
 	host.insertBefore(label2, host.createLiteral(labelText));
@@ -136,21 +163,18 @@ let cardOpen = false;
 host.addEventListener(delivery, 'submit', () => {
 	if (cardOpen) return;
 	cardOpen = true;
-	host.insertBefore(host.element, card);
+	host.insertBefore(screen, card);
 	setFocus(cardNumberInput.node!);
 });
 
 host.addEventListener(card, 'submit', () => {
-	const trace = (message: string) => appendFileSync('/tmp/pizza-app-trace.txt', `${message}\n`);
-	trace(`card submit fired, cardOpen = ${cardOpen}`);
 	if (!cardOpen) return;
 	cardOpen = false;
 	setFocus(addressInput.node!);
-	trace('focus set to address');
-	host.removeChild(host.element, card);
-	trace(`card removed; root children = ${host.element.children.length}`);
+	host.removeChild(screen, card);
 });
 
-host.insertBefore(host.element, delivery);
+host.insertBefore(screen, delivery);
+host.insertBefore(host.element, screen);
 
 await ui.main();

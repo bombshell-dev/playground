@@ -29,9 +29,15 @@ import {
 	type JsonScalar,
 } from './protocol.ts';
 
+export interface Surface {
+	columns: number;
+	rows: number;
+	row?: number;
+}
+
 export interface SemanticOptions {
-	/** The render surface, in cells. `row` is 1-based and defaults to 1. */
-	surface: { columns: number; rows: number; row?: number };
+	/** Return the current render surface, in cells. */
+	surface: () => Surface;
 	/** Called instead of emitting when a frame cannot be produced. */
 	onDiagnostic?(error: Error): void;
 }
@@ -126,12 +132,21 @@ export function useSemantic(host: Host, options: SemanticOptions): void {
 	collectAttached(host.element, attached);
 	for (const element of attached) register(element);
 
+	// Sample once per frame so geometry and frame metadata cannot disagree.
+	const deriveSurface = (): { columns: number; rows: number; row: number } => {
+		const surface = options.surface();
+		return { columns: surface.columns, rows: surface.rows, row: surface.row ?? 1 };
+	};
+
 	function focusStack(): string[] {
 		const focus = FocusApi.methods.getFocus(host.root);
 		return focus === host.root ? [] : [id(focus)];
 	}
 
-	function buildNodes(info: RenderInfo): ClackNodeV1[] {
+	function buildNodes(
+		info: RenderInfo,
+		surface: { columns: number; rows: number; row: number },
+	): ClackNodeV1[] {
 		const focusNode = FocusApi.methods.getFocus(host.root);
 		const nodes: ClackNodeV1[] = [];
 
@@ -152,7 +167,7 @@ export function useSemantic(host: Host, options: SemanticOptions): void {
 			const geo = bounds
 				? geometryFor(
 						{ x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
-						options.surface,
+						surface,
 					)
 				: undefined;
 			nodes.push({
@@ -183,16 +198,13 @@ export function useSemantic(host: Host, options: SemanticOptions): void {
 
 	function emit(info: RenderInfo, output: { write(chunk: Uint8Array): unknown }): void {
 		try {
+			const surface = deriveSurface();
 			const frame: ClackFrameV1 = {
 				v: 1,
 				frame: ++frameCounter,
-				surface: {
-					columns: options.surface.columns,
-					rows: options.surface.rows,
-					row: options.surface.row ?? 1,
-				},
+				surface,
 				focusStack: focusStack(),
-				nodes: buildNodes(info),
+				nodes: buildNodes(info, surface),
 			};
 			if (frame.nodes.length > LIMITS.nodes) {
 				options.onDiagnostic?.(

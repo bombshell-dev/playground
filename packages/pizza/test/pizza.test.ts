@@ -1,4 +1,3 @@
-import { writeFileSync } from 'node:fs';
 import { expect, test } from 'vitest';
 import { expectTerminal, withTerminalAsync } from 'ghostwright';
 import {
@@ -23,8 +22,32 @@ const entry = () => ({
 	extensions: [extension],
 });
 
-function semantic(terminal: Parameters<Parameters<typeof withTerminalAsync>[1]>[0]) {
+type Terminal = Parameters<Parameters<typeof withTerminalAsync>[1]>[0];
+
+function semantic(terminal: Terminal) {
 	return terminal.extension(extension) as ClackTtySession;
+}
+
+async function tabTo(terminal: Terminal, session: ClackTtySession, expectedLabel: string) {
+	const previousLabel = session.locator('[focused]').matches()[0]?.attrs.label;
+	for (let attempt = 0; attempt < 3; attempt++) {
+		await terminal.keyboard.press('Tab');
+		try {
+			await expectTreeCondition(
+				terminal,
+				() => session.locator('[focused]').matches()[0]?.attrs.label !== previousLabel,
+				`focus leaves ${previousLabel}`,
+				1200,
+			);
+		} catch {
+			if (attempt < 2) continue;
+			throw new Error(`focus did not leave ${previousLabel}`);
+		}
+
+		const actualLabel = session.locator('[focused]').matches()[0]?.attrs.label;
+		expect(actualLabel).toBe(expectedLabel);
+		return;
+	}
 }
 
 test('renders the delivery form and focuses the first field', async () => {
@@ -40,6 +63,49 @@ test('renders the delivery form and focuses the first field', async () => {
 
 		// focus starts on the first field
 		await expectFocused(terminal, semantic(terminal).locator('input[label="name"]'));
+	});
+});
+
+test('reflows forms when the terminal resizes', async () => {
+	await withTerminalAsync(entry(), async (terminal) => {
+		const session = semantic(terminal);
+		await expectTerminal(terminal.getByText('Pizza Delivery')).toBeStable();
+
+		await terminal.resize({ columns: 36, rows: 20 });
+
+		const fitsSurface = (selector: string) => {
+			const frame = session.current();
+			const geometry = session.locator(selector).matches()[0]?.geo;
+			const term = geometry?.term;
+			const visible = geometry?.visible;
+			return (
+				frame?.surface.columns === 36 &&
+				frame.surface.rows === 20 &&
+				term !== undefined &&
+				visible !== undefined &&
+				term.column >= 0 &&
+				term.row >= 0 &&
+				term.column + term.width <= frame.surface.columns &&
+				term.row + term.height <= frame.surface.rows &&
+				visible.column === term.column &&
+				visible.row === term.row &&
+				visible.width === term.width &&
+				visible.height === term.height
+			);
+		};
+
+		await expectTreeCondition(
+			terminal,
+			() => fitsSurface('form[label="delivery"]'),
+			'delivery form fits resized surface',
+		);
+
+		await terminal.keyboard.press('Enter');
+		await expectTreeCondition(
+			terminal,
+			() => fitsSurface('form[role="dialog"][label="card"]'),
+			'card dialog fits resized surface',
+		);
 	});
 });
 
@@ -142,17 +208,7 @@ test('Enter closes the dialog, keeps form values, and restores focus', async () 
 
 		// close: Enter on a focused card field
 		await terminal.keyboard.press('Enter');
-		const debugTimer = setInterval(() => {
-			try {
-				writeFileSync('/tmp/pizza-closes.json', JSON.stringify(session.frames().map((f) => ({
-					frame: f.frame,
-					card: f.nodes.some((n) => n.attrs.label === 'card'),
-					focused: f.nodes.find((n) => n.states.focused)?.attrs.label,
-				}))));
-			} catch {}
-		}, 300);
 		await expectTreeCondition(terminal, () => dialog.matches().length === 0, 'dialog closes');
-		clearInterval(debugTimer);
 		expect(session.locator('input[label="card-number"]').matches()).toHaveLength(0);
 
 		// form values survive the dialog round trip
@@ -163,12 +219,20 @@ test('Enter closes the dialog, keeps form values, and restores focus', async () 
 	});
 });
 
-test('with the dialog open, Tab cycles through every field including the card', async () => {
+test('with the dialog open, Tab cycles through every control', async () => {
 	await withTerminalAsync(entry(), async (terminal) => {
 		const session = semantic(terminal);
 		await expectTerminal(terminal.getByText('Pizza Delivery')).toBeStable();
 		const dialog = session.locator('form[role="dialog"][label="card"]');
-		const order = ['expiry', 'cvc', 'name', 'address', 'add-card', 'card-number'];
+		const order = [
+			'expiry',
+			'cvc',
+			'submit-card',
+			'name',
+			'address',
+			'add-card',
+			'card-number',
+		];
 
 		await terminal.keyboard.press('Enter');
 		await expectTreeCondition(terminal, () => dialog.matches().length === 1, 'dialog opens');
@@ -177,22 +241,7 @@ test('with the dialog open, Tab cycles through every field including the card', 
 		const labels: (string | undefined)[] = [];
 		await expectFocused(terminal, session.locator('input[label="card-number"]'));
 		for (const label of order) {
-			await terminal.keyboard.press('Tab');
-			// re-send the Tab if a keystroke is lost in the PTY handoff
-			for (let attempt = 0; attempt < 3; attempt++) {
-				try {
-					await expectTreeCondition(
-						terminal,
-						() => session.locator('[focused]').matches()[0]?.attrs.label === label,
-						`focus reaches ${label}`,
-						1200,
-					);
-					break;
-				} catch {
-					if (attempt === 2) throw new Error(`focus never reached ${label}`);
-					void terminal.keyboard.press('Tab');
-				}
-			}
+			await tabTo(terminal, session, label);
 			labels.push(session.locator('[focused]').matches()[0]?.attrs.label);
 		}
 		expect(labels).toEqual(order);

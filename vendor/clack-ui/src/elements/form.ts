@@ -1,3 +1,4 @@
+import { id } from '../core.ts';
 import { KeyboardApi } from '../keyboard.ts';
 import { LayoutApi } from '../layout.ts';
 import { emit } from '../emit.ts';
@@ -24,7 +25,7 @@ declare module '@clack/ui/elements' {
 	}
 }
 
-function nearestForm(element: HostElement): HostElement | undefined {
+export function nearestForm(element: HostElement): HostElement | undefined {
 	for (let current: HostElement | undefined = element; current; current = current.parent) {
 		if (current.name === 'form') return current;
 	}
@@ -32,7 +33,7 @@ function nearestForm(element: HostElement): HostElement | undefined {
 }
 
 /** Field values from descendant inputs, keyed by label (falling back to node id). */
-function collectValues(form: HostElement): Record<string, string> {
+export function collectValues(form: HostElement): Record<string, string> {
 	const values: Record<string, string> = {};
 	function visit(element: HostElement): void {
 		for (const child of element.children) {
@@ -40,7 +41,7 @@ function collectValues(form: HostElement): Record<string, string> {
 			if (child.name === 'input') {
 				const key = typeof child.properties.label === 'string'
 					? child.properties.label
-					: String(child.properties.key ?? 'field');
+					: String(child.properties.key ?? id(child.node!));
 				values[key] = String(child.properties.value ?? '');
 			}
 			visit(child);

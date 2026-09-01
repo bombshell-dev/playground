@@ -42,9 +42,13 @@ export interface UI extends AsyncDisposable {
 export async function createUI(options: UIOptions): Promise<UI> {
 	const { output } = options;
 	const { inline = false } = options;
-	const { width = output.columns ?? 80 } = options;
-	const { height = output.rows ?? 24 } = options;
-	const term = await createTerm({ width, height });
+	const surfaceAt = () => ({
+		width: options.width || output.columns || 80,
+		height: options.height || output.rows || 24,
+	});
+	// Live dimensions: tracked with `let` so the resize handler can update them.
+	let { width, height } = surfaceAt();
+	let term = await createTerm({ width, height });
 
 	const host = createHost();
 
@@ -102,16 +106,46 @@ export async function createUI(options: UIOptions): Promise<UI> {
 		...(await loadDeclaredExtensions(process.cwd())),
 		...registeredUIExtensions(),
 	];
+	const extensionContext = {
+		host,
+		input: options.input,
+		output,
+		get width() {
+			return width;
+		},
+		get height() {
+			return height;
+		},
+		inline,
+	};
 	for (const extension of extensions) {
-		extension({ host, input: options.input, output, width, height, inline });
+		extension(extensionContext);
 	}
 
 	output.write(setup.apply);
+
+	// Resize: the terminal owns the truth about its size. Re-create the term at
+	// the new dimensions and re-render the whole tree. createTerm is async, so
+	// rapid resizes race; only the newest term may win the swap.
+	let resizeToken = 0;
+	const onResize = () => {
+		({ width, height } = surfaceAt());
+		const token = ++resizeToken;
+		void createTerm({ width, height }).then((next) => {
+			if (token !== resizeToken) return;
+			term = next;
+			RenderApi.methods.requestRender(host.root);
+		});
+	};
+	if (typeof output.on === 'function') {
+		output.on('resize', onResize);
+	}
 
 	return {
 		host,
 		async [Symbol.asyncDispose]() {
 			stopped = true;
+			if (typeof output.off === 'function') output.off('resize', onResize);
 			output.write(setup.revert);
 		},
 
@@ -132,9 +166,7 @@ export async function createUI(options: UIOptions): Promise<UI> {
 						}
 
 						const dispatched = DispatchApi.methods.dispatch(host.root, event);
-						if (!dispatched.ok) {
-							console.error('[DISPATCH-ERR]', dispatched.reason);
-						}
+						if (!dispatched.ok) throw dispatched.reason;
 					}
 				}
 			} finally {

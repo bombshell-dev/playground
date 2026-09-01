@@ -20,9 +20,13 @@
 import type { UIExtension } from '@clack/ui/extensions';
 import { useSemantic } from './producer.ts';
 
-const semanticAuto: UIExtension = ({ host, width, height }) => {
+const semanticAuto: UIExtension = (context) => {
 	if (process.env.CLACK_UI_SEMANTIC !== '1') return;
-	useSemantic(host, { surface: { columns: width, rows: height } });
+	useSemantic(context.host, {
+		// Read createUI's live surface at frame time. This honors both terminal
+		// resizes and explicit width/height options.
+		surface: () => ({ columns: context.width, rows: context.height }),
+	});
 };
 
 export default semanticAuto;
