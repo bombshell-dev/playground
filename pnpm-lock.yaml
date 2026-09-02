@@ -9,9 +9,6 @@ catalogs:
     '@bomb.sh/args':
       specifier: ^0.3.1
       version: 0.3.1
-    '@bomb.sh/tty':
-      specifier: ^0.8.0
-      version: 0.8.0
     '@clack/prompts':
       specifier: ^1.7.0
       version: 1.7.0
@@ -21,6 +18,9 @@ catalogs:
     alien-signals:
       specifier: ^2.0.0
       version: 2.0.8
+
+overrides:
+  '@bomb.sh/tty': https://pkg.pr.new/@bomb.sh/tty@103
 
 importers:
 
@@ -42,14 +42,14 @@ importers:
   examples/demo:
     dependencies:
       '@bomb.sh/tty':
-        specifier: 'catalog:'
-        version: 0.8.0
+        specifier: https://pkg.pr.new/@bomb.sh/tty@103
+        version: https://pkg.pr.new/@bomb.sh/tty@103
 
   examples/input:
     dependencies:
       '@bomb.sh/tty':
-        specifier: 'catalog:'
-        version: 0.8.0
+        specifier: https://pkg.pr.new/@bomb.sh/tty@103
+        version: https://pkg.pr.new/@bomb.sh/tty@103
       '@clack/ui':
         specifier: 'catalog:'
         version: https://pkg.pr.new/bombshell-dev/ui/@clack/ui@a60ac12
@@ -66,11 +66,30 @@ importers:
         specifier: ^4.0.2
         version: 4.0.3
 
+  vendor/clack-ui:
+    dependencies:
+      '@bomb.sh/tty':
+        specifier: https://pkg.pr.new/@bomb.sh/tty@103
+        version: https://pkg.pr.new/@bomb.sh/tty@103
+      '@types/node':
+        specifier: ^22.20.0
+        version: 22.20.1
+
+  vendor/clack-ui-preact:
+    dependencies:
+      '@clack/ui':
+        specifier: workspace:*
+        version: link:../clack-ui
+    devDependencies:
+      preact:
+        specifier: 11.0.0-beta.2
+        version: 11.0.0-beta.2
+
   vendor/ui:
     dependencies:
       '@bomb.sh/tty':
-        specifier: ^0.8.0
-        version: 0.8.0
+        specifier: https://pkg.pr.new/@bomb.sh/tty@103
+        version: https://pkg.pr.new/@bomb.sh/tty@103
       '@types/node':
         specifier: ^22.20.0
         version: 22.20.1
@@ -95,12 +114,9 @@ packages:
     resolution: {integrity: sha512-p3dLXau2JygQ9DTErUvHSn7GwqpRraIjiXdj/xeAU0+7opUZrtiHe18FLrU5opCSr16WZep0p0/OBX1HgMjgJQ==}
     hasBin: true
 
-  '@bomb.sh/tty@0.7.0':
-    resolution: {integrity: sha512-htTavc3o84vR6uSoyF+Y9u81GG8NoTJkwOovahcNOY4nVeiM86vodCHdPvAXoj2ucmx04frpwMrOJ4ipLSSJfw==}
-    engines: {node: '>= 22'}
-
-  '@bomb.sh/tty@0.8.0':
-    resolution: {integrity: sha512-tEE0mtqnEp2uJt4kQS5AjdghCD5KN4BobqHOlfhaiNyrigxFBKk61XkDy//4D7V/AejrTvubh44B4NV35lsnxw==}
+  '@bomb.sh/tty@https://pkg.pr.new/@bomb.sh/tty@103':
+    resolution: {tarball: https://pkg.pr.new/@bomb.sh/tty@103}
+    version: 0.8.0-pr
     engines: {node: '>= 22'}
 
   '@clack/core@1.4.3':
@@ -1251,6 +1267,14 @@ packages:
     resolution: {integrity: sha512-FfR8sjd4em2T6fb3I2MwAJU7HWVMr9zba+enmQeeWFfCbm+UOC/0X4DS8XtpUTMwWMGbjKYP7xjfNekzyGmB3A==}
     engines: {node: ^10 || ^12 || >=14}
 
+  preact@11.0.0-beta.2:
+    resolution: {integrity: sha512-7nIgtr4wtls48+fuazknYNuZ3tOuJoo9ZrT+dzXrMBWkcQH5xmOJiibJpmbU8sFmo2IKLFe3eMp84n0Lq0dCHg==}
+    peerDependencies:
+      preact-render-to-string: '>=5'
+    peerDependenciesMeta:
+      preact-render-to-string:
+        optional: true
+
   publint@0.3.21:
     resolution: {integrity: sha512-OqejcnMV6E9zel2oCrUOJEiiFkGiAAni0A6ibfQNh1k9Gu5z4F+Yso8lllam7AzmV6Do0vp7u3UpZNRBwuXaHQ==}
     engines: {node: '>=18'}
@@ -1612,9 +1636,7 @@ snapshots:
       - vite-plus
       - vue-tsc
 
-  '@bomb.sh/tty@0.7.0': {}
-
-  '@bomb.sh/tty@0.8.0': {}
+  '@bomb.sh/tty@https://pkg.pr.new/@bomb.sh/tty@103': {}
 
   '@clack/core@1.4.3':
     dependencies:
@@ -1630,7 +1652,7 @@ snapshots:
 
   '@clack/ui@https://pkg.pr.new/bombshell-dev/ui/@clack/ui@a60ac12':
     dependencies:
-      '@bomb.sh/tty': 0.7.0
+      '@bomb.sh/tty': https://pkg.pr.new/@bomb.sh/tty@103
       '@types/node': 22.20.1
 
   '@emnapi/core@1.10.0':
@@ -2482,6 +2504,8 @@ snapshots:
       nanoid: 3.3.15
       picocolors: 1.1.1
       source-map-js: 1.2.1
+
+  preact@11.0.0-beta.2: {}
 
   publint@0.3.21:
     dependencies:
