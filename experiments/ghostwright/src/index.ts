@@ -1,5 +1,7 @@
 export * from './types.ts';
 export * from './errors.ts';
+export { isValidKeyName, parseKey } from './keys.ts';
+export { styleMatches, cellsMatchStyle, describeColor } from './styles.ts';
 export { withTerminalAsync } from './async.ts';
 export { withTerminal } from './effection/index.ts';
 export { replayTrace, type ReplayResult } from './tracing/replay.ts';

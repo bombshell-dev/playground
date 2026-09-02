@@ -1,116 +1,74 @@
 import { createHash } from 'node:crypto';
-import { readdir, readFile, writeFile } from 'node:fs/promises';
-const root = new URL('../artifacts/', import.meta.url),
-	files = [
-		...(await readdir(root)).filter((x) => x === 'ghostty-vt.wasm' || x.startsWith('pty-host-')),
-		'terminfo/67/ghostty',
-		'terminfo/78/xterm-ghostty',
-	];
-const artifacts: Record<string, { sha256: string }> = {};
-for (const name of files.toSorted()) {
-	artifacts[`artifacts/${name}`] = {
-		sha256: createHash('sha256')
-			.update(await readFile(new URL(name, root)))
-			.digest('hex'),
-	};
+import { readdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+
+/**
+ * Refreshes the `artifacts` checksum map in ghostty.lock.json.
+ *
+ * This script used to rebuild the entire lockfile from a hardcoded copy, which
+ * silently discarded any field that copy did not know about. Because the
+ * hardcoded copy drifted from the committed lockfile, a single `build:artifacts`
+ * run would downgrade `bindingVersion` 2 -> 1, delete the `graphics` block, and
+ * drop the Kitty graphics entries from `requiredWasmExports`. That made the
+ * build non-idempotent: the next `build:ghostty-vt` failed with
+ * GW_PATCH_CHECKSUM because it reads `graphics.freestandingPatchSha256`.
+ *
+ * The lockfile is now the source of truth. Only checksums are rewritten, and
+ * only for artifacts this machine actually produced. Targets that were not
+ * built locally (for example the Linux hosts on a macOS dev machine) keep their
+ * previously recorded checksums rather than being dropped from the manifest.
+ */
+const root = new URL('../', import.meta.url),
+	artifactsRoot = new URL('artifacts/', root),
+	lockUrl = new URL('ghostty.lock.json', root),
+	lock = JSON.parse(await readFile(lockUrl, 'utf8'));
+
+const built: string[] = [];
+for (const name of await readdir(artifactsRoot))
+	if (name === 'ghostty-vt.wasm' || name.startsWith('pty-host-')) built.push(name);
+for (const name of ['terminfo/67/ghostty', 'terminfo/78/xterm-ghostty'])
+	try {
+		await stat(new URL(name, artifactsRoot));
+		built.push(name);
+	} catch {
+		// terminfo entry not compiled on this machine; keep any recorded checksum.
+	}
+
+const artifacts: Record<string, { sha256: string }> = { ...lock.artifacts },
+	refreshed: string[] = [];
+for (const name of built.toSorted()) {
+	const key = `artifacts/${name}`,
+		sha256 = createHash('sha256')
+			.update(await readFile(new URL(name, artifactsRoot)))
+			.digest('hex');
+	if (artifacts[key]?.sha256 !== sha256) refreshed.push(key);
+	artifacts[key] = { sha256 };
 }
-const lock = {
-	schemaVersion: 1,
-	ghostty: {
-		repository: 'https://github.com/ghostty-org/ghostty',
-		commit: 'f8041e849b36efbbb9736b6ecf0ccfcb01d94e69',
-	},
-	zigVersion: '0.15.2',
-	buildFlags: ['-Demit-lib-vt', '-Dtarget=wasm32-freestanding', 'ReleaseSmall'],
-	ptyHostImplementation: 'c',
-	ptyHostBuildFlags: ['clang-or-musl-gcc', '-std=c17', '-O2', 'linux:-static'],
-	targets: ['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64'],
-	protocolVersion: 1,
-	bindingVersion: 1,
-	licenses: [
-		{ component: 'ghostwright', license: 'MIT', notice: 'LICENSE' },
-		{ component: 'libghostty-vt', license: 'MIT', notice: 'Ghostty source pin recorded above' },
-	],
-	requiredWasmExports: [
-		'memory',
-		'__indirect_function_table',
-		'ghostty_type_json',
-		'ghostty_terminal_new',
-		'ghostty_terminal_free',
-		'ghostty_terminal_set',
-		'ghostty_terminal_get',
-		'ghostty_terminal_vt_write',
-		'ghostty_terminal_resize',
-		'ghostty_terminal_mode_get',
-		'ghostty_terminal_grid_ref',
-		'ghostty_grid_ref_cell',
-		'ghostty_grid_ref_row',
-		'ghostty_grid_ref_graphemes',
-		'ghostty_grid_ref_hyperlink_uri',
-		'ghostty_grid_ref_style',
-		'ghostty_cell_get',
-		'ghostty_cell_get_multi',
-		'ghostty_row_get',
-		'ghostty_formatter_terminal_new',
-		'ghostty_formatter_format_buf',
-		'ghostty_formatter_free',
-		'ghostty_render_state_new',
-		'ghostty_render_state_update',
-		'ghostty_render_state_get',
-		'ghostty_render_state_row_iterator_new',
-		'ghostty_render_state_row_iterator_next',
-		'ghostty_render_state_row_iterator_free',
-		'ghostty_render_state_row_get',
-		'ghostty_render_state_row_cells_new',
-		'ghostty_render_state_row_cells_next',
-		'ghostty_render_state_row_cells_get_multi',
-		'ghostty_render_state_row_cells_free',
-		'ghostty_render_state_free',
-		'ghostty_key_event_new',
-		'ghostty_key_event_free',
-		'ghostty_key_encoder_new',
-		'ghostty_key_encoder_free',
-		'ghostty_key_encoder_setopt_from_terminal',
-		'ghostty_key_encoder_encode',
-		'ghostty_mouse_event_new',
-		'ghostty_mouse_event_free',
-		'ghostty_mouse_encoder_new',
-		'ghostty_mouse_encoder_free',
-		'ghostty_mouse_encoder_setopt',
-		'ghostty_mouse_encoder_setopt_from_terminal',
-		'ghostty_mouse_encoder_encode',
-		'ghostty_paste_encode',
-		'ghostty_focus_encode',
-	],
-	abi: {
-		structSizes: {
-			GhosttyTerminalOptions: 8,
-			GhosttyFormatterTerminalOptions: 40,
-			GhosttyPoint: 24,
-			GhosttyPointCoordinate: 8,
-			GhosttyGridRef: 12,
-			GhosttyStyle: 72,
-			GhosttyStyleColor: 16,
-			GhosttyMouseEncoderSize: 36,
-			GhosttyMousePosition: 8,
-			GhosttyString: 8,
-			GhosttySizeReportSize: 12,
-			GhosttyDeviceAttributes: 148,
-			GhosttyClipboardWrite: 16,
-		},
-		enumValues: {
-			terminalOptionWritePty: 1,
-			terminalOptionClipboardWrite: 26,
-			terminalDataActiveScreen: 6,
-			terminalDataTitle: 12,
-			terminalDataPwd: 13,
-			cellDataWide: 3,
-			cellDataHasHyperlink: 7,
-		},
-	},
-	artifacts,
-};
-await writeFile(
-	new URL('../ghostty.lock.json', import.meta.url),
-	JSON.stringify(lock, null, 2) + '\n',
+
+const preserved = Object.keys(artifacts).filter(
+	(key) => !built.some((name) => `artifacts/${name}` === key),
+);
+lock.artifacts = Object.fromEntries(
+	Object.entries(artifacts).toSorted(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+);
+await writeFile(lockUrl, JSON.stringify(lock, null, '\t') + '\n');
+
+// JSON.stringify expands short arrays that the committed lockfile keeps inline.
+// Normalize through the repo formatter so a no-op build produces no diff. This
+// is best effort: the lockfile is valid JSON either way.
+for (let dir = new URL('./', lockUrl); ; dir = new URL('../', dir)) {
+	const bsh = new URL('node_modules/.bin/bsh', dir);
+	if (existsSync(bsh)) {
+		spawnSync(bsh.pathname, ['format', lockUrl.pathname], { stdio: 'ignore' });
+		break;
+	}
+	if (dir.pathname === '/') break;
+}
+
+// oxlint-disable-next-line no-console -- build script
+console.log(
+	`manifest: ${refreshed.length} checksum(s) updated, ${built.length - refreshed.length} unchanged, ${preserved.length} preserved for targets not built here${
+		preserved.length ? ` (${preserved.join(', ')})` : ''
+	}`,
 );

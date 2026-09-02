@@ -1,0 +1,12 @@
+{
+	"compilerOptions": {
+		"types": ["node"],
+		"paths": {
+			"@clack/ui": ["../../vendor/clack-ui/src/index.ts"],
+			"@clack/ui/elements": ["../../vendor/clack-ui/src/elements.ts"],
+			"@clack/ui/events": ["../../vendor/clack-ui/src/events.ts"],
+			"@clack/ui/focus": ["../../vendor/clack-ui/src/focus.ts"],
+			"@clack/ui/core": ["../../vendor/clack-ui/src/core.ts"]
+		}
+	}
+}

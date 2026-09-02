@@ -16,6 +16,7 @@ import type {
 	StableAssertionOptions,
 	ScreenRevision,
 	ScreenSnapshot,
+	StyleQuery,
 	TerminalLaunchOptions,
 	TextLocatorOptions,
 	TraceableInputOptions,
@@ -141,6 +142,8 @@ export interface EffectionLocatorExpectation {
 	toBePresent(options?: AssertionOptions): Operation<LocatorMatch>;
 	toBeAbsent(options?: StableAssertionOptions): Operation<void>;
 	toBeStable(options?: StableAssertionOptions): Operation<LocatorMatch>;
+	toHaveStyle(style: StyleQuery, options?: AssertionOptions): Operation<LocatorMatch>;
+	toContainCursor(options?: AssertionOptions): Operation<LocatorMatch>;
 }
 /** Effection terminal assertion expectation. */
 export interface EffectionTerminalExpectation {
@@ -164,6 +167,8 @@ export function expectOperation(
 			toBePresent: (o?: AssertionOptions) => op(() => e.toBePresent(o)),
 			toBeAbsent: (o?: StableAssertionOptions) => op(() => e.toBeAbsent(o)),
 			toBeStable: (o?: StableAssertionOptions) => op(() => e.toBeStable(o)),
+			toHaveStyle: (style: StyleQuery, o?: AssertionOptions) => op(() => e.toHaveStyle(style, o)),
+			toContainCursor: (o?: AssertionOptions) => op(() => e.toContainCursor(o)),
 		};
 	}
 	const e = expectAsync(target.inner);

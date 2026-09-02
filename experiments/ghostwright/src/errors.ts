@@ -37,6 +37,16 @@ export class ReservedEnvironmentError extends errorType(
 export class LaunchError extends errorType('LaunchError', 'GW_LAUNCH') {}
 /** Error for protocol violations. */
 export class ProtocolError extends errorType('ProtocolError', 'GW_PROTOCOL') {}
+/** Error for conflicting extension registrations. */
+export class ExtensionDuplicateError extends errorType(
+	'ExtensionDuplicateError',
+	'GW_EXTENSION_DUPLICATE',
+) {}
+/** Error for a registered OSC sequence exceeding its bounded buffer. */
+export class ExtensionOscLimitError extends errorType(
+	'ExtensionOscLimitError',
+	'GW_EXTENSION_OSC_LIMIT',
+) {}
 /** Error when host command exceeds timeout. */
 export class HostCommandTimeoutError extends errorType(
 	'HostCommandTimeoutError',
@@ -49,6 +59,7 @@ export class ProcessExitedError extends errorType('ProcessExitedError', 'GW_PROC
 /** Error when session is already closed. */
 export class SessionClosedError extends errorType('SessionClosedError', 'GW_SESSION_CLOSED') {}
 /** Error for coordinate out-of-range. */
+/** Error for coordinates outside the viewport. */
 export class CoordinateRangeError extends errorType(
 	'CoordinateRangeError',
 	'GW_COORDINATE_RANGE',
@@ -63,5 +74,7 @@ export class HistoryEvictedError extends errorType('HistoryEvictedError', 'GW_HI
 export class HistoryChangedError extends errorType('HistoryChangedError', 'GW_HISTORY_CHANGED') {}
 /** Error writing trace files. */
 export class TraceWriteError extends errorType('TraceWriteError', 'GW_TRACE_WRITE') {}
+/** Error for a key name the encoder cannot represent. */
+export class InvalidKeyError extends errorType('InvalidKeyError', 'GW_INVALID_KEY') {}
 /** Error during cleanup operations. */
 export class CleanupError extends errorType('CleanupError', 'GW_CLEANUP') {}

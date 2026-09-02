@@ -8,27 +8,48 @@ if (lock.protocolVersion !== 1 || lock.bindingVersion !== 2)
 		code: 'GW_VERSION_MISMATCH',
 		message: 'protocol or binding version mismatch',
 	});
+// The manifest records every release target, but a developer machine only
+// builds its own platform. Absent artifacts are skipped and reported; artifacts
+// that are present are always verified strictly.
+const absent = new Set<string>(),
+	read = async (artifactPath: string): Promise<Buffer | undefined> => {
+		try {
+			return await readFile(new URL(artifactPath, root));
+		} catch (error: any) {
+			if (error?.code !== 'ENOENT') throw error;
+			absent.add(artifactPath);
+			return undefined;
+		}
+	};
+let verified = 0;
 for (const [artifactPath, entry] of Object.entries(lock.artifacts) as [
 	string,
 	{ sha256: string },
 ][]) {
-	const actual = createHash('sha256')
-		.update(await readFile(new URL(artifactPath, root)))
-		.digest('hex');
+	const contents = await read(artifactPath);
+	if (!contents) continue;
+	const actual = createHash('sha256').update(contents).digest('hex');
 	if (actual !== entry.sha256)
 		throw new GhostwrightError({
 			code: 'GW_CHECKSUM_MISMATCH',
 			message: `${artifactPath}: checksum mismatch (expected ${entry.sha256}, got ${actual})`,
 		});
+	verified++;
 }
 for (const artifactPath of Object.keys(lock.artifacts).filter((p) => p.includes('pty-host-'))) {
-	const binary = await readFile(new URL(artifactPath, root));
+	const binary = await read(artifactPath);
+	if (!binary) continue;
 	if (!binary.includes(Buffer.from(`GWPT_PROTOCOL_VERSION=${lock.protocolVersion}`)))
 		throw new GhostwrightError({
 			code: 'GW_PROTOCOL_MARKER',
 			message: `${artifactPath}: protocol marker mismatch`,
 		});
 }
+if (verified === 0)
+	throw new GhostwrightError({
+		code: 'GW_NO_ARTIFACTS',
+		message: 'no Ghostwright artifacts found; run `bun run build:artifacts` first',
+	});
 const wasmBytes = await readFile(new URL('artifacts/ghostty-vt.wasm', root)),
 	wasm = await WebAssembly.compile(wasmBytes),
 	exports = new Set(WebAssembly.Module.exports(wasm).map((x) => x.name));
@@ -65,5 +86,7 @@ if (lock.graphics?.kittyGraphics) {
 }
 // oxlint-disable-next-line no-console -- verify script
 console.log(
-	`verified ${Object.keys(lock.artifacts).length} Ghostwright artifacts and ${Object.keys(lock.abi.structSizes).length} ABI layouts`,
+	`verified ${verified} Ghostwright artifacts and ${Object.keys(lock.abi.structSizes).length} ABI layouts${
+		absent.size ? `; skipped ${absent.size} not built here (${[...absent].join(', ')})` : ''
+	}`,
 );
