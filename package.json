@@ -20,6 +20,11 @@
 	"publishConfig": {
 		"access": "public"
 	},
+	"pnpm": {
+		"overrides": {
+			"@bomb.sh/tty": "https://pkg.pr.new/@bomb.sh/tty@103"
+		}
+	},
 	"scripts": {
 		"playground": "NODE_NO_WARNINGS=1 node --experimental-transform-types ./scripts/playground.ts",
 		"format": "bsh format",
