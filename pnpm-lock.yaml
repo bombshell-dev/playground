@@ -9,9 +9,6 @@ catalogs:
     '@bomb.sh/args':
       specifier: ^0.3.1
       version: 0.3.1
-    '@bomb.sh/tty':
-      specifier: ^0.8.0
-      version: 0.8.0
     '@clack/prompts':
       specifier: ^1.7.0
       version: 1.7.0
@@ -21,6 +18,9 @@ catalogs:
     alien-signals:
       specifier: ^2.0.0
       version: 2.0.8
+
+overrides:
+  '@bomb.sh/tty': https://pkg.pr.new/@bomb.sh/tty@103
 
 importers:
 
@@ -42,14 +42,14 @@ importers:
   examples/demo:
     dependencies:
       '@bomb.sh/tty':
-        specifier: 'catalog:'
-        version: 0.8.0
+        specifier: https://pkg.pr.new/@bomb.sh/tty@103
+        version: https://pkg.pr.new/@bomb.sh/tty@103
 
   examples/input:
     dependencies:
       '@bomb.sh/tty':
-        specifier: 'catalog:'
-        version: 0.8.0
+        specifier: https://pkg.pr.new/@bomb.sh/tty@103
+        version: https://pkg.pr.new/@bomb.sh/tty@103
       '@clack/ui':
         specifier: 'catalog:'
         version: https://pkg.pr.new/bombshell-dev/ui/@clack/ui@a60ac12
@@ -69,8 +69,8 @@ importers:
   packages/clack-tty:
     dependencies:
       '@bomb.sh/tty':
-        specifier: ^0.8.0
-        version: 0.8.0
+        specifier: https://pkg.pr.new/@bomb.sh/tty@103
+        version: https://pkg.pr.new/@bomb.sh/tty@103
       '@clack/ui':
         specifier: workspace:*
         version: link:../../vendor/clack-ui
@@ -144,8 +144,8 @@ importers:
         specifier: workspace:*
         version: link:../freedom
       '@bomb.sh/tty':
-        specifier: latest
-        version: 0.8.0
+        specifier: https://pkg.pr.new/@bomb.sh/tty@103
+        version: https://pkg.pr.new/@bomb.sh/tty@103
       effection:
         specifier: 4.1.0-alpha.9
         version: 4.1.0-alpha.9
@@ -175,8 +175,8 @@ importers:
   packages/hello-world:
     dependencies:
       '@bomb.sh/tty':
-        specifier: ^0.8.0
-        version: 0.8.0
+        specifier: https://pkg.pr.new/@bomb.sh/tty@103
+        version: https://pkg.pr.new/@bomb.sh/tty@103
       '@clack/ui':
         specifier: workspace:*
         version: link:../../vendor/clack-ui
@@ -203,8 +203,8 @@ importers:
         specifier: workspace:*
         version: link:../freedom
       '@bomb.sh/tty':
-        specifier: ^0.8.0
-        version: 0.8.0
+        specifier: https://pkg.pr.new/@bomb.sh/tty@103
+        version: https://pkg.pr.new/@bomb.sh/tty@103
       effection:
         specifier: 4.1.0-alpha.9
         version: 4.1.0-alpha.9
@@ -222,8 +222,8 @@ importers:
   packages/pizza:
     dependencies:
       '@bomb.sh/tty':
-        specifier: ^0.8.0
-        version: 0.8.0
+        specifier: https://pkg.pr.new/@bomb.sh/tty@103
+        version: https://pkg.pr.new/@bomb.sh/tty@103
       '@clack/ui':
         specifier: workspace:*
         version: link:../../vendor/clack-ui
@@ -247,8 +247,8 @@ importers:
   packages/pizza-preact:
     dependencies:
       '@bomb.sh/tty':
-        specifier: ^0.8.0
-        version: 0.8.0
+        specifier: https://pkg.pr.new/@bomb.sh/tty@103
+        version: https://pkg.pr.new/@bomb.sh/tty@103
       '@clack/ui':
         specifier: workspace:*
         version: link:../../vendor/clack-ui
@@ -281,8 +281,8 @@ importers:
   vendor/clack-ui:
     dependencies:
       '@bomb.sh/tty':
-        specifier: ^0.8.0
-        version: 0.8.0
+        specifier: https://pkg.pr.new/@bomb.sh/tty@103
+        version: https://pkg.pr.new/@bomb.sh/tty@103
       '@types/node':
         specifier: ^22.20.0
         version: 22.20.1
@@ -299,8 +299,8 @@ importers:
   vendor/ui:
     dependencies:
       '@bomb.sh/tty':
-        specifier: ^0.8.0
-        version: 0.8.0
+        specifier: https://pkg.pr.new/@bomb.sh/tty@103
+        version: https://pkg.pr.new/@bomb.sh/tty@103
       '@types/node':
         specifier: ^22.20.0
         version: 22.20.1
@@ -324,14 +324,6 @@ packages:
   '@bomb.sh/tools@0.6.1':
     resolution: {integrity: sha512-p3dLXau2JygQ9DTErUvHSn7GwqpRraIjiXdj/xeAU0+7opUZrtiHe18FLrU5opCSr16WZep0p0/OBX1HgMjgJQ==}
     hasBin: true
-
-  '@bomb.sh/tty@0.7.0':
-    resolution: {integrity: sha512-htTavc3o84vR6uSoyF+Y9u81GG8NoTJkwOovahcNOY4nVeiM86vodCHdPvAXoj2ucmx04frpwMrOJ4ipLSSJfw==}
-    engines: {node: '>= 22'}
-
-  '@bomb.sh/tty@0.8.0':
-    resolution: {integrity: sha512-tEE0mtqnEp2uJt4kQS5AjdghCD5KN4BobqHOlfhaiNyrigxFBKk61XkDy//4D7V/AejrTvubh44B4NV35lsnxw==}
-    engines: {node: '>= 22'}
 
   '@bomb.sh/tty@https://pkg.pr.new/@bomb.sh/tty@103':
     resolution: {tarball: https://pkg.pr.new/@bomb.sh/tty@103}
@@ -2149,10 +2141,6 @@ snapshots:
       - vite-plus
       - vue-tsc
 
-  '@bomb.sh/tty@0.7.0': {}
-
-  '@bomb.sh/tty@0.8.0': {}
-
   '@bomb.sh/tty@https://pkg.pr.new/@bomb.sh/tty@103': {}
 
   '@clack/core@1.4.3':
@@ -2169,7 +2157,7 @@ snapshots:
 
   '@clack/ui@https://pkg.pr.new/bombshell-dev/ui/@clack/ui@a60ac12':
     dependencies:
-      '@bomb.sh/tty': 0.7.0
+      '@bomb.sh/tty': https://pkg.pr.new/@bomb.sh/tty@103
       '@types/node': 22.20.1
 
   '@emnapi/core@1.10.0':

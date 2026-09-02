@@ -72,8 +72,7 @@ export function useInputElement(host: Host): void {
 			const focused = node === getFocus(node);
 			const model = InputContext.expect(node);
 			const value = model.content;
-			// commented out until @bomb.sh/tty can render carets
-			// const caret = Math.min(model.caret, [...value].length);
+			const caret = Math.min(model.caret, [...value].length);
 			const color = focused ? rgba(255, 255, 255) : rgba(100, 100, 100);
 			const border = { color, top: 1, right: 1, bottom: 1, left: 1 };
 			yield open(id(node), {
@@ -84,7 +83,7 @@ export function useInputElement(host: Host): void {
 					padding: { top: 1, right: 1, bottom: 1, left: 1 },
 				},
 			});
-			yield text(value || ' ');
+			yield text(value, { color, ...(focused ? { caret } : {}) });
 			yield close();
 		},
 	});
@@ -192,17 +191,19 @@ function isInput(node: Node): boolean {
 function withModel(node: Node, fn: (model: InputModel) => void): void {
 	if (isInput(node)) {
 		const model = InputContext.expect(node);
-		const original = model.content;
+		const originalContent = model.content;
+		const originalCaret = model.caret;
 		fn(model);
-		if (original !== model.content) {
+		const contentChanged = originalContent !== model.content;
+		const caretChanged = originalCaret !== model.caret;
+		if (contentChanged) {
 			emit(node, {
 				type: 'input',
 				value: model.content,
 			});
-			// Model changes are invisible until the tree repaints; every committed
-			// model mutation must request a frame.
-			requestRender(node);
 		}
+		// Caret-only movement must repaint without emitting a value-change event.
+		if (contentChanged || caretChanged) requestRender(node);
 	}
 }
 

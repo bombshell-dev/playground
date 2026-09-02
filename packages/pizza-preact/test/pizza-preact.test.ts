@@ -91,3 +91,58 @@ test('Preact pizza completes both forms and restores the delivery tab order', as
     await expectFocused(terminal, name);
   });
 });
+
+test('focused inputs show a native cursor that follows the caret', async () => {
+  await withTerminalAsync(entry(), async (terminal) => {
+    const session = semantic(terminal);
+    await expectTerminal(terminal.getByText('Pizza Delivery')).toBeStable();
+
+    const name = session.locator('input[label="name"]');
+    const address = session.locator('input[label="address"]');
+    const addCard = session.locator('button[label="add-card"]');
+    const cursorIsInside = (selector: string) => {
+      const cursor = terminal.screen.snapshot().cursor;
+      const rect = session.locator(selector).matches()[0]?.geo?.term;
+      return (
+        cursor.visible &&
+        rect !== undefined &&
+        cursor.column > rect.column &&
+        cursor.column < rect.column + rect.width - 1 &&
+        cursor.row > rect.row &&
+        cursor.row < rect.row + rect.height - 1
+      );
+    };
+
+    await expectFocused(terminal, name);
+    const initial = await expectTerminal(terminal).toSatisfy(
+      () => cursorIsInside('input[label="name"]'),
+      { settleMs: 100 },
+    );
+
+    await terminal.keyboard.type('cat');
+    const typed = await expectTerminal(terminal).toSatisfy(
+      () => terminal.screen.snapshot().cursor.column === initial.cursor.column + 3,
+      { settleMs: 100 },
+    );
+
+    await terminal.keyboard.press('ArrowLeft');
+    await expectTerminal(terminal).toSatisfy(
+      () => terminal.screen.snapshot().cursor.column === typed.cursor.column - 1,
+      { settleMs: 100 },
+    );
+
+    await terminal.keyboard.press('Tab');
+    await expectFocused(terminal, address);
+    await expectTerminal(terminal).toSatisfy(
+      () => cursorIsInside('input[label="address"]'),
+      { settleMs: 100 },
+    );
+
+    await terminal.keyboard.press('Tab');
+    await expectFocused(terminal, addCard);
+    await expectTerminal(terminal).toSatisfy(
+      () => !terminal.screen.snapshot().cursor.visible,
+      { settleMs: 100 },
+    );
+  });
+});
