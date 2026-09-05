@@ -9,7 +9,7 @@ export interface OscEvent {
 export type OscStreamItem =
 	| { kind: 'ordinary'; bytes: Uint8Array }
 	| { kind: 'event'; event: OscEvent }
-	| { kind: 'error'; error: Error };
+	| { kind: 'error'; error: Error; registration: OscRegistration<unknown> };
 
 export interface OscStreamResult {
 	items: readonly OscStreamItem[];
@@ -28,6 +28,7 @@ function bytes(parts: readonly number[]): Uint8Array {
 export class RegisteredOscStream {
 	#state: 'normal' | 'escape' | 'osc' | 'discarding' = 'normal';
 	#candidate: number[] = [];
+	#registration?: OscRegistration<unknown>;
 	#discardPreviousEscape = false;
 
 	constructor(readonly registrations: readonly OscRegistration<unknown>[]) {}
@@ -71,37 +72,42 @@ export class RegisteredOscStream {
 			}
 
 			this.#candidate.push(byte);
-			const candidateText = Buffer.from(this.#candidate).toString('latin1');
-			const possible = this.registrations.some((registration) =>
-				`\u001b]${registration.number};${registration.namespace};`.startsWith(candidateText),
-			);
-			const registration = this.registrations.find((entry) =>
-				candidateText.startsWith(`\u001b]${entry.number};${entry.namespace};`),
-			);
-			if (!registration && !possible) {
-				releaseCandidate();
-				continue;
+			if (!this.#registration) {
+				const prefix = Buffer.from(this.#candidate).toString('latin1');
+				this.#registration = this.registrations.find(
+					(entry) => prefix === `\u001b]${entry.number};${entry.namespace};`,
+				);
+				if (!this.#registration) {
+					if (
+						!this.registrations.some((entry) =>
+							`\u001b]${entry.number};${entry.namespace};`.startsWith(prefix),
+						)
+					)
+						releaseCandidate();
+					continue;
+				}
 			}
-			if (!registration) continue;
-			if (this.#candidate.length > registration.maxBufferedBytes) {
+			const registration = this.#registration;
+			const length = this.#candidate.length;
+			const st = length >= 2 && this.#candidate[length - 2] === 0x1b && byte === 0x5c;
+			const bel = byte === 0x07;
+			if (length > registration.maxBufferedBytes) {
 				// Do not return to ordinary parsing here: every byte through the OSC
 				// terminator belongs to the rejected registered sequence.
 				flush();
 				items.push({
 					kind: 'error',
+					registration,
 					error: new ExtensionOscLimitError(
 						`Registered OSC ${registration.number};${registration.namespace} exceeded ${registration.maxBufferedBytes} buffered bytes`,
 					),
 				});
 				this.#candidate = [];
-				this.#state = 'discarding';
-				this.#discardPreviousEscape = false;
+				this.#registration = undefined;
+				this.#state = st || bel ? 'normal' : 'discarding';
+				this.#discardPreviousEscape = byte === 0x1b;
 				continue;
 			}
-			const length = this.#candidate.length;
-			const st =
-				length >= 2 && this.#candidate[length - 2] === 0x1b && this.#candidate[length - 1] === 0x5c;
-			const bel = byte === 0x07;
 			if (!st && !bel) continue;
 			const prefix = `\u001b]${registration.number};${registration.namespace};`;
 			const body = Buffer.from(
@@ -126,6 +132,7 @@ export class RegisteredOscStream {
 				},
 			});
 			this.#candidate = [];
+			this.#registration = undefined;
 			this.#state = 'normal';
 		}
 		flush();

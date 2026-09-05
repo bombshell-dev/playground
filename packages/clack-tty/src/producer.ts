@@ -7,7 +7,7 @@
  * leave it when they are detached (removeChild), and structural state is never
  * rebuilt by walking the host tree. Attribute values (`role`, `label`,
  * `data-*`) ride the ordinary property channel and are read from the element's
- * property bag at frame time; focus truth comes from clack/ui's focus API.
+ * property bag at frame time. Focus, value, and cursor assertions use terminal evidence.
  *
  * Emission is opt-in and render-driven: `useSemantic` installs a render
  * observer via `RenderApi.around`. Each committed render emits exactly one
@@ -16,7 +16,6 @@
  */
 import type { RenderInfo } from '@bomb.sh/tty';
 import type { HostElement } from '@clack/ui/elements';
-import { FocusApi } from '@clack/ui/focus';
 import { HostApi, type Host } from '@clack/ui';
 import { RenderApi } from '@clack/ui/render';
 import { id } from '@clack/ui/core';
@@ -24,8 +23,8 @@ import {
 	encodeFrame,
 	geometryFor,
 	LIMITS,
-	type ClackFrameV1,
-	type ClackNodeV1,
+	type ClackFrame,
+	type ClackNode,
 	type JsonScalar,
 } from './protocol.ts';
 
@@ -96,7 +95,8 @@ export function useSemantic(host: Host, options: SemanticOptions): void {
 	}
 
 	function unregisterEntry(entry: Entry): void {
-		for (const child of entry.children) unregisterEntry(child);
+		// oxlint-disable-next-line unicorn/no-useless-spread -- unregister mutates this array
+		for (const child of [...entry.children]) unregisterEntry(child);
 		entries.delete(entry.node);
 		if (entry.parent) {
 			const index = entry.parent.children.indexOf(entry);
@@ -138,24 +138,16 @@ export function useSemantic(host: Host, options: SemanticOptions): void {
 		return { columns: surface.columns, rows: surface.rows, row: surface.row ?? 1 };
 	};
 
-	function focusStack(): string[] {
-		const focus = FocusApi.methods.getFocus(host.root);
-		return focus === host.root ? [] : [id(focus)];
-	}
-
 	function buildNodes(
 		info: RenderInfo,
 		surface: { columns: number; rows: number; row: number },
-	): ClackNodeV1[] {
-		const focusNode = FocusApi.methods.getFocus(host.root);
-		const nodes: ClackNodeV1[] = [];
+	): ClackNode[] {
+		const nodes: ClackNode[] = [];
 
+		// oxlint-disable-next-line bombshell-dev/max-params -- traversal carries parent identity and sibling order
 		function visit(entry: Entry, parentKey: string | null, order: number): void {
-			const focusable = FocusApi.methods.isFocusable(entry.node);
-			const focused = entry.node === focusNode;
 			const custom: Record<string, JsonScalar> = {};
-			let role: string | undefined,
-				label: string | undefined;
+			let role: string | undefined, label: string | undefined;
 			for (const [name, value] of Object.entries(entry.element.properties)) {
 				if (name === 'role' && typeof value === 'string') role = value;
 				else if (name === 'label' && typeof value === 'string') label = value;
@@ -179,10 +171,8 @@ export function useSemantic(host: Host, options: SemanticOptions): void {
 					...(role !== undefined ? { role } : {}),
 					...(label !== undefined ? { label } : {}),
 					...(entry.name === 'input' ? { input: true } : {}),
-					focusable,
 					...(Object.keys(custom).length > 0 ? { custom } : {}),
 				},
-				states: { focused, focusRoot: focused },
 				...(geo !== undefined ? { geo } : {}),
 			});
 			entry.children.forEach((child, index) => visit(child, entry.key, index));
@@ -199,11 +189,10 @@ export function useSemantic(host: Host, options: SemanticOptions): void {
 	function emit(info: RenderInfo, output: { write(chunk: Uint8Array): unknown }): void {
 		try {
 			const surface = deriveSurface();
-			const frame: ClackFrameV1 = {
+			const frame: ClackFrame = {
 				v: 1,
-				frame: ++frameCounter,
+				frame: frameCounter + 1,
 				surface,
-				focusStack: focusStack(),
 				nodes: buildNodes(info, surface),
 			};
 			if (frame.nodes.length > LIMITS.nodes) {
@@ -213,6 +202,7 @@ export function useSemantic(host: Host, options: SemanticOptions): void {
 				return;
 			}
 			output.write(encodeFrame(frame));
+			frameCounter++;
 		} catch (error) {
 			// A semantic failure is a diagnostic, never a broken paint.
 			options.onDiagnostic?.(error as Error);

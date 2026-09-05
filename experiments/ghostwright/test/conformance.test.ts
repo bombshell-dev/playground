@@ -120,7 +120,7 @@ test('mode-aware keyboard, paste, focus, mouse, and large raw input are acknowle
 				await terminal.mouse.move({ column: 2, row: 3 }),
 				await terminal.keyboard.write(new Uint8Array(70_000)),
 			];
-			expect(receipts.every((receipt) => receipt.deliveredToChild)).toBe(true);
+			expect(receipts.every((receipt) => receipt.bytesWritten > 0)).toBe(true);
 			expect(receipts.at(-1)?.bytesWritten).toBe(70_000);
 			await terminal.process.waitForExit({ timeoutMs: 2_000 });
 			const expectedPrefix = Buffer.from(

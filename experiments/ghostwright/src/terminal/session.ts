@@ -3,12 +3,12 @@ import { resolve } from 'node:path';
 import {
 	CoordinateRangeError,
 	DenoPermissionError,
-	ExtensionDuplicateError,
 	GhostwrightError,
 	HistoryChangedError,
 	HistoryEvictedError,
 	LaunchError,
 	ProcessExitedError,
+	WriteInterruptedError,
 	ReservedEnvironmentError,
 	SessionClosedError,
 	StrictLocatorError,
@@ -54,16 +54,12 @@ import type {
 	ScreenSnapshot,
 	TerminalLaunchOptions,
 	TextLocatorOptions,
-	TerminalExtensionDefinition,
-	ExtensionCommit,
-	ExtensionRevision,
-	ExtensionSessionContext,
-	RegisteredOscMessage,
 	TraceableInputOptions,
 	Viewport,
 	WheelOptions,
 } from '../types.ts';
-import { RegisteredOscStream } from './extensions.ts';
+import { TerminalOutput } from './output.ts';
+import type { Observations } from '../observations.ts';
 import { GhosttyWasmTerminal } from './wasm.ts';
 function concatBytes(parts: readonly Uint8Array[]) {
 	const result = new Uint8Array(parts.reduce((total, part) => total + part.length, 0));
@@ -89,10 +85,12 @@ function observableKey(s: ScreenSnapshot) {
 }
 export class TerminalSession implements AsyncTerminal {
 	#host!: SidecarClient;
+	observations!: Observations;
 	#engine!: GhosttyWasmTerminal;
 	#snapshot!: ScreenSnapshot;
 	#status: ProcessStatus = { state: 'starting', ptyEof: false };
 	#closed = false;
+	#closePromise?: Promise<ActionReceipt>;
 	#action = 0;
 	#revision = 0;
 	#history: ScreenRevision[] = [];
@@ -104,47 +102,17 @@ export class TerminalSession implements AsyncTerminal {
 	#listeners = new Set<() => void>();
 	#outputPump: Promise<void> = Promise.resolve();
 	#commands: Promise<unknown> = Promise.resolve();
+	#queuedCommands = 0;
 	#lastAction?: ActionReceipt;
 	#mouseDown = false;
 	#trace: SessionTrace;
 	#viewport;
 	#fatalError?: Error;
-	#extensions = new Map<
-		string,
-		{
-			definition: TerminalExtensionDefinition<unknown, unknown>;
-			session: unknown;
-			revisions: ExtensionRevision<unknown>[];
-			sequence: number;
-		}
-	>();
-	#osc?: RegisteredOscStream;
+	#outputStream!: TerminalOutput;
+	#sourceFrameSequence = 0;
 	#exitResolve!: (s: ProcessStatus) => void;
 	#exitPromise: Promise<ProcessStatus>;
 	private constructor(readonly options: TerminalLaunchOptions) {
-		const extensions = options.extensions ?? [];
-		const identities = new Set<string>();
-		for (const definition of extensions) {
-			const identity = `${definition.id}:${definition.osc?.number ?? ''}:${definition.osc?.namespace ?? ''}`;
-			if (this.#extensions.has(definition.id) || identities.has(identity))
-				throw new ExtensionDuplicateError(`Duplicate extension registration ${definition.id}`);
-			identities.add(identity);
-			this.#extensions.set(definition.id, {
-				definition,
-				session: undefined,
-				revisions: [],
-				sequence: 0,
-			});
-		}
-		const registrations = extensions.flatMap((definition) =>
-			definition.osc ? [definition.osc] : [],
-		);
-		const oscKeys = new Set(
-			registrations.map((registration) => `${registration.number};${registration.namespace}`),
-		);
-		if (oscKeys.size !== registrations.length)
-			throw new ExtensionDuplicateError('Duplicate registered OSC number and namespace');
-		this.#osc = registrations.length ? new RegisteredOscStream(registrations) : undefined;
 		this.#viewport = normalizeViewport(options.viewport);
 		const t =
 				typeof options.trace === 'string'
@@ -210,7 +178,31 @@ export class TerminalSession implements AsyncTerminal {
 			options.graphics?.storageLimitBytes ?? 64 * 1024 * 1024,
 		);
 		self.#snapshot = self.#engine.snapshot();
-		self.#initializeExtensions();
+		try {
+			self.#outputStream = new TerminalOutput(
+				options.extensions ?? [],
+				() => self.#snapshot,
+				(bytes) => {
+					self.#engine.write(bytes);
+					self.#terminalHistoryGeneration++;
+					self.#publish('pty-output', self.#sourceFrameSequence);
+					return self.#snapshot;
+				},
+				(error) => self.#trace.add('extension-diagnostic', { message: error.message }),
+			);
+		} catch (error) {
+			self.#engine.free();
+			throw error;
+		}
+		self.observations = self.#outputStream.observations;
+		self.observations.subscribe((observation) => {
+			self.#trace.add('observation', {
+				observation: observation.sequence,
+				kind: observation.kind,
+				screenSequence: observation.screen.sequence,
+			});
+			self.#notify();
+		});
 		self.#trace.add('kitty-capability', {
 			supported: self.#snapshot.graphics.supported,
 			storageLimitBytes: self.#snapshot.graphics.storageLimitBytes,
@@ -297,86 +289,8 @@ export class TerminalSession implements AsyncTerminal {
 	get lastAction() {
 		return this.#lastAction;
 	}
-	extension<T>(definition: TerminalExtensionDefinition<T, unknown>): T {
-		const registered = this.#extensions.get(definition.id);
-		if (!registered || registered.definition !== definition)
-			throw new GhostwrightError({
-				code: 'GW_EXTENSION_NOT_REGISTERED',
-				message: `Extension ${definition.id} was not registered for this terminal`,
-			});
-		return registered.session as T;
-	}
-	#initializeExtensions() {
-		for (const [id, record] of this.#extensions) {
-			const context = this.#extensionContext(id);
-			record.session = record.definition.createSession(context);
-		}
-	}
-	#extensionContext(id: string): ExtensionSessionContext<unknown> {
-		return Object.freeze({
-			terminal: this,
-			screen: this.screen,
-			publish: (commit: ExtensionCommit<unknown>) => this.#publishExtension(id, commit),
-			diagnostic: (error: GhostwrightError) => {
-				this.#trace.add('extension-diagnostic', {
-					extensionId: id,
-					code: error.code,
-					message: error.message.slice(0, 1024),
-				});
-			},
-		});
-	}
-	#publishExtension(id: string, commit: ExtensionCommit<unknown>): ExtensionRevision<unknown> {
-		const record = this.#extensions.get(id);
-		if (!record)
-			throw new GhostwrightError({
-				code: 'GW_EXTENSION_NOT_REGISTERED',
-				message: `Unknown extension ${id}`,
-			});
-		const revision = Object.freeze({
-			sequence: ++record.sequence,
-			timestamp: this.#engine.now(),
-			extensionId: id,
-			protocolFrame: commit.protocolFrame,
-			screenSequence: this.#snapshot.sequence,
-			value: commit.value,
-		});
-		record.revisions.push(revision);
-		this.#trace.add('extension-revision', {
-			extensionId: id,
-			sequence: revision.sequence,
-			protocolFrame: revision.protocolFrame,
-			screenSequence: revision.screenSequence,
-		});
-		this.#notify();
-		return revision;
-	}
-	#acceptOsc(
-		registration: TerminalExtensionDefinition<unknown, unknown>['osc'],
-		message: RegisteredOscMessage,
-	) {
-		if (!registration) return;
-		const record = [...this.#extensions.values()].find(
-			(candidate) => candidate.definition.osc === registration,
-		);
-		if (!record) return;
-		const context = this.#extensionContext(record.definition.id);
-		try {
-			const commit = registration.decode(message);
-			record.definition.accept?.(record.session, commit, context);
-		} catch (cause) {
-			const error =
-				cause instanceof GhostwrightError
-					? cause
-					: new GhostwrightError({
-							code: 'GW_EXTENSION_OSC',
-							message:
-								cause instanceof Error
-									? cause.message.slice(0, 1024)
-									: 'Extension OSC decode failed',
-						});
-			context.diagnostic(error);
-		}
+	hasExtension(id: string): boolean {
+		return (this.options.extensions ?? []).some((extension) => extension.id === id);
 	}
 	now() {
 		return this.#engine.now();
@@ -394,24 +308,8 @@ export class TerminalSession implements AsyncTerminal {
 		this.#raw.push(bytes.slice());
 		const max = this.options.history?.maxRawBytes ?? 4 * 1024 * 1024;
 		while (this.#raw.reduce((n, b) => n + b.length, 0) > max) this.#raw.shift();
-		const parsed = this.#osc?.push(bytes) ?? { items: [{ kind: 'ordinary' as const, bytes }] };
-		for (const item of parsed.items) {
-			if (item.kind === 'ordinary') {
-				if (!item.bytes.length) continue;
-				this.#engine.write(item.bytes);
-				// Publish before a following OSC commit so its screen association is the
-				// exact state produced by preceding bytes in the same PTY host frame.
-				this.#terminalHistoryGeneration++;
-				this.#publish('pty-output', sourceFrameSequence);
-			} else if (item.kind === 'event') {
-				this.#acceptOsc(item.event.registration, item.event.message);
-			} else {
-				this.#trace.add('extension-diagnostic', {
-					code: item.error instanceof GhostwrightError ? item.error.code : 'GW_EXTENSION_OSC',
-					message: item.error.message.slice(0, 1024),
-				});
-			}
-		}
+		this.#sourceFrameSequence = sourceFrameSequence;
+		this.#outputStream.push(bytes);
 		for (const effect of this.#engine.takeEffects()) {
 			this.#trace.add('terminal-effect', {
 				effect: effect.type,
@@ -419,13 +317,29 @@ export class TerminalSession implements AsyncTerminal {
 			});
 			if (effect.type === 'write-pty') {
 				this.#trace.input(effect.data, 0, false);
-				await this.#command(() => this.#host.write(effect.data));
+				// Parsing output must not wait for a child that has stopped reading replies.
+				void this.#command(() => this.#host.write(effect.data)).catch((error) => {
+					this.#fatalError = error;
+					this.#status = { ...this.#status, state: 'failed' };
+					this.#notify();
+					void this.close().catch(() => undefined);
+				});
 			}
 		}
 	}
 	#command<T>(operation: () => Promise<T>): Promise<T> {
-		const result = this.#commands.then(operation);
-		this.#commands = result;
+		if (this.#queuedCommands >= 1024)
+			return Promise.reject(
+				new GhostwrightError({
+					code: 'GW_BACKPRESSURE',
+					message: 'Terminal command queue limit exceeded',
+				}),
+			);
+		this.#queuedCommands++;
+		const result = this.#commands.then(operation).finally(() => {
+			this.#queuedCommands--;
+		});
+		this.#commands = result.catch(() => undefined);
 		return result;
 	}
 	#publish(cause: 'pty-output' | 'resize' | 'reset', sourceFrameSequence?: number) {
@@ -490,30 +404,34 @@ export class TerminalSession implements AsyncTerminal {
 		this.#notify();
 	}
 	#ensure(op: string): void {
-		if (this.#closed) throw new SessionClosedError(`Cannot ${op}: terminal session is closed`);
+		if (this.#closed || this.#closePromise)
+			throw new SessionClosedError(`Cannot ${op}: terminal session is closed`);
 	}
 	// oxlint-disable-next-line bombshell-dev/max-params -- internal method
-	async #send(
-		kind: FrameKind,
-		value: unknown,
-		raw = false,
-		delivered = true,
-	): Promise<ActionReceipt> {
+	async #send(kind: FrameKind, value: unknown, signal?: AbortSignal): Promise<ActionReceipt> {
+		signal?.throwIfAborted();
 		this.#ensure('perform action');
 		const before = this.#revision,
 			sequence = ++this.#action;
 		let ack: { bytesWritten?: number };
 		if (kind === FrameKind.WRITE)
 			ack = await this.#command(() => this.#host.write(value as Uint8Array));
-		else if (kind === FrameKind.RESIZE) ack = await this.#command(() => this.#host.resize(value));
-		else if (kind === FrameKind.SIGNAL) ack = await this.#command(() => this.#host.signal(value));
+		else if (kind === FrameKind.RESIZE)
+			ack = await this.#command(() => {
+				signal?.throwIfAborted();
+				return this.#host.resize(value);
+			});
+		else if (kind === FrameKind.SIGNAL)
+			ack = await this.#command(() => {
+				signal?.throwIfAborted();
+				return this.#host.signal(value);
+			});
 		else
 			throw new GhostwrightError({ code: 'GW_UNSUPPORTED_ACTION', message: 'Unsupported action' });
 		const receipt: Readonly<ActionReceipt> = Object.freeze({
 			actionSequence: sequence,
 			screenSequenceBefore: before,
 			acknowledgedAt: this.#engine.now(),
-			deliveredToChild: delivered,
 			bytesWritten: ack.bytesWritten ?? 0,
 		});
 		this.#lastAction = receipt as ActionReceipt;
@@ -526,11 +444,8 @@ export class TerminalSession implements AsyncTerminal {
 		return receipt as ActionReceipt;
 	}
 	// oxlint-disable-next-line bombshell-dev/max-params -- internal method
-	async #write(
-		data: Uint8Array,
-		delivered = data.length > 0,
-		traceMode: 'record' | 'redact' = 'record',
-	) {
+	async #write(data: Uint8Array, traceMode: 'record' | 'redact' = 'record', signal?: AbortSignal) {
+		signal?.throwIfAborted();
 		this.#ensure('write input');
 		const before = this.#revision,
 			sequence = ++this.#action;
@@ -538,14 +453,25 @@ export class TerminalSession implements AsyncTerminal {
 		this.#trace.input(data, sequence, traceMode === 'redact');
 		for (let offset = 0; offset < data.length; offset += 65_536) {
 			const chunk = data.slice(offset, offset + 65_536);
-			const ack = await this.#command(() => this.#host.write(chunk));
-			total += ack.bytesWritten ?? 0;
+			try {
+				const ack = await this.#command(() => {
+					if (signal?.aborted)
+						throw new WriteInterruptedError(0, 'Input cancelled before the next chunk', {
+							cause: signal.reason,
+						});
+					return this.#host.write(chunk, signal);
+				});
+				total += ack.bytesWritten ?? 0;
+			} catch (cause) {
+				if (cause instanceof WriteInterruptedError)
+					throw new WriteInterruptedError(total + cause.bytesWritten, cause.message, { cause });
+				throw cause; // Transport failure cannot prove the current chunk's delivery.
+			}
 		}
 		const receipt = Object.freeze({
 			actionSequence: sequence,
 			screenSequenceBefore: before,
 			acknowledgedAt: this.#engine.now(),
-			deliveredToChild: delivered,
 			bytesWritten: total,
 		});
 		this.#lastAction = receipt;
@@ -556,22 +482,28 @@ export class TerminalSession implements AsyncTerminal {
 		});
 		return receipt;
 	}
-	keyboard = {
-		press: async (key: KeyName | KeyPress) => this.#write(this.#engine.encodeKey(parseKey(key))),
-		type: async (text: string, options?: TraceableInputOptions) =>
-			this.#write(
-				concatBytes(Array.from(text, (key) => this.#engine.encodeKey(key))),
-				true,
-				options?.trace ?? 'record',
-			),
-		paste: async (text: string, options?: TraceableInputOptions) =>
-			this.#write(this.#engine.encodePaste(text), true, options?.trace ?? 'record'),
-		focus: async (state: 'in' | 'out') => {
-			const b = this.#engine.encodeFocus(state);
-			return this.#write(b);
-		},
-		write: async (data: Uint8Array) => this.#write(data),
-	};
+	keyboardFor(signal?: AbortSignal) {
+		return {
+			press: async (key: KeyName | KeyPress) => {
+				signal?.throwIfAborted();
+				return this.#write(this.#engine.encodeKey(parseKey(key)), 'record', signal);
+			},
+			type: async (text: string, options?: TraceableInputOptions) =>
+				this.#write(
+					concatBytes(Array.from(text, (key) => this.#engine.encodeKey(key))),
+					options?.trace ?? 'record',
+					signal,
+				),
+			paste: async (text: string, options?: TraceableInputOptions) =>
+				this.#write(this.#engine.encodePaste(text), options?.trace ?? 'record', signal),
+			focus: async (state: 'in' | 'out') => {
+				const b = this.#engine.encodeFocus(state);
+				return this.#write(b, 'record', signal);
+			},
+			write: async (data: Uint8Array) => this.#write(data, 'record', signal),
+		};
+	}
+	keyboard = this.keyboardFor();
 	#point(p: Point) {
 		if (
 			!Number.isInteger(p.column) ||
@@ -586,7 +518,14 @@ export class TerminalSession implements AsyncTerminal {
 			);
 	}
 	// oxlint-disable-next-line bombshell-dev/max-params -- internal method
-	#mouse(action: 'move' | 'down' | 'up', p: Point, o: MouseOptions = {}): Promise<ActionReceipt> {
+	#mouse(
+		action: 'move' | 'down' | 'up',
+		p: Point,
+		o: MouseOptions = {},
+		signal?: AbortSignal,
+	): Promise<ActionReceipt> {
+		signal?.throwIfAborted();
+		this.#ensure('perform mouse action');
 		this.#point(p);
 		const wasDown = this.#mouseDown;
 		if (action === 'down') this.#mouseDown = true;
@@ -597,41 +536,59 @@ export class TerminalSession implements AsyncTerminal {
 			o,
 			action === 'up' ? wasDown : this.#mouseDown,
 		);
-		return this.#write(bytes, bytes.length > 0);
+		return this.#write(bytes, 'record', signal);
 	}
-	mouse = {
-		move: (p: Point, o?: MouseOptions) => this.#mouse('move', p, o),
-		down: (p: Point, o?: MouseOptions) => this.#mouse('down', p, o),
-		up: (p: Point, o?: MouseOptions) => this.#mouse('up', p, o),
-		click: async (p: Point, o?: MouseOptions) => {
-			await this.#mouse('down', p, o);
-			return this.#mouse('up', p, o);
-		},
-		doubleClick: async (p: Point, o?: MouseOptions) => {
-			await this.mouse.click(p, o);
-			return this.mouse.click(p, o);
-		},
-		// oxlint-disable-next-line bombshell-dev/max-params -- wraps mouse API
-		drag: async (a: Point, b: Point, o?: MouseOptions) => {
-			await this.#mouse('down', a, o);
-			await this.#mouse('move', b, o);
-			return this.#mouse('up', b, o);
-		},
-		wheel: (o: WheelOptions) => {
-			this.#point(o);
-			if (!Number.isInteger(o.deltaRows) || !Number.isInteger(o.deltaColumns ?? 0))
-				throw new CoordinateRangeError('Wheel deltas must be integers');
-			const parts: Uint8Array[] = [];
-			for (let index = 0; index < Math.abs(o.deltaRows); index++)
-				parts.push(this.#engine.encodeMouse('down', o, { button: o.deltaRows < 0 ? 4 : 5 }, false));
-			for (let index = 0; index < Math.abs(o.deltaColumns ?? 0); index++)
-				parts.push(
-					this.#engine.encodeMouse('down', o, { button: (o.deltaColumns ?? 0) < 0 ? 6 : 7 }, false),
-				);
-			const bytes = concatBytes(parts);
-			return this.#write(bytes, bytes.length > 0);
-		},
-	};
+	mouseFor(signal?: AbortSignal) {
+		const mouse = {
+			move: (p: Point, o?: MouseOptions) => this.#mouse('move', p, o, signal),
+			down: (p: Point, o?: MouseOptions) => this.#mouse('down', p, o, signal),
+			up: (p: Point, o?: MouseOptions) => this.#mouse('up', p, o, signal),
+			click: async (p: Point, o?: MouseOptions) => {
+				await this.#mouse('down', p, o, signal);
+				return this.#mouse('up', p, o, signal);
+			},
+			doubleClick: async (p: Point, o?: MouseOptions) => {
+				await mouse.click(p, o);
+				return mouse.click(p, o);
+			},
+			// oxlint-disable-next-line bombshell-dev/max-params -- wraps mouse API
+			drag: async (a: Point, b: Point, o?: MouseOptions) => {
+				await this.#mouse('down', a, o, signal);
+				await this.#mouse('move', b, o, signal);
+				return this.#mouse('up', b, o, signal);
+			},
+			wheel: (o: WheelOptions) => {
+				this.#point(o);
+				if (!Number.isInteger(o.deltaRows) || !Number.isInteger(o.deltaColumns ?? 0))
+					throw new CoordinateRangeError('Wheel deltas must be integers');
+				const parts: Uint8Array[] = [];
+				for (let index = 0; index < Math.abs(o.deltaRows); index++)
+					parts.push(
+						this.#engine.encodeMouse('down', o, { button: o.deltaRows < 0 ? 4 : 5 }, false),
+					);
+				for (let index = 0; index < Math.abs(o.deltaColumns ?? 0); index++)
+					parts.push(
+						this.#engine.encodeMouse(
+							'down',
+							o,
+							{ button: (o.deltaColumns ?? 0) < 0 ? 6 : 7 },
+							false,
+						),
+					);
+				const bytes = concatBytes(parts);
+				return this.#write(bytes, 'record', signal);
+			},
+		};
+		return mouse;
+	}
+	mouse = this.mouseFor();
+	signalProcess(
+		signal: string,
+		target: 'child' | 'process-group' = 'process-group',
+		abort?: AbortSignal,
+	) {
+		return this.#send(FrameKind.SIGNAL, { signal, target }, abort);
+	}
 	process = {
 		status: () => ({ ...this.#status }),
 		signal: (signal: string, target: 'child' | 'process-group' = 'process-group') =>
@@ -679,22 +636,25 @@ export class TerminalSession implements AsyncTerminal {
 		this.#point(r);
 		this.#point({ column: r.column + r.width - 1, row: r.row + r.height - 1 });
 	}
-	async resize(v: Viewport) {
+	async resize(v: Viewport, signal?: AbortSignal) {
 		const viewport = normalizeViewport(v);
-		const receipt = await this.#send(FrameKind.RESIZE, viewport);
+		const receipt = await this.#send(FrameKind.RESIZE, viewport, signal);
 		this.#viewport = viewport;
 		this.#engine.resize(viewport);
 		this.#terminalHistoryGeneration++;
 		this.#publish('resize');
+		this.observations.screen(this.#snapshot);
 		return receipt;
 	}
-	async close() {
+	close(): Promise<ActionReceipt> {
+		return (this.#closePromise ??= this.#close());
+	}
+	async #close(): Promise<ActionReceipt> {
 		if (this.#closed)
 			return Object.freeze({
 				actionSequence: ++this.#action,
 				screenSequenceBefore: this.#revision,
 				acknowledgedAt: this.#engine.now(),
-				deliveredToChild: false,
 				bytesWritten: 0,
 			});
 		const before = this.#revision,
@@ -708,14 +668,14 @@ export class TerminalSession implements AsyncTerminal {
 						(c.postExitDrainMs ?? 1000) +
 						1000,
 				);
+			// CLOSE must overtake blocked writes; the host reports their partial delivery.
+			await this.#host.close(timeout);
 			await this.#outputPump;
 			await this.#commands;
-			await this.#host.close(timeout);
 			const receipt = Object.freeze({
 				actionSequence: sequence,
 				screenSequenceBefore: before,
 				acknowledgedAt: this.#engine.now(),
-				deliveredToChild: true,
 				bytesWritten: 0,
 			});
 			this.#lastAction = receipt;

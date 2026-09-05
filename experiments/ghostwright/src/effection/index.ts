@@ -1,6 +1,7 @@
 import { call, type Operation } from 'effection';
 import type {
 	AssertionOptions,
+	ActionReceipt,
 	KeyName,
 	HistoryQuery,
 	HistorySearchOptions,
@@ -26,7 +27,17 @@ import type {
 } from '../types.ts';
 import { expectTerminal as expectAsync } from '../assertions/index.ts';
 import type { Locator } from '../terminal/session.ts';
-import { TerminalSession } from '../terminal/session.ts';
+import {
+	execution,
+	useSession,
+	assertRegion,
+	captureOperation,
+	type CaptureOptions,
+	type AsyncExecution,
+} from '../execution.ts';
+import { createExpect, type Matcher } from '../matchers.ts';
+import type { RegionLocator } from '../locators.ts';
+const expectRegion = createExpect();
 const op = <T>(fn: () => Promise<T>): Operation<T> => call(fn);
 /** Effection wrapper around an async Locator. */
 export class EffectionLocator implements OperationLocator {
@@ -40,13 +51,30 @@ export class EffectionLocator implements OperationLocator {
 	matches(): readonly LocatorMatch[] {
 		return this.inner.matches();
 	}
-	click(o?: MouseOptions): Operation<Locator> {
+	click(o?: MouseOptions): Operation<ActionReceipt> {
 		return op(() => this.inner.click(o));
 	}
 }
 /** Effection wrapper around a TerminalSession. */
 export class EffectionTerminal implements OperationTerminal {
-	constructor(readonly inner: TerminalSession) {}
+	constructor(readonly inner: AsyncExecution) {}
+	get signal() {
+		return this.inner.signal;
+	}
+	assert(locator: RegionLocator, matcher: Matcher) {
+		return assertRegion(this.inner.session, locator, matcher);
+	}
+	expect(locator: RegionLocator) {
+		return expectRegion.operation(this, locator);
+	}
+	click(locator: RegionLocator, options?: MouseOptions) {
+		return op(() => this.inner.click(locator, options));
+	}
+	capture(options: CaptureOptions, body: (terminal: EffectionTerminal) => Operation<unknown>) {
+		return captureOperation(this.inner.session, options, (terminal) =>
+			body(new EffectionTerminal(terminal)),
+		);
+	}
 	keyboard = {
 		press: (k: KeyName | KeyPress) => op(() => this.inner.keyboard.press(k)),
 		type: (t: string, o?: TraceableInputOptions) => op(() => this.inner.keyboard.type(t, o)),
@@ -95,21 +123,22 @@ export class EffectionTerminal implements OperationTerminal {
 			snapshot: () => x.snapshot(),
 		};
 	}
-	resize(v: Viewport): Operation<void> {
+	resize(v: Viewport): Operation<ActionReceipt> {
 		return op(() => this.inner.resize(v));
 	}
-	close(): Operation<void> {
+	close(): Operation<ActionReceipt> {
 		return op(() => this.inner.close());
 	}
 }
 /** Launch a terminal session, run an Effection operation body, and clean up when done. */
 export function* withTerminal<T>(
 	options: TerminalLaunchOptions,
-	body: (terminal: OperationTerminal) => Operation<T>,
+	body: (terminal: EffectionTerminal) => Operation<T>,
 ): Operation<T> {
-	const session: TerminalSession = yield* call(() => TerminalSession.launch(options));
+	const session = yield* useSession(options);
+	const terminal = yield* execution(session);
 	try {
-		const result: T = yield* body(new EffectionTerminal(session));
+		const result: T = yield* body(new EffectionTerminal(terminal));
 		if (session.trace.policy === 'on')
 			yield* call(() =>
 				session.trace.persist(
@@ -133,8 +162,6 @@ export function* withTerminal<T>(
 				(error as Error & { suppressed?: unknown[] }).suppressed = [traceError];
 		}
 		throw error;
-	} finally {
-		yield* call(() => session.close());
 	}
 }
 /** Effection locator assertion expectation. */
@@ -171,7 +198,7 @@ export function expectOperation(
 			toContainCursor: (o?: AssertionOptions) => op(() => e.toContainCursor(o)),
 		};
 	}
-	const e = expectAsync(target.inner);
+	const e = expectAsync(target.inner.session);
 	return {
 		toSatisfy: (predicate: (snapshot: ScreenSnapshot) => boolean, o?: StableAssertionOptions) =>
 			op(() => e.toSatisfy(predicate, o)),

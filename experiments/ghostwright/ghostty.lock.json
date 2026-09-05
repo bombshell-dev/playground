@@ -6,8 +6,8 @@
 	},
 	"zigVersion": "0.15.2",
 	"buildFlags": ["-Demit-lib-vt", "-Dtarget=wasm32-freestanding", "ReleaseSmall"],
-	"ptyHostImplementation": "c",
-	"ptyHostBuildFlags": ["clang-or-musl-gcc", "-std=c17", "-O2", "linux:-static"],
+	"ptyHostImplementation": "rust",
+	"ptyHostBuildFlags": ["cargo", "--release", "--locked", "linux:musl"],
 	"targets": ["darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64"],
 	"protocolVersion": 1,
 	"bindingVersion": 2,
@@ -125,16 +125,7 @@
 			"sha256": "9cc284061558b47237e478107dbbe8eabd1f6139038f61b1e403bb97e74ced1f"
 		},
 		"artifacts/pty-host-darwin-arm64": {
-			"sha256": "947dc314df01a11eb47a507288f8216f8cef149c27c09587a41db6e44242ea6a"
-		},
-		"artifacts/pty-host-darwin-x64": {
-			"sha256": "2e997b0cee77b9f61a5694c783e18de3cd6e36bcec2e794db43c2a4a269942b4"
-		},
-		"artifacts/pty-host-linux-arm64": {
-			"sha256": "d3a9fee7159eb298449b61d8c1842f80add5003e17b9924045c582393e9f49c7"
-		},
-		"artifacts/pty-host-linux-x64": {
-			"sha256": "554b5e74a24e698582c61e9c16ccd82421cd68f8857dd4422912391b610cf937"
+			"sha256": "704d2273677552ee22841b16eb06fd9d3d00216176d682220906152f8cbcec8e"
 		},
 		"artifacts/terminfo/67/ghostty": {
 			"sha256": "8ac69a6a57378edd05bcca8769ff49ce3d01e9496ff134781af5b9ee1d934b7b"

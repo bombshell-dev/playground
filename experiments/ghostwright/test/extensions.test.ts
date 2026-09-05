@@ -48,6 +48,13 @@ test('oversized registered OSC discards its complete payload through ST', () => 
 	expect(new TextDecoder().decode((items[1] as { bytes: Uint8Array }).bytes)).toBe('VISIBLE');
 });
 
+test('an over-limit terminator does not swallow the next observation', () => {
+	const stream = new RegisteredOscStream([{ ...registration, maxBufferedBytes: frame.length - 1 }]);
+	const next = new TextEncoder().encode('\x1b]7777;test.semantic;v=1;x\x1b\\');
+	const items = stream.push(Uint8Array.from([...frame, ...next])).items;
+	expect(items.map((item) => item.kind)).toEqual(['error', 'event']);
+});
+
 test('ordinary ANSI output remains one ordinary host-frame item', () => {
 	const stream = new RegisteredOscStream([registration]);
 	const items = stream.push(new TextEncoder().encode('a\u001b[31mb')).items;

@@ -3,9 +3,11 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { dirname } from 'node:path';
 import {
 	DenoPermissionError,
+	GhostwrightError,
 	HostCommandTimeoutError,
 	ProtocolError,
 	SidecarExitedError,
+	WriteInterruptedError,
 } from '../errors.ts';
 import {
 	decodeCbor,
@@ -50,11 +52,14 @@ export class SidecarClient {
 	#closed = false;
 	#applicationPid?: number;
 	#applicationPgid?: number;
+	#exited: Promise<void>;
 	private constructor(
 		child: ChildProcessWithoutNullStreams,
 		readonly commandTimeoutMs: number,
 	) {
 		this.#child = child;
+		this.#exited = new Promise((resolve) => child.once('close', () => resolve()));
+		child.stdin.on('error', (error) => this.#fail(error));
 		child.stdout.on('data', (b: Buffer) => {
 			try {
 				for (const f of this.#decoder.push(b)) this.#frame(f);
@@ -131,8 +136,12 @@ export class SidecarClient {
 		clearTimeout(p.timer);
 		this.#pending.delete(f.correlation);
 		if (f.kind === FrameKind.ERROR) {
-			const d = decodeCbor(f.payload) as { code: string; message: string };
-			p.reject(new ProtocolError(`${d.code}: ${d.message}`));
+			const d = decodeCbor(f.payload) as { code: string; message: string; bytesWritten?: number };
+			p.reject(
+				d.code === 'GW_WRITE_INTERRUPTED' && d.bytesWritten !== undefined
+					? new WriteInterruptedError(d.bytesWritten, d.message)
+					: new GhostwrightError({ code: d.code, message: d.message }),
+			);
 		} else {
 			const response = f.payload.length ? decodeCbor(f.payload) : {};
 			p.resolve(
@@ -149,6 +158,16 @@ export class SidecarClient {
 		}
 		this.#pending.clear();
 		this.#emit('fatal', error);
+		// A killed sidecar cannot run Rust Drop. Own this last-resort cleanup here.
+		if (
+			this.#applicationPgid &&
+			this.#applicationPgid === this.#applicationPid &&
+			this.#applicationPgid > 1
+		) {
+			try {
+				process.kill(-this.#applicationPgid, 'SIGKILL');
+			} catch {}
+		}
 		this.#child.kill('SIGKILL');
 	}
 	// oxlint-disable-next-line bombshell-dev/max-params -- request needs kind, value, raw flag, and timeout
@@ -212,8 +231,20 @@ export class SidecarClient {
 		this.#applicationPgid = result.processGroupId;
 		return result;
 	}
-	write(data: Uint8Array): Promise<AckResponse> {
-		return this.request<AckResponse>(FrameKind.WRITE, data, true);
+	async write(data: Uint8Array, signal?: AbortSignal): Promise<AckResponse> {
+		signal?.throwIfAborted();
+		const sequence = this.#sequence;
+		const response = this.request<AckResponse>(FrameKind.WRITE, data, true);
+		const abort = () => {
+			void this.request(FrameKind.CANCEL_WRITE, { sequence }).catch(() => undefined);
+		};
+		signal?.addEventListener('abort', abort, { once: true });
+		if (signal?.aborted) abort();
+		try {
+			return await response;
+		} finally {
+			signal?.removeEventListener('abort', abort);
+		}
 	}
 	resize(value: unknown): Promise<AckResponse> {
 		return this.request<AckResponse>(FrameKind.RESIZE, value);
@@ -228,6 +259,12 @@ export class SidecarClient {
 		} finally {
 			this.#closed = true;
 			this.#child.stdin.end();
+			const timer = setTimeout(() => this.#child.kill('SIGKILL'), timeout ?? this.commandTimeoutMs);
+			try {
+				await this.#exited;
+			} finally {
+				clearTimeout(timer);
+			}
 		}
 	}
 	forceKill(): void {

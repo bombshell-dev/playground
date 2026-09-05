@@ -2,6 +2,7 @@ import { StrictLocatorError, TerminalAssertionError } from '../errors.ts';
 import type { AsyncLocatorExpectation, AsyncTerminalExpectation } from './types-internal.ts';
 import type {
 	AssertionOptions,
+	LocatorMatch,
 	ScreenRevision,
 	ScreenSnapshot,
 	StableAssertionOptions,
@@ -85,7 +86,7 @@ async function wait(
 }
 class LocatorExpectation implements AsyncLocatorExpectation {
 	constructor(readonly locator: Locator) {}
-	async toBePresent(options: AssertionOptions = {}): Promise<Locator> {
+	async toBePresent(options: AssertionOptions = {}): Promise<LocatorMatch> {
 		const timeout =
 			options.timeoutMs ??
 			this.locator.session.options.assertionTimeoutMs ??
@@ -104,7 +105,7 @@ class LocatorExpectation implements AsyncLocatorExpectation {
 			);
 		}
 	}
-	async toBeStable(options: StableAssertionOptions = {}): Promise<Locator> {
+	async toBeStable(options: StableAssertionOptions = {}): Promise<LocatorMatch> {
 		const timeout =
 				options.timeoutMs ??
 				this.locator.session.options.assertionTimeoutMs ??
@@ -203,7 +204,7 @@ class LocatorExpectation implements AsyncLocatorExpectation {
 			);
 		}
 	}
-	async toHaveStyle(style: StyleQuery, options: AssertionOptions = {}): Promise<Locator> {
+	async toHaveStyle(style: StyleQuery, options: AssertionOptions = {}): Promise<LocatorMatch> {
 		const timeout =
 				options.timeoutMs ??
 				this.locator.session.options.assertionTimeoutMs ??
@@ -235,7 +236,7 @@ class LocatorExpectation implements AsyncLocatorExpectation {
 			);
 		return this.locator.matches()[0];
 	}
-	async toContainCursor(options: AssertionOptions = {}): Promise<Locator> {
+	async toContainCursor(options: AssertionOptions = {}): Promise<LocatorMatch> {
 		const timeout =
 				options.timeoutMs ??
 				this.locator.session.options.assertionTimeoutMs ??
@@ -350,6 +351,11 @@ class TerminalExpectation implements AsyncTerminalExpectation {
 	}
 }
 /** Create an async assertion expectation for a locator or terminal session. */
+export function expectTerminal(target: Locator): LocatorExpectation;
+export function expectTerminal(target: TerminalSession): TerminalExpectation;
+export function expectTerminal(
+	target: Locator | TerminalSession,
+): LocatorExpectation | TerminalExpectation;
 export function expectTerminal(
 	target: Locator | TerminalSession,
 ): LocatorExpectation | TerminalExpectation {

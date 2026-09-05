@@ -29,4 +29,5 @@ const semanticAuto: UIExtension = (context) => {
 	});
 };
 
+// oxlint-disable-next-line import/no-default-export -- clack/ui package extension loader expects a default export
 export default semanticAuto;

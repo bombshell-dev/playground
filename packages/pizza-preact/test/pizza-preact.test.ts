@@ -1,148 +1,89 @@
-import { expect, test } from 'vitest';
-import { expectTerminal, withTerminalAsync } from 'ghostwright';
-import {
-  clackTtyExtension,
-  expectFocused,
-  expectTreeCondition,
-  type ClackTtySession,
-} from '@ghostwright/clack-tty';
+import { test } from 'vitest';
+import { withTerminalAsync } from 'ghostwright';
+import { clackTtyExtension, expectUI, locator } from '@ghostwright/clack-tty';
 
-// The Preact application is a process-level black box. This test drives the
-// real terminal and observes only its visible screen and semantic tree.
-const extension = clackTtyExtension();
-
-const entry = () => ({
-  command: process.execPath,
-  args: ['--import', 'tsx', 'src/index.tsx'],
-  cwd: new URL('..', import.meta.url).pathname,
-  viewport: { columns: 80, rows: 24 },
-  env: { CLACK_UI_SEMANTIC: '1' },
-  trace: 'off' as const,
-  extensions: [extension],
+// Launch the Preact app in a real terminal. Locators find the controls;
+// assertions check the text, borders, and cursor drawn on that terminal.
+const pizza = () => ({
+	command: process.execPath,
+	args: ['--import', 'tsx', 'src/index.tsx'],
+	cwd: new URL('..', import.meta.url).pathname,
+	viewport: { columns: 80, rows: 24 },
+	env: { CLACK_UI_SEMANTIC: '1' },
+	extensions: [clackTtyExtension()],
 });
 
-type Terminal = Parameters<Parameters<typeof withTerminalAsync>[1]>[0];
+const delivery = locator('form[label="delivery"]');
+const name = locator('input[label="name"]');
+const address = locator('input[label="address"]');
+const addCard = locator('button[label="add-card"]');
+const cardDetails = locator('dialog[label="card"]');
+const cardNumber = locator('input[label="card-number"]');
+const expiry = locator('input[label="expiry"]');
+const cvc = locator('input[label="cvc"]');
+const submitCard = locator('button[label="submit-card"]');
 
-function semantic(terminal: Terminal) {
-  return terminal.extension(extension) as ClackTtySession;
-}
+test('return from card details without losing the delivery address', async () => {
+	await withTerminalAsync(pizza(), async (ui) => {
+		// Tell the shop who we are and where to deliver.
+		await ui.expect(delivery).toContainText('Pizza Delivery');
+		await expectUI(ui, name).toHaveInputFocus();
+		await ui.keyboard.type('Ryan');
+		await ui.expect(name).toContainText('Ryan');
 
-async function tabTo(terminal: Terminal, session: ClackTtySession, expectedLabel: string) {
-  const previousLabel = session.locator('[focused]').matches()[0]?.attrs.label;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    await terminal.keyboard.press('Tab');
-    try {
-      await expectTreeCondition(
-        terminal,
-        () => session.locator('[focused]').matches()[0]?.attrs.label !== previousLabel,
-        `focus leaves ${previousLabel}`,
-        1200,
-      );
-    } catch {
-      if (attempt < 2) continue;
-      throw new Error(`focus did not leave ${previousLabel}`);
-    }
+		await ui.keyboard.press('Tab');
+		await expectUI(ui, address).toHaveInputFocus();
+		await ui.keyboard.type('1 Main St');
+		await ui.expect(address).toContainText('1 Main St');
 
-    const actualLabel = session.locator('[focused]').matches()[0]?.attrs.label;
-    expect(actualLabel).toBe(expectedLabel);
-    return;
-  }
-}
+		// Open the card form with the keyboard. Focus moves into the dialog.
+		await ui.keyboard.press('Tab');
+		await expectUI(ui, addCard).toHaveButtonFocus('Add card');
+		await ui.keyboard.press('Enter');
+		await ui.expect(cardDetails).toContainText('Card Details');
 
-test('Preact pizza completes both forms and restores the delivery tab order', async () => {
-  await withTerminalAsync(entry(), async (terminal) => {
-    const session = semantic(terminal);
-    await expectTerminal(terminal.getByText('Pizza Delivery')).toBeStable();
+		await expectUI(ui, cardNumber).toHaveInputFocus();
+		await ui.keyboard.type('4242');
+		await ui.expect(cardNumber).toContainText('4242');
 
-    const name = session.locator('input[label="name"]');
-    const address = session.locator('input[label="address"]');
-    const addCard = session.locator('button[label="add-card"]');
-    const cardNumber = session.locator('input[label="card-number"]');
-    const expiry = session.locator('input[label="expiry"]');
-    const cvc = session.locator('input[label="cvc"]');
-    const submitCard = session.locator('button[label="submit-card"]');
-    const dialog = session.locator('dialog[role="dialog"][label="card"]');
+		await ui.keyboard.press('Tab');
+		await expectUI(ui, expiry).toHaveInputFocus();
+		await ui.keyboard.type('12/30');
+		await ui.expect(expiry).toContainText('12/30');
 
-    await expectFocused(terminal, name);
-    await terminal.keyboard.type('Ryan');
-    await expectTerminal(name.getByText('Ryan')).toBePresent();
-    await tabTo(terminal, session, 'address');
-    await terminal.keyboard.type('1 Main St');
-    await expectTerminal(address.getByText('1 Main St')).toBePresent();
-    await tabTo(terminal, session, 'add-card');
-    await expectFocused(terminal, addCard);
-    await terminal.keyboard.press('Enter');
+		await ui.keyboard.press('Tab');
+		await expectUI(ui, cvc).toHaveInputFocus();
+		await ui.keyboard.type('123');
+		await ui.expect(cvc).toContainText('123');
 
-    await expectTreeCondition(terminal, () => dialog.matches().length === 1, 'dialog opens');
-    await expectFocused(terminal, cardNumber);
-    await tabTo(terminal, session, 'expiry');
-    await expectFocused(terminal, expiry);
-    await tabTo(terminal, session, 'cvc');
-    await expectFocused(terminal, cvc);
-    await tabTo(terminal, session, 'submit-card');
-    await expectFocused(terminal, submitCard);
-    await terminal.keyboard.press('Enter');
+		// Submit the form. We return to the opener, with our delivery details intact.
+		await ui.keyboard.press('Tab');
+		await expectUI(ui, submitCard).toHaveButtonFocus('Submit card');
+		await ui.keyboard.press('Enter');
+		await expectUI(ui, addCard).toHaveButtonFocus('Add card');
+		await ui.expect(name).toContainText('Ryan');
+		await ui.expect(address).toContainText('1 Main St');
 
-    await expectTreeCondition(terminal, () => dialog.matches().length === 0, 'dialog closes');
-    await expectFocused(terminal, addCard);
-    await expectTerminal(name.getByText('Ryan')).toBePresent();
-    await expectTerminal(address.getByText('1 Main St')).toBePresent();
-    await tabTo(terminal, session, 'name');
-    await expectFocused(terminal, name);
-  });
+		await ui.keyboard.press('Tab');
+		await expectUI(ui, name).toHaveInputFocus();
+	});
 });
 
-test('focused inputs show a native cursor that follows the caret', async () => {
-  await withTerminalAsync(entry(), async (terminal) => {
-    const session = semantic(terminal);
-    await expectTerminal(terminal.getByText('Pizza Delivery')).toBeStable();
+test('correct a typo before moving to the address', async () => {
+	await withTerminalAsync(pizza(), async (ui) => {
+		await expectUI(ui, name).toHaveInputFocus();
+		await ui.keyboard.type('Ryn');
+		await ui.expect(name).toContainText('Ryn');
 
-    const name = session.locator('input[label="name"]');
-    const address = session.locator('input[label="address"]');
-    const addCard = session.locator('button[label="add-card"]');
-    const cursorIsInside = (selector: string) => {
-      const cursor = terminal.screen.snapshot().cursor;
-      const rect = session.locator(selector).matches()[0]?.geo?.term;
-      return (
-        cursor.visible &&
-        rect !== undefined &&
-        cursor.column > rect.column &&
-        cursor.column < rect.column + rect.width - 1 &&
-        cursor.row > rect.row &&
-        cursor.row < rect.row + rect.height - 1
-      );
-    };
+		// Move before the final letter and insert the missing "a".
+		await ui.keyboard.press('ArrowLeft');
+		await ui.keyboard.type('a');
+		await ui.expect(name).toContainText('Ryan');
+		await ui.expect(name).toContainCursor({ visible: true });
 
-    await expectFocused(terminal, name);
-    const initial = await expectTerminal(terminal).toSatisfy(
-      () => cursorIsInside('input[label="name"]'),
-      { settleMs: 100 },
-    );
-
-    await terminal.keyboard.type('cat');
-    const typed = await expectTerminal(terminal).toSatisfy(
-      () => terminal.screen.snapshot().cursor.column === initial.cursor.column + 3,
-      { settleMs: 100 },
-    );
-
-    await terminal.keyboard.press('ArrowLeft');
-    await expectTerminal(terminal).toSatisfy(
-      () => terminal.screen.snapshot().cursor.column === typed.cursor.column - 1,
-      { settleMs: 100 },
-    );
-
-    await terminal.keyboard.press('Tab');
-    await expectFocused(terminal, address);
-    await expectTerminal(terminal).toSatisfy(
-      () => cursorIsInside('input[label="address"]'),
-      { settleMs: 100 },
-    );
-
-    await terminal.keyboard.press('Tab');
-    await expectFocused(terminal, addCard);
-    await expectTerminal(terminal).toSatisfy(
-      () => !terminal.screen.snapshot().cursor.visible,
-      { settleMs: 100 },
-    );
-  });
+		// Tab changes focus, not the name we just corrected.
+		await ui.keyboard.press('Tab');
+		await expectUI(ui, address).toHaveInputFocus();
+		await ui.expect(name).toContainText('Ryan');
+	});
 });

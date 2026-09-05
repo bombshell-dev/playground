@@ -5,6 +5,7 @@ import { dirname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
 	ReservedEnvironmentError,
+	CoordinateRangeError,
 	UnsupportedPlatformError,
 	AssetIntegrityError,
 	DenoPermissionError,

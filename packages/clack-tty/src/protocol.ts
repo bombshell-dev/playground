@@ -1,9 +1,8 @@
 /**
  * Wire protocol for the clack.ui semantic tree: OSC `7777;clack.ui;v=1;<payload>ST`.
  *
- * Version 1 is independent of the retired FreedomTtyFrameV1. It keeps the spike's
- * lessons: versioned envelopes, bounded payloads, strict fail-closed validation,
- * and honest geometry (authoritative bounds only, never guessed).
+ * One current schema, with bounded payloads, strict validation, and original
+ * geometry. The envelope marker identifies the wire format, not a type family.
  *
  * Schema reference: .pi/specs/ghostwright-clack-tty-spec.md (REQ-006..REQ-009).
  */
@@ -43,13 +42,7 @@ export interface ClackNodeAttrs {
 	readonly role?: string;
 	readonly label?: string;
 	readonly input?: boolean;
-	readonly focusable: boolean;
 	readonly custom?: Readonly<Record<string, JsonScalar>>;
-}
-
-export interface ClackNodeStates {
-	readonly focused: boolean;
-	readonly focusRoot: boolean;
 }
 
 export interface ClackNodeGeometry {
@@ -58,28 +51,26 @@ export interface ClackNodeGeometry {
 	readonly visible?: Rect;
 }
 
-export interface ClackNodeV1 {
+export interface ClackNode {
 	readonly key: string;
 	readonly name: string;
 	readonly parent: string | null;
 	readonly order: number;
 	readonly attrs: ClackNodeAttrs;
-	readonly states: ClackNodeStates;
 	readonly geo?: ClackNodeGeometry;
 }
 
-export interface ClackFrameV1 {
+export interface ClackFrame {
 	readonly v: 1;
 	readonly frame: number;
 	readonly surface: Readonly<{ columns: number; rows: number; row: number }>;
-	readonly focusStack: readonly string[];
-	readonly nodes: readonly ClackNodeV1[];
+	readonly nodes: readonly ClackNode[];
 }
 
 const utf8 = new TextEncoder();
-const fail = (code: string, message: string): never => {
+function fail(code: string, message: string): never {
 	throw new GhostwrightError({ code, message: message.slice(0, 1024) });
-};
+}
 const isScalar = (value: unknown): value is JsonScalar =>
 	value === null ||
 	typeof value === 'string' ||
@@ -87,7 +78,7 @@ const isScalar = (value: unknown): value is JsonScalar =>
 	(typeof value === 'number' && Number.isFinite(value));
 
 /** Encode a semantic frame into its registered OSC byte sequence (REQ-005). */
-export function encodeFrame(frame: ClackFrameV1): Uint8Array {
+export function encodeFrame(frame: ClackFrame): Uint8Array {
 	const json = JSON.stringify(validateFrame(frame));
 	const bytes = utf8.encode(json);
 	if (bytes.length > LIMITS.payloadBytes)
@@ -100,19 +91,22 @@ export function encodeFrame(frame: ClackFrameV1): Uint8Array {
 }
 
 /** Decode a registered OSC payload into a validated frame (REQ-016). */
-export function decodeFrame(payload: Uint8Array): ClackFrameV1 {
-	const source = Buffer.from(payload).toString('ascii');
+export function decodeFrame(payload: Uint8Array): ClackFrame {
+	if (payload.length > Math.ceil((LIMITS.payloadBytes * 4) / 3))
+		fail('GW_CLACK_LIMIT', 'Encoded payload exceeds limit');
+	const source = new TextDecoder('utf-8', { fatal: true }).decode(payload);
 	if (!/^[A-Za-z0-9_-]*$/.test(source))
 		fail('GW_CLACK_BASE64', 'Semantic payload is not unpadded base64url');
 	let decoded: Buffer;
 	try {
 		decoded = Buffer.from(source, 'base64url');
+		if (decoded.toString('base64url') !== source) fail('GW_CLACK_BASE64', 'Noncanonical base64url');
 	} catch {
 		fail('GW_CLACK_BASE64', 'Semantic payload cannot be decoded');
 	}
 	let parsed: unknown;
 	try {
-		parsed = JSON.parse(decoded.toString('utf8'));
+		parsed = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(decoded));
 	} catch {
 		fail('GW_CLACK_BASE64', 'Semantic payload is not valid UTF-8 JSON');
 	}
@@ -120,7 +114,7 @@ export function decodeFrame(payload: Uint8Array): ClackFrameV1 {
 }
 
 /** Validate an already-parsed frame against the v1 schema and limits (REQ-006, REQ-008). */
-export function validateFrame(input: unknown): ClackFrameV1 {
+export function validateFrame(input: unknown): ClackFrame {
 	if (!input || typeof input !== 'object' || Array.isArray(input))
 		fail('GW_CLACK_SCHEMA', 'Semantic frame must be an object');
 	const frame = input as Record<string, unknown>;
@@ -139,9 +133,6 @@ export function validateFrame(input: unknown): ClackFrameV1 {
 		(surface.row as number) <= 0
 	)
 		fail('GW_CLACK_SCHEMA', 'Invalid render surface');
-	const focusStack = frame.focusStack;
-	if (!Array.isArray(focusStack) || !focusStack.every((key) => typeof key === 'string'))
-		fail('GW_CLACK_SCHEMA', 'Invalid focus stack');
 	if (!Array.isArray(frame.nodes)) fail('GW_CLACK_SCHEMA', 'Invalid semantic node list');
 	const rawNodes = frame.nodes as unknown[];
 	if (rawNodes.length > LIMITS.nodes)
@@ -156,12 +147,11 @@ export function validateFrame(input: unknown): ClackFrameV1 {
 			rows: surface.rows as number,
 			row: surface.row as number,
 		},
-		focusStack: Object.freeze([...(focusStack as string[])]),
 		nodes: Object.freeze(nodes),
 	};
 }
 
-function validateNode(raw: unknown, index: number): ClackNodeV1 {
+function validateNode(raw: unknown, index: number): ClackNode {
 	if (!raw || typeof raw !== 'object' || Array.isArray(raw))
 		fail('GW_CLACK_SCHEMA', `Node ${index} must be an object`);
 	const node = raw as Record<string, unknown>;
@@ -172,7 +162,7 @@ function validateNode(raw: unknown, index: number): ClackNodeV1 {
 	if (!Number.isInteger(node.order) || (node.order as number) < 0)
 		fail('GW_CLACK_SCHEMA', `Node ${key} has an invalid sibling order`);
 	const attrs = node.attrs as Record<string, unknown> | undefined;
-	if (!attrs || typeof attrs.focusable !== 'boolean')
+	if (!attrs || typeof attrs !== 'object' || Array.isArray(attrs))
 		fail('GW_CLACK_SCHEMA', `Node ${key} has invalid attributes`);
 	if (attrs.role !== undefined) stringField(attrs.role, `node ${key} role`, LIMITS.attribute);
 	if (attrs.label !== undefined) stringField(attrs.label, `node ${key} label`, LIMITS.attribute);
@@ -193,13 +183,6 @@ function validateNode(raw: unknown, index: number): ClackNodeV1 {
 			custom[name] = value as JsonScalar;
 		}
 	}
-	const states = node.states as Record<string, unknown> | undefined;
-	if (
-		!states ||
-		typeof states.focused !== 'boolean' ||
-		typeof states.focusRoot !== 'boolean'
-	)
-		fail('GW_CLACK_SCHEMA', `Node ${key} has invalid states`);
 	return {
 		key,
 		name,
@@ -209,25 +192,22 @@ function validateNode(raw: unknown, index: number): ClackNodeV1 {
 			...(attrs.role !== undefined ? { role: attrs.role as string } : {}),
 			...(attrs.label !== undefined ? { label: attrs.label as string } : {}),
 			...(attrs.input !== undefined ? { input: attrs.input as boolean } : {}),
-			focusable: attrs.focusable as boolean,
 			...(custom !== undefined ? { custom } : {}),
 		},
-		states: { focused: states.focused as boolean, focusRoot: states.focusRoot as boolean },
 		...(node.geo !== undefined ? { geo: validateGeometry(node.geo, key) } : {}),
 	};
 }
 
 function validateGeometry(raw: unknown, key: string): ClackNodeGeometry {
-	if (!raw || typeof raw !== 'object')
-		fail('GW_CLACK_SCHEMA', `Node ${key} has invalid geometry`);
+	if (!raw || typeof raw !== 'object') fail('GW_CLACK_SCHEMA', `Node ${key} has invalid geometry`);
 	const geo = raw as Record<string, unknown>;
 	const layout = floatRect(geo.layout, key, 'layout');
 	const term = cellRect(geo.term, key, 'term');
-	const visible =
-		geo.visible === undefined ? undefined : cellRect(geo.visible, key, 'visible');
+	const visible = geo.visible === undefined ? undefined : cellRect(geo.visible, key, 'visible');
 	return { layout, term, ...(visible !== undefined ? { visible } : {}) };
 }
 
+// oxlint-disable-next-line bombshell-dev/max-params -- value, diagnostic identity, and shared budget
 function floatRect(raw: unknown, key: string, field: string): FloatRect {
 	if (!raw || typeof raw !== 'object')
 		fail('GW_CLACK_SCHEMA', `Node ${key} has invalid ${field} geometry`);
@@ -245,6 +225,7 @@ function floatRect(raw: unknown, key: string, field: string): FloatRect {
 	};
 }
 
+// oxlint-disable-next-line bombshell-dev/max-params -- value, diagnostic identity, and shared budget
 function cellRect(raw: unknown, key: string, field: string): Rect {
 	if (!raw || typeof raw !== 'object')
 		fail('GW_CLACK_SCHEMA', `Node ${key} has invalid ${field} geometry`);
@@ -262,23 +243,24 @@ function cellRect(raw: unknown, key: string, field: string): Rect {
 	};
 }
 
+// oxlint-disable-next-line bombshell-dev/max-params -- value, diagnostic identity, and shared budget
 function stringField(value: unknown, what: string, limit: number): string {
 	if (typeof value !== 'string' || value.length === 0)
 		fail('GW_CLACK_SCHEMA', `${what} must be a non-empty string`);
-	if (utf8.encode(value).length > limit)
-		fail('GW_CLACK_LIMIT', `${what} exceeds ${limit} bytes`);
+	if (utf8.encode(value).length > limit) fail('GW_CLACK_LIMIT', `${what} exceeds ${limit} bytes`);
 	return value;
 }
 
 /** Reject duplicate keys and parent links that do not form an acyclic tree within the depth limit (REQ-008). */
-function validateTree(nodes: readonly ClackNodeV1[]): void {
-	const byKey = new Map<string, ClackNodeV1>();
+function validateTree(nodes: readonly ClackNode[]): void {
+	const byKey = new Map<string, ClackNode>();
 	for (const node of nodes) {
-		if (byKey.has(node.key))
-			fail('GW_CLACK_SCHEMA', `Duplicate semantic node key ${node.key}`);
+		if (byKey.has(node.key)) fail('GW_CLACK_SCHEMA', `Duplicate semantic node key ${node.key}`);
 		byKey.set(node.key, node);
 	}
 	for (const node of nodes) {
+		if (node.parent !== null && !byKey.has(node.parent))
+			fail('GW_CLACK_SCHEMA', `Missing parent ${node.parent}`);
 		let current = node.parent ? byKey.get(node.parent) : undefined;
 		const seen = new Set([node.key]);
 		let depth = 0;
@@ -296,7 +278,7 @@ function validateTree(nodes: readonly ClackNodeV1[]): void {
 /**
  * Clay-compatible edge truncation from authoritative float bounds, deliberately
  * not `floor(origin) + ceil(size)` (carried from the retired freedom producer).
- * `surface.row` is 1-based; the result is in 1-based terminal cell space.
+ * `surface.row` is 1-based; the result is in zero-based terminal cell space.
  */
 export function geometryFor(
 	layoutBounds: FloatRect,

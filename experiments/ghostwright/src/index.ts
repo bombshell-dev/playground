@@ -1,10 +1,17 @@
 export * from './types.ts';
+export * from './observations.ts';
+export * from './inspection.ts';
+export * from './locators.ts';
+export * from './matchers.ts';
+export * from './conditions.ts';
+export { AsyncExecution, type Capture, type CaptureOptions } from './execution.ts';
+import { AsyncExecution } from './execution.ts';
 export * from './errors.ts';
 export { isValidKeyName, parseKey } from './keys.ts';
 export { styleMatches, cellsMatchStyle, describeColor } from './styles.ts';
 export { withTerminalAsync } from './async.ts';
-export { withTerminal } from './effection/index.ts';
-export { replayTrace, type ReplayResult } from './tracing/replay.ts';
+export { withTerminal, type EffectionTerminal } from './effection/index.ts';
+export { replayTrace, type ReplayResult, type ReplayOptions } from './tracing/replay.ts';
 import { expectTerminal as expectAsync } from './assertions/index.ts';
 import { EffectionLocator, EffectionTerminal, expectOperation } from './effection/index.ts';
 import { Locator, type TerminalSession } from './terminal/session.ts';
@@ -31,6 +38,7 @@ export function expectTerminal(
 	| AsyncLocatorExpectation
 	| OperationTerminalExpectation
 	| AsyncTerminalExpectation {
+	if (target instanceof AsyncExecution) return expectAsync(target.session);
 	return (
 		target instanceof EffectionLocator || target instanceof EffectionTerminal
 			? expectOperation(target)

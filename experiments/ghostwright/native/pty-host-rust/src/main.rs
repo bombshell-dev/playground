@@ -1,3 +1,5 @@
+#[cfg(test)]
+mod contract_tests;
 mod protocol;
 mod session;
 
@@ -58,11 +60,8 @@ impl Host {
                 self.state = HostState::Running;
             }
             kind::WRITE if self.state == HostState::Running => {
-                match self.session.write(&frame.payload) {
-                    Ok(written) => {
-                        self.protocol
-                            .ack(frame.sequence, kind::WRITE, Some(written))?;
-                    }
+                match self.session.queue_write(frame.sequence, frame.payload) {
+                    Ok(()) => {}
                     Err(error) => {
                         self.protocol.error(
                             frame.sequence,
@@ -102,6 +101,12 @@ impl Host {
                             .error(frame.sequence, "GW_LAUNCH", &error, false)?;
                     }
                 }
+            }
+            kind::CANCEL_WRITE if self.state != HostState::Initial => {
+                let sequence = protocol::decode_cancel(&frame.payload)?;
+                self.session.cancel_write(sequence, &mut self.protocol)?;
+                self.protocol
+                    .ack(frame.sequence, kind::CANCEL_WRITE, None)?;
             }
             kind::CLOSE if self.state != HostState::Initial => {
                 self.session.cleanup(&mut self.protocol)?;
@@ -156,6 +161,33 @@ impl Host {
     }
 
     fn run(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        session::set_nonblocking(nix::libc::STDOUT_FILENO)?;
+        let outcome = self.event_loop();
+        let cleanup = self.session.cleanup(&mut self.protocol);
+        // Flush final acknowledgements, but never retain the owned process group
+        // indefinitely because a client stopped reading its control channel.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+        while self.protocol.has_output() && std::time::Instant::now() < deadline {
+            if self.protocol.flush_output().is_err() {
+                break;
+            }
+            if self.protocol.has_output() {
+                let mut fd = nix::libc::pollfd {
+                    fd: 1,
+                    events: nix::libc::POLLOUT,
+                    revents: 0,
+                };
+                unsafe {
+                    nix::libc::poll(&mut fd, 1, 25);
+                }
+            }
+        }
+        outcome?;
+        cleanup?;
+        Ok(())
+    }
+
+    fn event_loop(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         unsafe {
             nix::libc::signal(nix::libc::SIGPIPE, nix::libc::SIG_IGN);
         }
@@ -168,12 +200,28 @@ impl Host {
                 },
                 nix::libc::pollfd {
                     fd: self.session.poll_fd().unwrap_or(-1),
-                    events: nix::libc::POLLIN,
+                    events: (if self.protocol.can_read_pty() {
+                        nix::libc::POLLIN
+                    } else {
+                        0
+                    }) | (if self.session.wants_write() {
+                        nix::libc::POLLOUT
+                    } else {
+                        0
+                    }),
+                    revents: 0,
+                },
+                nix::libc::pollfd {
+                    fd: nix::libc::STDOUT_FILENO,
+                    events: if self.protocol.has_output() {
+                        nix::libc::POLLOUT
+                    } else {
+                        0
+                    },
                     revents: 0,
                 },
             ];
-            let count = if descriptors[1].fd >= 0 { 2 } else { 1 };
-            let result = unsafe { nix::libc::poll(descriptors.as_mut_ptr(), count, 25) };
+            let result = unsafe { nix::libc::poll(descriptors.as_mut_ptr(), 3, 25) };
             if result < 0 {
                 let error = io::Error::last_os_error();
                 if error.raw_os_error() != Some(nix::libc::EINTR) {
@@ -186,11 +234,14 @@ impl Host {
             {
                 return Ok(());
             }
-            if count == 2 && descriptors[1].revents & (nix::libc::POLLIN | nix::libc::POLLHUP) != 0
+            if self.protocol.can_read_pty()
+                && descriptors[1].revents & (nix::libc::POLLIN | nix::libc::POLLHUP) != 0
             {
                 self.session.read_pty(&mut self.protocol)?;
             }
+            self.session.flush_writes(&mut self.protocol)?;
             self.session.tick(&mut self.protocol)?;
+            self.protocol.flush_output()?;
             if self.session.child_exited() && self.state == HostState::Running {
                 self.state = HostState::Draining;
             }

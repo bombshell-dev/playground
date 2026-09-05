@@ -1,42 +1,26 @@
-/**
- * Revision-driven assertion helpers for tree locators. Every wait re-arms on
- * timeout because a wake-up can be lost when it races the subscribe window in
- * ghostwright's `waitForChange`; no polling intervals, no sleeps.
- */
-import { expectTerminal, type AsyncTerminal } from 'ghostwright';
-import type { ClackTtyLocator } from './extension.ts';
+import {
+	all,
+	createExpect,
+	cursorInside,
+	defineMatchers,
+	edgeHasStyle,
+	textHasStyle,
+	type RegionInspection,
+} from 'ghostwright';
 
-export async function expectTreeCondition(
-	terminal: AsyncTerminal,
-	condition: () => boolean,
-	description: string,
-	deadlineMs = 15000,
-): Promise<unknown> {
-	const deadline = Date.now() + deadlineMs;
-	for (;;) {
-		try {
-			return await expectTerminal(terminal).toSatisfy(condition, {
-				settleMs: 0,
-				timeoutMs: 1000,
-			});
-		} catch {
-			if (Date.now() > deadline) {
-				throw new Error(`${description}: condition never converged`);
-			}
-		}
-	}
-}
-
-export function expectFocused(
-	terminal: AsyncTerminal,
-	locator: ClackTtyLocator,
-): Promise<unknown> {
-	return expectTreeCondition(
-		terminal,
-		() => {
-			const matches = locator.matches();
-			return matches.length === 1 && matches[0]!.states.focused;
-		},
-		`${locator.source} to be focused`,
-	);
-}
+/** Clack's visual contracts. These consume terminal evidence, never node state. */
+export const clackMatchers = defineMatchers({
+	toHaveInputFocus(actual: RegionInspection) {
+		return all(
+			edgeHasStyle('top', { foreground: '#ffffff' }),
+			edgeHasStyle('bottom', { foreground: '#ffffff' }),
+			edgeHasStyle('left', { foreground: '#ffffff' }),
+			edgeHasStyle('right', { foreground: '#ffffff' }),
+			cursorInside({ visible: true }),
+		)(actual);
+	},
+	toHaveButtonFocus(actual: RegionInspection, label: string) {
+		return textHasStyle(label, { foreground: '#ffffff' })(actual);
+	},
+});
+export const expectUI = createExpect().extend(clackMatchers);

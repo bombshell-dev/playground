@@ -1,15 +1,16 @@
 import { call, run } from 'effection';
-import type { AsyncTerminal, TerminalLaunchOptions } from './types.ts';
-import { TerminalSession } from './terminal/session.ts';
+import type { TerminalLaunchOptions } from './types.ts';
+import { execution, useSession, type AsyncExecution } from './execution.ts';
 /** Launch a terminal session, run an async body, and clean up when done. */
 export async function withTerminalAsync<T>(
 	options: TerminalLaunchOptions,
-	body: (terminal: AsyncTerminal) => Promise<T>,
+	body: (terminal: AsyncExecution) => Promise<T>,
 ): Promise<T> {
 	return run(function* () {
-		const session: TerminalSession = yield* call(() => TerminalSession.launch(options));
+		const session = yield* useSession(options);
+		const terminal = yield* execution(session);
 		try {
-			const result: T = yield* call(() => body(session));
+			const result: T = yield* call(() => Promise.resolve().then(() => body(terminal)));
 			if (session.trace.policy === 'on')
 				yield* call(() =>
 					session.trace.persist(
@@ -33,8 +34,6 @@ export async function withTerminalAsync<T>(
 					(error as Error & { suppressed?: unknown[] }).suppressed = [traceError];
 			}
 			throw error;
-		} finally {
-			yield* call(() => session.close());
 		}
 	});
 }

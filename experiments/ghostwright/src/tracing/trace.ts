@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import type { ProcessStatus, ScreenSnapshot, TerminalLaunchOptions } from '../types.ts';
 import { TraceWriteError } from '../errors.ts';
+import { normalizeViewport } from '../profile.ts';
 
 export interface TraceEvent {
 	schemaVersion: 1;
@@ -119,8 +120,10 @@ export class SessionTrace {
 						term: 'xterm-ghostty',
 						cellWidth: 10,
 						cellHeight: 20,
-						viewport: snapshot.viewport,
+						viewport: normalizeViewport(this.options.viewport),
 					},
+					extensions: this.options.extensions?.map((extension) => extension.id) ?? [],
+					graphics: this.options.graphics,
 					command: this.options.command,
 					args: (this.options.args ?? []).map((argument, index) =>
 						redactedIndexes.has(index) ? '<redacted>' : argument,

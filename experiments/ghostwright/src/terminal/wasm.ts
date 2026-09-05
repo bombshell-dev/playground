@@ -379,8 +379,9 @@ export class GhosttyWasmTerminal {
 		this.#installCallback(
 			7,
 			3,
-			// oxlint-disable-next-line bombshell-dev/max-params -- ghostty terminal mode query callback API
-			(_terminal, _userdata, _output) => {
+			// oxlint-disable-next-line bombshell-dev/max-params -- ghostty color scheme callback API
+			(_terminal, _userdata, output) => {
+				this.#view().setInt32(output, 1, true); // GHOSTTY_COLOR_SCHEME_DARK
 				return 1;
 			},
 			true,

@@ -58,6 +58,14 @@ The callback owns the terminal. Normal return, throw, assertion failure, and can
 
 Effection users get the same operations and lifecycle through `withTerminal`; see the [Effection examples](examples/effection/).
 
+## Scoped capture and semantic addressing
+
+The new region API separates immutable locator queries, paired observations, terminal-evidence matchers, and scope-owned execution. Start with [Scoped observations and assertions](docs/scoped-execution.md). The pizza and pizza-preact tests demonstrate this API through real PTYs.
+
+Descriptions provide identity and geometry, not proof of focus or value. Typed matcher extensions stay local. Async and Effection capture share one execution core.
+
+The older text-locator and screen-history API below remains available during this experiment.
+
 ## Synchronization model
 
 Ghostwright assertions are revision-driven rather than polling-based:
@@ -157,7 +165,7 @@ The deterministic profile uses `TERM=xterm-ghostty`, package-local terminfo, tru
 
 ## Fidelity boundary
 
-A sidecar output frame is one OS PTY read, not a pixel-rendered frame. The kernel may combine application writes. Ghostwright never splits a read into artificial per-byte revisions and never coalesces separate host frames, but it cannot recover a state overwritten within one kernel-coalesced read.
+A sidecar output frame is one OS PTY read, not a pixel-rendered frame. The kernel may combine application writes. Ghostwright does not create per-byte revisions. Registered OSC boundaries can split one read into coherent description/screen observations. Without such boundaries, it cannot recover a state overwritten within one kernel-coalesced read.
 
 Ghostwright validates terminal-grid and PTY behavior. It does not validate fonts, shaping, rasterization, GPU output, or graphical occlusion.
 
@@ -177,7 +185,7 @@ Working on Ghostwright itself (as opposed to consuming it) requires building tho
 bun run setup
 ```
 
-That fetches the pinned Ghostty source, builds `ghostty-vt.wasm` and the native PTY host, compiles terminfo, refreshes checksums, and verifies the result. It needs the exact Zig version recorded in `ghostty.lock.json` (currently 0.15.2) on `PATH`; nothing else is required. The command is idempotent and safe to re-run.
+That fetches the pinned Ghostty source, builds `ghostty-vt.wasm` and the native PTY host, compiles terminfo, refreshes checksums, and verifies the result. It needs the exact Zig version recorded in `ghostty.lock.json` (currently 0.15.2) on `PATH`; Rust/Cargo and the platform linker are also required for the native host. Consumers do not need these tools. The command is idempotent and safe to re-run.
 
 Then run the tests:
 
@@ -187,18 +195,16 @@ bun test examples
 
 `ghostty.lock.json` is the source of truth for the build contract and is edited by hand. `bun run update:manifest` only refreshes the `artifacts` checksum map, and only for targets built on the current machine; entries for targets built elsewhere (for example the Linux hosts when building on macOS) are preserved. `bun run verify:artifacts` skips and reports artifacts that are absent locally, and fails hard on any artifact that is present but does not match.
 
-The PTY host has two side-by-side implementations:
-
-- `native/pty-host-c`: packaged pure-C default, compiled with Apple Clang or native `musl-gcc`
-- `native/pty-host-rust`: synchronous Rust candidate using `nix`, `minicbor`, and `thiserror`
+The sole PTY host is `native/pty-host-rust`. It uses `nix`, `minicbor`, and `thiserror`, without Tokio. The host owns only POSIX processes, PTYs, byte queues, and control messages.
 
 ```sh
-bun run build:host:c
 bun run build:host:rust
-bun run test:hosts
-bun run compare:hosts
+bun run test:host
+bun run typecheck
 ```
 
-See [`HOST-COMPARISON.md`](HOST-COMPARISON.md). Zig remains pinned only because upstream Ghostty uses it to build `ghostty-vt.wasm`; the PTY host has no Zig wrapper or `zig cc` dependency.
+Set `GHOSTWRIGHT_RUST_TARGET` to select a Rust target. Release builds need the matching linker and standard library. This rewrite has been built and tested locally only on macOS arm64; Linux and macOS x64 artifacts still need release-runner validation.
+
+[`HOST-COMPARISON.md`](HOST-COMPARISON.md) is a historical report. Zig remains pinned for upstream Ghostty WASM.
 
 Release jobs build native targets on matching runners, compile tracked terminfo, generate package output, and record checksums. `bun run verify:artifacts` independently checks hashes, protocol markers, WASM exports, and ABI layouts without rebuilding.
