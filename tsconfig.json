@@ -3,5 +3,15 @@
 	"compilerOptions": {
 		"types": ["node"],
 		"lib": ["ESNext"]
-	}
+	},
+	"include": [
+		"*.ts",
+		"scripts/**/*.ts",
+		"examples/**/*.ts",
+		"vendor/ui/**/*.ts",
+		"vendor/clack-ui/**/*.ts",
+		"packages/clack-tty/**/*.ts",
+		"packages/hello-world/**/*.ts",
+		"packages/pizza/**/*.ts"
+	]
 }

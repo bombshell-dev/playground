@@ -500,12 +500,7 @@ impl Drop for Session {
         }
         if let Some(child) = self.child.filter(|_| !self.child_exited) {
             unsafe { nix::libc::kill(child.as_raw(), nix::libc::SIGKILL) };
-            loop {
-                match waitpid(child, None) {
-                    Err(nix::errno::Errno::EINTR) => continue,
-                    _ => break,
-                }
-            }
+            while let Err(nix::errno::Errno::EINTR) = waitpid(child, None) {}
         }
     }
 }

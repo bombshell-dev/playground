@@ -137,6 +137,5 @@ if (import.meta.main) {
 			message: 'usage: bun test/host-contract.ts <pty-host-path>',
 		});
 	await runHostContract(contractPath);
-	// oxlint-disable-next-line no-console -- test script
-	console.log(`host contract passed: ${contractPath}`);
+	console.info(`host contract passed: ${contractPath}`);
 }

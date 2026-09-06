@@ -58,19 +58,22 @@ export class EffectionLocator implements OperationLocator {
 /** Effection wrapper around a TerminalSession. */
 export class EffectionTerminal implements OperationTerminal {
 	constructor(readonly inner: AsyncExecution) {}
-	get signal() {
+	get signal(): AbortSignal {
 		return this.inner.signal;
 	}
-	assert(locator: RegionLocator, matcher: Matcher) {
+	assert(locator: RegionLocator, matcher: Matcher): ReturnType<typeof assertRegion> {
 		return assertRegion(this.inner.session, locator, matcher);
 	}
-	expect(locator: RegionLocator) {
+	expect(locator: RegionLocator): ReturnType<typeof expectRegion.operation> {
 		return expectRegion.operation(this, locator);
 	}
-	click(locator: RegionLocator, options?: MouseOptions) {
+	click(locator: RegionLocator, options?: MouseOptions): Operation<ActionReceipt> {
 		return op(() => this.inner.click(locator, options));
 	}
-	capture(options: CaptureOptions, body: (terminal: EffectionTerminal) => Operation<unknown>) {
+	capture(
+		options: CaptureOptions,
+		body: (terminal: EffectionTerminal) => Operation<unknown>,
+	): ReturnType<typeof captureOperation> {
 		return captureOperation(this.inner.session, options, (terminal) =>
 			body(new EffectionTerminal(terminal)),
 		);
@@ -97,7 +100,7 @@ export class EffectionTerminal implements OperationTerminal {
 		signal: (s: string, t?: 'child' | 'process-group') => op(() => this.inner.process.signal(s, t)),
 		waitForExit: (o?: AssertionOptions) => op(() => this.inner.process.waitForExit(o)),
 	};
-	get screen() {
+	get screen(): OperationTerminal['screen'] {
 		return this.inner.screen;
 	}
 	revisions = {
@@ -114,7 +117,7 @@ export class EffectionTerminal implements OperationTerminal {
 		copyImageData: (id: number) => op(() => this.inner.graphics.copyImageData(id)),
 	};
 	getByText(t: string, o?: TextLocatorOptions): EffectionLocator {
-		return new EffectionLocator(this.inner.getByText(t, o) as Locator);
+		return new EffectionLocator(this.inner.getByText(t, o));
 	}
 	region(r: Rect): OperationRegion {
 		const x = this.inner.region(r);

@@ -36,11 +36,11 @@ export class RegisteredOscStream {
 	push(input: Uint8Array): OscStreamResult {
 		const items: OscStreamItem[] = [];
 		let ordinary: number[] = [];
-		const flush = () => {
+		const flush = (): void => {
 			if (ordinary.length) items.push({ kind: 'ordinary', bytes: bytes(ordinary) });
 			ordinary = [];
 		};
-		const releaseCandidate = () => {
+		const releaseCandidate = (): void => {
 			ordinary.push(...this.#candidate);
 			this.#candidate = [];
 			this.#state = 'normal';

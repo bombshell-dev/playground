@@ -84,11 +84,11 @@ export const all =
 		};
 	};
 
-// Each method may have its own argument tuple. `any` is confined to this
-// heterogeneous registry constraint; the inferred public methods preserve it.
+// Contravariant constraint for heterogeneous argument tuples. A definition is
+// callable only after its own tuple has been inferred by bindMatcher.
 export type MatcherDefinitions = Record<
 	string,
-	(actual: RegionInspection, ...args: any[]) => MatchResult
+	(actual: RegionInspection, ...args: never[]) => MatchResult
 >;
 export function defineMatchers<const M extends MatcherDefinitions>(matchers: M): Readonly<M> {
 	return Object.freeze({ ...matchers });
@@ -121,12 +121,19 @@ export interface ExpectFactory<M extends MatcherDefinitions> {
 	operation(executor: OperationAssertionExecutor, locator: RegionLocator): OperationExpectations<M>;
 	extend<N extends MatcherDefinitions>(matchers: N): ExpectFactory<M & N>;
 }
+function bindMatcher<Arguments extends unknown[], Result>(
+	definition: (actual: RegionInspection, ...args: Arguments) => MatchResult,
+	assert: (matcher: Matcher) => Result,
+): (...args: Arguments) => Result {
+	return (...args) => assert((actual) => definition(actual, ...args));
+}
+
 function factory<M extends MatcherDefinitions>(definitions: M): ExpectFactory<M> {
 	const expect = (executor: AssertionExecutor, locator: RegionLocator): Expectations<M> =>
 		Object.fromEntries(
 			Object.entries(definitions).map(([name, matcher]) => [
 				name,
-				(...args: unknown[]) => executor.assert(locator, (actual) => matcher(actual, ...args)),
+				bindMatcher(matcher, (assertion) => executor.assert(locator, assertion)),
 			]),
 		) as unknown as Expectations<M>; // Object.fromEntries erases each method's argument tuple.
 	return Object.freeze(
@@ -138,7 +145,7 @@ function factory<M extends MatcherDefinitions>(definitions: M): ExpectFactory<M>
 				return Object.fromEntries(
 					Object.entries(definitions).map(([name, matcher]) => [
 						name,
-						(...args: unknown[]) => executor.assert(locator, (actual) => matcher(actual, ...args)),
+						bindMatcher(matcher, (assertion) => executor.assert(locator, assertion)),
 					]),
 				) as unknown as OperationExpectations<M>;
 			},

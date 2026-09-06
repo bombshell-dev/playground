@@ -45,9 +45,10 @@ export function collectValues(form: HostElement): Record<string, string> {
 		for (const child of element.children) {
 			if (child.type !== 'element') continue;
 			if (child.name === 'input') {
-				const key = typeof child.properties.label === 'string'
-					? child.properties.label
-					: String(child.properties.key ?? id(child.node!));
+				const key =
+					typeof child.properties.label === 'string'
+						? child.properties.label
+						: String(child.properties.key ?? id(child.node!));
 				values[key] = String(child.properties.value ?? '');
 			}
 			visit(child);

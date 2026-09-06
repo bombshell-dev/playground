@@ -1,4 +1,3 @@
-// oxlint-disable no-explicit-any
 import { createContext } from './context.ts';
 import type { Node } from './node.ts';
 
@@ -6,7 +5,8 @@ import type { Node } from './node.ts';
  * The shape every api core must satisfy: each member is a function whose first
  * parameter is the {@link Node} it operates on.
  */
-type Core = Record<string, (node: Node, ...args: any[]) => any>;
+type Core = Record<string, (node: Node, ...args: never[]) => unknown>;
+type Signature<F extends Core[string]> = (...args: Parameters<F>) => ReturnType<F>;
 
 /**
  * A function that surrounds a core member, optionally delegating to the next
@@ -24,10 +24,8 @@ export interface Middleware<TArgs extends unknown[], TReturn> {
  * The set of middlewares that can surround a core `A`. Each member is wrapped
  * by a {@link Middleware} over that member's own signature — node included.
  */
-export type Around<A> = {
-	[K in keyof A]: A[K] extends (...args: infer TArgs) => infer TReturn
-		? Middleware<TArgs, TReturn>
-		: never;
+export type Around<A extends Core> = {
+	[K in keyof A]: Middleware<Parameters<A[K]>, ReturnType<A[K]>>;
 };
 
 export interface Api<A extends Core> {
@@ -63,11 +61,8 @@ export function createApi<A extends Core>(name: string, core: A): Api<A> {
 		for (const key of Object.keys(inner) as (keyof A)[]) {
 			const current = outer[key];
 			const decoration = inner[key];
-			if (!current) {
-				result[key] = decoration;
-			} else {
-				result[key] = combine([current as any, decoration as any]) as Around<A>[keyof A];
-			}
+			if (!decoration) continue;
+			result[key] = current ? combine([current, decoration]) : decoration;
 		}
 		return result;
 	}
@@ -79,13 +74,14 @@ export function createApi<A extends Core>(name: string, core: A): Api<A> {
 		if (Object.keys(around).length === 0) {
 			return core;
 		} else {
-			const handle = {} as A;
+			const handle = { ...core };
 			for (const key of fields) {
-				const middleware = around[key] as Middleware<any[], any> | undefined;
-				if (!middleware) {
-					handle[key] = core[key];
-				} else {
-					handle[key] = ((...args: any[]) => middleware(args, core[key] as any)) as A[keyof A];
+				const middleware = around[key];
+				if (middleware) {
+					const member = core[key] as Signature<A[typeof key]>;
+					// Preserve the key/signature association erased by the dynamic traversal.
+					handle[key] = ((...args: Parameters<A[typeof key]>) =>
+						middleware(args, member)) as A[typeof key];
 				}
 			}
 			return handle;
@@ -107,16 +103,19 @@ export function createApi<A extends Core>(name: string, core: A): Api<A> {
 	}
 
 	const api: Api<A> = {
-		methods: fields.reduce((methods, key) => {
-			return Object.assign(methods, {
-				[key]: (node: Node, ...args: any[]) => api.invoke(key, [node, ...args] as any),
-			});
-		}, {} as A),
+		methods: fields.reduce(
+			(methods, key) => {
+				return Object.assign(methods, {
+					[key]: (...args: Parameters<A[typeof key]>) => api.invoke(key, args),
+				});
+			},
+			{ ...core },
+		),
 
 		invoke(key, args) {
-			const node = args[0] as Node;
+			const node = args[0];
 			const handle = context.get(node)?.handle ?? core;
-			const member = handle[key] as (...args: any[]) => any;
+			const member = handle[key] as Signature<A[typeof key]>;
 			return member(...args);
 		},
 
@@ -149,19 +148,22 @@ export function createApi<A extends Core>(name: string, core: A): Api<A> {
  * - `handle`: the core methods with `total` + `local` already wrapped around
  *   them, so calling a method does no extra work.
  */
-interface Installed<A> {
+interface Installed<A extends Core> {
 	local: Partial<Around<A>>;
 	total: Partial<Around<A>>;
 	handle: A;
 }
 
 /** Fold a stack of middlewares into one; the first is outermost. */
-function combine(middlewares: Middleware<any[], any>[]): Middleware<any[], any> {
+function combine<Args extends unknown[], Result>(
+	middlewares: Middleware<Args, Result>[],
+): Middleware<Args, Result> {
 	if (middlewares.length === 0) {
 		return (args, next) => next(...args);
 	} else {
 		return middlewares.reduceRight(
-			(next, middleware) => (args, base) => middleware(args, (...args) => next(args, base)),
+			(next, middleware) => (args, base) =>
+				middleware(args, (...innerArgs) => next(innerArgs, base)),
 		);
 	}
 }

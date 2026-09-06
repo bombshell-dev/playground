@@ -58,8 +58,8 @@ async function screen(
 		terminal.free();
 	}
 }
-function observation(screen: ScreenSnapshot): Observation {
-	return { kind: 'screen', screen, sequence: 1, timestamp: 0 };
+function observation(snapshot: ScreenSnapshot): Observation {
+	return { kind: 'screen', screen: snapshot, sequence: 1, timestamp: 0 };
 }
 
 test('find a file only below the explorer banner and inside its window', async () => {

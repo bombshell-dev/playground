@@ -43,7 +43,7 @@ export interface UI extends AsyncDisposable {
 export async function createUI(options: UIOptions): Promise<UI> {
 	const { output } = options;
 	const { inline = false } = options;
-	const surfaceAt = () => ({
+	const surfaceAt = (): { width: number; height: number } => ({
 		width: options.width || output.columns || 80,
 		height: options.height || output.rows || 24,
 	});
@@ -130,7 +130,7 @@ export async function createUI(options: UIOptions): Promise<UI> {
 	// the new dimensions and re-render the whole tree. createTerm is async, so
 	// rapid resizes race; only the newest term may win the swap.
 	let resizeToken = 0;
-	const onResize = () => {
+	const onResize = (): void => {
 		({ width, height } = surfaceAt());
 		const token = ++resizeToken;
 		void createTerm({ width, height }).then((next) => {

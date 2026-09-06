@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+// oxlint-disable-next-line no-restricted-imports -- Resolve files within a caller-supplied trace directory.
 import { join } from 'node:path';
 import { AssetIntegrityError } from '../errors.ts';
 import type {
@@ -9,6 +10,7 @@ import type {
 } from '../types.ts';
 import type { Observation } from '../observations.ts';
 import { TerminalOutput } from '../terminal/output.ts';
+import { TRACE_SCHEMA_VERSION } from './trace.ts';
 import { GhosttyWasmTerminal } from '../terminal/wasm.ts';
 
 export interface ReplayResult {
@@ -26,7 +28,8 @@ export async function replayTrace(
 	options: ReplayOptions = {},
 ): Promise<ReplayResult> {
 	const metadata = JSON.parse(await readFile(join(directory, 'metadata.json'), 'utf8'));
-	if (metadata.schemaVersion !== 1) throw new AssetIntegrityError('Unsupported trace schema');
+	if (metadata.schemaVersion !== TRACE_SCHEMA_VERSION)
+		throw new AssetIntegrityError('Unsupported trace schema');
 	const lock = JSON.parse(
 		await readFile(
 			new URL(
@@ -58,9 +61,9 @@ export async function replayTrace(
 		sequence = 0,
 		sourceFrameSequence = 0,
 		timestamp = 0;
-	const publish = (cause: ScreenRevision['cause']) => {
+	const publish = (cause: ScreenRevision['cause']): ScreenSnapshot => {
 		const next = engine.snapshot(cause);
-		const observable = (s: ScreenSnapshot) =>
+		const observable = (s: ScreenSnapshot): string =>
 			JSON.stringify([
 				s.lines,
 				s.cursor,
@@ -75,7 +78,7 @@ export async function replayTrace(
 			const changedRows = next.lines.flatMap((line, row) =>
 				JSON.stringify(line) === JSON.stringify(previous.lines[row]) ? [] : [row],
 			);
-			const visual = (s: ScreenSnapshot) =>
+			const visual = (s: ScreenSnapshot): string =>
 				JSON.stringify([
 					s.lines,
 					s.cursor,
@@ -131,7 +134,7 @@ export async function replayTrace(
 				sourceFrameSequence = event.frameSequence;
 				output.push(raw.slice(offset, offset + length));
 				engine.takeEffects(); // Responses are already present in the recorded transport.
-			} else if (event.type === 'action' && event.viewport) {
+			} else if (event.type === 'resize' && event.viewport) {
 				engine.resize(event.viewport);
 				output.observations.screen(publish('resize'));
 			}

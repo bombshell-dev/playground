@@ -20,23 +20,21 @@
 	"publishConfig": {
 		"access": "public"
 	},
-	"pnpm": {
-		"overrides": {
-			"@bomb.sh/tty": "https://pkg.pr.new/@bomb.sh/tty@103"
-		}
-	},
 	"scripts": {
 		"playground": "NODE_NO_WARNINGS=1 node --experimental-transform-types ./scripts/playground.ts",
 		"format": "bsh format",
 		"format:check": "bsh format --check",
 		"lint": "bsh lint .",
-		"test": "bsh test --exclude 'experiments/ghostwright/**' --exclude 'packages/**'"
+		"typecheck": "pnpm --filter ghostwright build && tsc --noEmit && pnpm -r --if-present run typecheck",
+		"test": "vitest run --exclude '**/node_modules/**' --exclude 'experiments/ghostwright/**' --exclude 'packages/**'"
 	},
 	"devDependencies": {
 		"@bomb.sh/args": "catalog:",
 		"@bomb.sh/tools": "^0.6.1",
 		"@clack/prompts": "catalog:",
-		"@types/node": "^22"
+		"@types/node": "^22",
+		"typescript": "^5.9.3",
+		"vitest": "^4.1.9"
 	},
 	"devEngines": {
 		"packageManager": {
@@ -48,6 +46,11 @@
 			"name": "node",
 			"version": "22.14.0",
 			"onFail": "error"
+		}
+	},
+	"pnpm": {
+		"overrides": {
+			"@bomb.sh/tty": "https://pkg.pr.new/@bomb.sh/tty@103"
 		}
 	}
 }

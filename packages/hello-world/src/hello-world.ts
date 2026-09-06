@@ -4,10 +4,7 @@
  * through the extension declared in package.json.
  *
  * Run: `tsx src/hello-world.ts`
- * With byte capture for ordering tests: `--teed <file>` appends every stdout
- * write to `<file>` (configuration seam, see the test plan rig section).
  */
-import { appendFileSync, openSync } from 'node:fs';
 import { stdin, stdout } from 'node:process';
 import { fixed, grow, percent, rgba } from '@bomb.sh/tty';
 import { createUI, type HostElement, type TextProps } from '@clack/ui';
@@ -15,17 +12,6 @@ import { createUI, type HostElement, type TextProps } from '@clack/ui';
 const blue = rgba(0, 0, 238);
 const cyan = rgba(0, 205, 205);
 const gray = rgba(127, 127, 127);
-
-const teedIndex = process.argv.indexOf('--teed');
-const teedFile = teedIndex >= 0 ? process.argv[teedIndex + 1] : undefined;
-if (teedFile) {
-	openSync(teedFile, 'w');
-	const original = stdout.write.bind(stdout);
-	stdout.write = ((chunk: Uint8Array | string, ...rest: unknown[]) => {
-		appendFileSync(teedFile, typeof chunk === 'string' ? Buffer.from(chunk) : Buffer.from(chunk));
-		return (original as (...args: unknown[]) => boolean)(chunk, ...rest);
-	}) as typeof stdout.write;
-}
 
 const columns = stdout.columns || 80;
 const rows = stdout.rows || 24;
@@ -81,11 +67,7 @@ const app = box(
 	output,
 	box(
 		{ layout: { direction: 'ttb', width: grow() } },
-		box(
-			{ layout: { direction: 'ltr', gap: 1, width: grow() } },
-			label('say:'),
-			label('to:'),
-		),
+		box({ layout: { direction: 'ltr', gap: 1, width: grow() } }, label('say:'), label('to:')),
 		box({ layout: { direction: 'ltr', gap: 1, width: grow() } }, sayInput, toInput),
 	),
 );
@@ -102,10 +84,7 @@ function box(properties: Record<string, unknown>, ...children: HostElement[]): H
 }
 
 function label(content: string): HostElement {
-	return box(
-		{ layout: { width: percent(0.3) } },
-		text({ color: gray }, content),
-	);
+	return box({ layout: { width: percent(0.3) } }, text({ color: gray }, content));
 }
 
 function text(properties: TextProps, content: string): HostElement {

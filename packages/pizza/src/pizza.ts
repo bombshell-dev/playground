@@ -55,13 +55,6 @@ function field(name: string): HostElement {
 	return element;
 }
 
-function submitNote(content: string): HostElement {
-	const element = host.createElement('text');
-	host.setProperty(element, 'color', gray);
-	host.insertBefore(element, host.createLiteral(content));
-	return element;
-}
-
 // --- delivery form ---------------------------------------------------------
 
 const nameInput = field('name');

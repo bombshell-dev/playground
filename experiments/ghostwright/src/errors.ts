@@ -11,7 +11,10 @@ export class GhostwrightError extends Error {
 		this.sessionName = params.sessionName;
 	}
 }
-function errorType<T extends string>(name: T, code: string) {
+function errorType(
+	name: string,
+	code: string,
+): new (message: string, options?: ErrorOptions & { sessionName?: string }) => GhostwrightError {
 	return class extends GhostwrightError {
 		constructor(message: string, options?: ErrorOptions & { sessionName?: string }) {
 			super({ code, message, ...options });

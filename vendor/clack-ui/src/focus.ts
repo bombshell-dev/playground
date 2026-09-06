@@ -55,9 +55,7 @@ export const FocusApi = createApi('focus', {
 		const scope = FocusApi.methods.getFocusScope(node);
 		const canRestore =
 			contains(host.root, active.restore) && FocusApi.methods.isFocusable(active.restore);
-		const replacement = canRestore
-			? active.restore
-			: (focusableNodes(scope)[0] ?? host.root);
+		const replacement = canRestore ? active.restore : (focusableNodes(scope)[0] ?? host.root);
 		FocusApi.methods.setFocus(replacement);
 	},
 	advanceFocus(node): void {
@@ -125,7 +123,6 @@ interface FocusState {
 
 const FocusContext = createContext<FocusState>('focus');
 const FocusableContext = createContext<boolean>('focusable', false);
-
 
 interface Range {
 	start: HostElementChild;

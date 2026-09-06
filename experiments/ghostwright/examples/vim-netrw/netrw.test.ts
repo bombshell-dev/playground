@@ -62,7 +62,10 @@ test('refuse to navigate when the cursor belongs to the neighboring editor', asy
 });
 
 /** A real, isolated Vim with its bundled netrw. No application instrumentation. */
-async function withVim(viewport: Viewport, body: (ui: AsyncExecution) => Promise<void>) {
+async function withVim(
+	viewport: Viewport,
+	body: (ui: AsyncExecution) => Promise<void>,
+): Promise<void> {
 	const directory = await mkdtemp(join(tmpdir(), 'ghostwright-netrw-'));
 	try {
 		await writeFile(

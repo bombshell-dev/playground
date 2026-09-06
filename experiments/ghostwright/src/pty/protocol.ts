@@ -78,7 +78,7 @@ const bad = (): ProtocolError => new ProtocolError('Truncated CBOR payload');
 /** Decode a CBOR binary payload to a JavaScript value. */
 export function decodeCbor(bytes: Uint8Array): unknown {
 	let p = 0;
-	const readLen = (ai: number) => {
+	const readLen = (ai: number): number => {
 		if (ai < 24) return ai;
 		if (ai === 24) {
 			if (p + 1 > bytes.length) throw bad();

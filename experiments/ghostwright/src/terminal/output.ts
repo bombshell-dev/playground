@@ -39,7 +39,7 @@ export class TerminalOutput {
 				continue;
 			}
 			const registration = item.kind === 'event' ? item.event.registration : item.registration;
-			const extension = this.extensions.find((extension) => extension.osc === registration)!;
+			const extension = this.extensions.find((candidate) => candidate.osc === registration)!;
 			try {
 				if (item.kind === 'error') throw item.error;
 				const commit = extension.osc.decode(item.event.message);

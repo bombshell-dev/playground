@@ -1,5 +1,14 @@
 import { createApi, createContext, id, type Node } from '../core.ts';
-import { open, close, text, fit, percent, rgba, type KeyDown, type KeyRepeat } from '@bomb.sh/tty';
+import {
+	open,
+	close,
+	text as textOperation,
+	fit,
+	percent,
+	rgba,
+	type KeyDown,
+	type KeyRepeat,
+} from '@bomb.sh/tty';
 import type { HostEvent } from '@clack/ui/events';
 import { emit } from '../emit.ts';
 import { getElement } from '../elements.ts';
@@ -35,8 +44,8 @@ export function useInputElement(host: Host): void {
 	const { root } = host;
 
 	HostApi.around(root, {
-		createElement([root, name], next) {
-			const element = next(root, name);
+		createElement([parent, name], next) {
+			const element = next(parent, name);
 			if (element.name === 'input') {
 				const model = { content: '', caret: 0 };
 				element.attach = (node) => {
@@ -83,7 +92,7 @@ export function useInputElement(host: Host): void {
 					padding: { top: 1, right: 1, bottom: 1, left: 1 },
 				},
 			});
-			yield text(value, { color, ...(focused ? { caret } : {}) });
+			yield textOperation(value, { color, ...(focused ? { caret } : {}) });
 			yield close();
 		},
 	});

@@ -35,13 +35,13 @@
 	},
 	"scripts": {
 		"setup": "bun run build:artifacts && bun run verify:artifacts",
-		"build": "rm -rf dist && bun build src/index.ts src/async.ts src/pty/protocol.ts --outdir dist --target node --format esm --packages external --sourcemap=external && bunx tsc -p tsconfig.build.json && bun scripts/fix-declarations.ts",
+		"build": "rm -rf dist && bun build src/index.ts src/async.ts src/pty/protocol.ts --outdir dist --target node --format esm --packages external --sourcemap=external && tsc -p tsconfig.build.json && bun scripts/fix-declarations.ts",
 		"fetch:ghostty": "bun scripts/fetch-ghostty.ts",
 		"build:ghostty-vt": "bun scripts/build-ghostty-vt.ts",
 		"build:host:rust": "bun scripts/build-host-rust.ts",
 		"test:host": "bun test/host-contract.ts .cache/hosts/pty-host-rust",
 		"test:host:rust:full": "GHOSTWRIGHT_CONTRACT_HOST=.cache/hosts/pty-host-rust bun test --preload ./test/preload-host.ts .",
-		"typecheck": "bunx tsc -p tsconfig.types.json",
+		"typecheck": "tsc -p tsconfig.types.json",
 		"build:artifacts": "bun run fetch:ghostty && bun run build:ghostty-vt && bun scripts/build-artifacts.ts",
 		"update:manifest": "bun scripts/update-manifest.ts",
 		"verify:artifacts": "bun scripts/verify-artifacts.ts",
@@ -52,7 +52,8 @@
 		"effection": "^4.0.2"
 	},
 	"devDependencies": {
-		"@types/bun": "^1.3.9"
+		"@types/bun": "^1.3.9",
+		"typescript": "^5.9.3"
 	},
 	"engines": {
 		"bun": ">=1.2.0",

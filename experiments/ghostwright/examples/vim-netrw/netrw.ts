@@ -5,6 +5,7 @@ import {
 	type AsyncExecution,
 	type Rect,
 	type RegionInspection,
+	type RegionLocator,
 	type ScreenSnapshot,
 } from '../../src/index.ts';
 
@@ -24,10 +25,11 @@ function leftWindow(screen: ScreenSnapshot): Rect | undefined {
 	const candidates: Rect[] = [];
 	for (const cell of screen.lines[0]?.cells ?? []) {
 		if (cell.column === 0 || cell.column >= screen.viewport.columns - 1) continue;
-		const isSeparator = (row: number) => {
+		const isSeparator = (row: number): boolean => {
 			const candidate = screen.lines[row]?.cells[cell.column];
 			return (
-				candidate?.style.inverse &&
+				candidate !== undefined &&
+				candidate.style.inverse &&
 				!candidate.style.invisible &&
 				['|', '│'].includes(candidate.text)
 			);
@@ -40,7 +42,7 @@ function leftWindow(screen: ScreenSnapshot): Rect | undefined {
 		if (
 			bottom !== screen.viewport.rows - 2 ||
 			status?.length !== cell.column ||
-			!status.every((cell) => cell.style.inverse && !cell.style.invisible)
+			!status.every((edgeCell) => edgeCell.style.inverse && !edgeCell.style.invisible)
 		)
 			continue;
 		candidates.push({ column: 0, row: 0, width: cell.column, height: bottom });
@@ -89,7 +91,7 @@ const listingRegion = explorerRegion.derive('listing', (window) => {
 });
 
 /** Thin-list entries with plain ASCII filenames; never a path or a Vim command. */
-export function fileEntry(name: string) {
+export function fileEntry(name: string): RegionLocator {
 	if (!name || /[^A-Za-z0-9_.-]/.test(name))
 		fail('GW_VIM_FILENAME', 'Use a plain ASCII filename, not a path or command');
 	return listingRegion.derive(`file ${JSON.stringify(name)} (visible thin-list entry)`, (listing) =>
@@ -111,7 +113,7 @@ export function fileEntry(name: string) {
 	);
 }
 
-function editorFor(name: string) {
+function editorFor(name: string): RegionLocator {
 	return defineScreenLocator(
 		`Vim editor for ${JSON.stringify(name)} in the left split`,
 		(screen) => {
@@ -129,7 +131,12 @@ function editorFor(name: string) {
 }
 
 /** Small authored control model. Recognition is pure; actions use its owning executor. */
-export function netrw(ui: AsyncExecution) {
+export function netrw(ui: AsyncExecution): Readonly<{
+	region: RegionLocator;
+	find(
+		name: string,
+	): Readonly<{ region: RegionLocator; editor: RegionLocator; open(): Promise<RegionInspection> }>;
+}> {
 	return Object.freeze({
 		region: explorerRegion,
 		find(name: string) {

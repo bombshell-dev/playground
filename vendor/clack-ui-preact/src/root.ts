@@ -16,7 +16,7 @@ export interface Root {
 /** Create a Preact root which reconciles into an attached Host element. */
 export function createRoot(element: HostElement): Root {
 	const host = HostApi.methods.getHost(element.node!);
-	const container = createContainer(host, element) as unknown as Element;
+	const container = createContainer(host, element);
 
 	return {
 		element,

@@ -1,8 +1,8 @@
 {
 	"name": "@ghostwright/clack-tty",
 	"version": "0.1.0",
-	"description": "Semantic tree locator for clack/ui applications, tested with ghostwright",
 	"private": true,
+	"description": "Semantic tree locator for clack/ui applications, tested with ghostwright",
 	"license": "MIT",
 	"type": "module",
 	"exports": {

@@ -34,7 +34,7 @@ function materialize(frame: ClackFrame): Element[] {
 		}
 	}
 	const ordered: Element[] = [];
-	function visit(siblings: Element[]) {
+	function visit(siblings: Element[]): void {
 		siblings.sort((a, b) => a.order - b.order);
 		for (const node of siblings) {
 			ordered.push(node);
@@ -47,16 +47,16 @@ function materialize(frame: ClackFrame): Element[] {
 function attribute(node: Element, name: string): string | undefined {
 	if (name === 'id') return node.key;
 	if (name === 'input') return node.attrs.input ? 'true' : undefined;
+	const customKey = name === 'type' ? 'type' : name.startsWith('data-') ? name.slice(5) : undefined;
+	const custom = node.attrs.custom;
 	const value =
 		name === 'role'
 			? node.attrs.role
 			: name === 'label'
 				? node.attrs.label
-				: name === 'type'
-					? node.attrs.custom?.type
-					: name.startsWith('data-')
-						? node.attrs.custom?.[name.slice(5)]
-						: undefined;
+				: customKey !== undefined && custom && Object.hasOwn(custom, customKey)
+					? custom[customKey]
+					: undefined;
 	return value === undefined ? undefined : String(value);
 }
 const adapter: NonNullable<Options<Element, Element>['adapter']> = {
@@ -113,7 +113,7 @@ function selector(source: string): Selector[][] {
 	let tokens = 0,
 		branches = 0;
 	// oxlint-disable-next-line bombshell-dev/max-params -- traversal tracks independent selector depth limits
-	function visit(lists: Selector[][], depth: number, hasDepth: number) {
+	function visit(lists: Selector[][], depth: number, hasDepth: number): void {
 		branches += lists.length;
 		if (depth > 8 || branches > 32)
 			fail('GW_CLACK_SELECTOR_LIMIT', 'Selector nesting/list limit exceeded');

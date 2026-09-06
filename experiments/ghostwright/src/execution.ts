@@ -26,7 +26,7 @@ import type { RegionInspection } from './inspection.ts';
 import type { Condition } from './conditions.ts';
 import type { Observation } from './observations.ts';
 import { TerminalSession } from './terminal/session.ts';
-import type { AsyncTerminal, MouseOptions, TerminalLaunchOptions } from './types.ts';
+import type { ActionReceipt, AsyncTerminal, MouseOptions, TerminalLaunchOptions } from './types.ts';
 
 export interface CaptureOptions {
 	readonly until: Condition;
@@ -42,7 +42,8 @@ export interface Capture {
 	readonly observations: readonly Observation[];
 }
 const expectRegion = createExpect();
-const error = (code: string, message: string) => new GhostwrightError({ code, message });
+const error = (code: string, message: string): GhostwrightError =>
+	new GhostwrightError({ code, message });
 function timeout(milliseconds: number, code: string): Operation<never> {
 	if (!Number.isFinite(milliseconds) || milliseconds < 0)
 		throw new InvalidOptionsError('timeoutMs must be nonnegative and finite');
@@ -53,7 +54,7 @@ function timeout(milliseconds: number, code: string): Operation<never> {
 }
 function aborted(signal: AbortSignal): Operation<never> {
 	return action((_resolve, reject) => {
-		const abort = () => reject(signal.reason);
+		const abort = (): void => reject(signal.reason);
 		signal.addEventListener('abort', abort, { once: true });
 		if (signal.aborted) abort();
 		return () => signal.removeEventListener('abort', abort);
@@ -88,7 +89,7 @@ function awaitMatch(
 	matcher: Matcher,
 ): Operation<RegionInspection> {
 	return action((resolve, reject) => {
-		const check = (observation?: Observation) => {
+		const check = (observation?: Observation): void => {
 			if (!observation || !locator.accepts(observation)) return;
 			try {
 				const matches = locator.resolve(observation);
@@ -143,12 +144,14 @@ export class AsyncExecution implements AsyncTerminal {
 		this.history = this.#bind(session.history);
 		this.graphics = this.#bind(session.graphics);
 	}
-	#bind<T extends Record<string, (...args: any[]) => Promise<any>>>(methods: T): T {
+	#bind<T extends Record<string, (...args: never[]) => Promise<unknown>>>(methods: T): T {
+		const bind =
+			<Args extends unknown[], Result>(method: (...args: Args) => Promise<Result>) =>
+			(...args: Args): Promise<Result> =>
+				this.#promise(() => method(...args));
+		// Object.fromEntries loses the association between each key and its signature.
 		return Object.fromEntries(
-			Object.entries(methods).map(([name, method]) => [
-				name,
-				(...args: unknown[]) => this.#promise(() => method(...args)),
-			]),
+			Object.entries(methods).map(([name, method]) => [name, bind(method)]),
 		) as T;
 	}
 	async #run<T>(operation: () => Operation<T>): Promise<T> {
@@ -168,28 +171,30 @@ export class AsyncExecution implements AsyncTerminal {
 	#promise<T>(fn: () => Promise<T>): Promise<T> {
 		return this.#run(() => call(fn));
 	}
-	get screen() {
+	get screen(): AsyncTerminal['screen'] {
 		return this.session.screen;
 	}
-	getByText(...args: Parameters<AsyncTerminal['getByText']>) {
+	getByText(
+		...args: Parameters<AsyncTerminal['getByText']>
+	): ReturnType<TerminalSession['getByText']> {
 		return this.session.getByText(...args);
 	}
-	region(...args: Parameters<AsyncTerminal['region']>) {
+	region(...args: Parameters<AsyncTerminal['region']>): ReturnType<TerminalSession['region']> {
 		return this.session.region(...args);
 	}
-	resize(viewport: Parameters<AsyncTerminal['resize']>[0]) {
+	resize(viewport: Parameters<AsyncTerminal['resize']>[0]): Promise<ActionReceipt> {
 		return this.#promise(() => this.session.resize(viewport, this.signal));
 	}
-	close() {
+	close(): Promise<ActionReceipt> {
 		return this.#promise(() => this.session.close());
 	}
-	expect(locator: RegionLocator) {
+	expect(locator: RegionLocator): ReturnType<typeof expectRegion> {
 		return expectRegion(this, locator);
 	}
 	assert(locator: RegionLocator, matcher: Matcher): Promise<RegionInspection> {
 		return this.#run(() => assertRegion(this.session, locator, matcher));
 	}
-	async click(locator: RegionLocator, options?: MouseOptions) {
+	async click(locator: RegionLocator, options?: MouseOptions): Promise<ActionReceipt> {
 		const region = await this.assert(locator, (actual) => ({
 			pass: !!actual.visibleBounds,
 			expected: 'on-screen region',
@@ -238,6 +243,11 @@ export function* assertRegion(
 				`${locator.source}: ${last ? JSON.stringify(last) : 'no located region'}\n${session.screen.getText()}`,
 				{ cause },
 			);
+		if (cause instanceof ProcessExitedError || cause instanceof SessionClosedError) {
+			const ErrorType =
+				cause instanceof ProcessExitedError ? ProcessExitedError : SessionClosedError;
+			throw new ErrorType(`${locator.source}: ${cause.message}`, { cause });
+		}
 		throw cause;
 	}
 }
@@ -269,15 +279,15 @@ export function* captureOperation(
 				finished = false;
 			const recording = yield* resource<{ stop(): void }>(function* (provide) {
 				let timer: ReturnType<typeof setTimeout> | undefined;
-				let off = () => {},
-					offStatus = () => {};
-				const stop = () => {
+				let off = (): void => {},
+					offStatus = (): void => {};
+				const stop = (): void => {
 					finished = true;
 					off();
 					offStatus();
 					clearTimeout(timer);
 				};
-				const finish = () => {
+				const finish = (): void => {
 					stop();
 					completion.resolve(
 						Object.freeze({
@@ -288,11 +298,11 @@ export function* captureOperation(
 						}),
 					);
 				};
-				const fail = (cause: unknown) => {
+				const fail = (cause: unknown): void => {
 					stop();
 					completion.reject(cause as Error);
 				};
-				const schedule = () => {
+				const schedule = (): void => {
 					clearTimeout(timer);
 					if (!finished && state.wakeAt !== undefined)
 						timer = setTimeout(

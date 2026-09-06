@@ -1,9 +1,28 @@
 import { expect, expectTypeOf, test } from 'vitest';
-import { textContains, withTerminalAsync, type Observation, type RegionLocator } from 'ghostwright';
+import {
+	textContains,
+	withTerminalAsync,
+	type Observation,
+	type RegionLocator,
+	type TerminalLaunchOptions,
+} from 'ghostwright';
 import { clackTtyExtension, locator, type ClackLocator } from '../src/index.ts';
-import { encodeFrame, type ClackFrame, type ClackNode } from '../src/protocol.ts';
+import {
+	encodeFrame,
+	type ClackFrame,
+	type ClackNode,
+	type ClackNodeGeometry,
+} from '../src/protocol.ts';
 
-const geo = ({ column, row, width }: { column: number; row: number; width: number }) => ({
+const geo = ({
+	column,
+	row,
+	width,
+}: {
+	column: number;
+	row: number;
+	width: number;
+}): ClackNodeGeometry => ({
 	layout: { x: column, y: row, width, height: 1 },
 	term: { column, row, width, height: 1 },
 });
@@ -89,7 +108,7 @@ function scene({
 	return paint + Buffer.from(encodeFrame(description)).toString();
 }
 
-const launch = () => ({
+const launch = (): TerminalLaunchOptions => ({
 	command: process.execPath,
 	args: [
 		'-e',
@@ -165,8 +184,10 @@ test('scope uses ancestry, preserves node-level nth, and never clips to parent g
 			},
 		);
 		const sample = movement.baseline;
-		const texts = (query: ReturnType<typeof locator>, observation: Observation = sample) =>
-			query.resolve(observation).map((region) => region.text().trim());
+		const texts = (
+			query: ReturnType<typeof locator>,
+			observation: Observation = sample,
+		): string[] => query.resolve(observation).map((region) => region.text().trim());
 		expect(texts(delivery.locator('input, button'))).toEqual(['Ryan', 'Main St', 'Send']);
 		expect(texts(locator('form').nth(1).locator('input'))).toEqual(['Decoy']);
 		expect(texts(delivery.locator('input').nth(1))).toEqual(['Main St']);

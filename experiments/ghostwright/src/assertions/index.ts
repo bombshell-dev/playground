@@ -210,7 +210,7 @@ class LocatorExpectation implements AsyncLocatorExpectation {
 				this.locator.session.options.assertionTimeoutMs ??
 				DEFAULT_ASSERTION_TIMEOUT_MS,
 			start = performance.now(),
-			satisfied = () => {
+			satisfied = (): boolean => {
 				const m = this.locator.matches();
 				return m.length === 1 && cellsMatchStyle(m[0].cells, style);
 			};
@@ -242,7 +242,7 @@ class LocatorExpectation implements AsyncLocatorExpectation {
 				this.locator.session.options.assertionTimeoutMs ??
 				DEFAULT_ASSERTION_TIMEOUT_MS,
 			start = performance.now(),
-			satisfied = () => {
+			satisfied = (): boolean => {
 				const m = this.locator.matches();
 				if (m.length !== 1) return false;
 				const { range } = m[0],
@@ -329,7 +329,7 @@ class TerminalExpectation implements AsyncTerminalExpectation {
 						this.session.lastAction?.screenSequenceBefore ??
 						this.session.screen.current().sequence);
 		const safe = safePredicate(predicate),
-			find = () =>
+			find = (): ScreenRevision | undefined =>
 				this.session.revisionsSince(baseline).find((revision) => safe.test(revision.snapshot));
 		let result = find();
 		if (!result)

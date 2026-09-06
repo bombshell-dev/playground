@@ -17,7 +17,7 @@ declare module '@clack/ui/elements' {
  * Text elements ignore non-textual children like "box" or "input" and will
  * always return an iteration of tty `text()` directives
  */
-export function useTextElement(host: Host) {
+export function useTextElement(host: Host): void {
 	LayoutApi.around(host.root, {
 		*layout([node], next) {
 			const element = getElement(node);

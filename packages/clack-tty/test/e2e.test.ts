@@ -1,10 +1,10 @@
 import { expect, test } from 'vitest';
-import { withTerminalAsync, regionLocator } from 'ghostwright';
+import { withTerminalAsync, regionLocator, type TerminalLaunchOptions } from 'ghostwright';
 import { clackTtyExtension, expectUI, locator } from '../src/index.ts';
 
-const entry = () => ({
+const entry = (): TerminalLaunchOptions => ({
 	command: process.execPath,
-	args: ['--import', 'tsx', 'src/hello-world.ts'],
+	args: ['--import', import.meta.resolve('tsx'), 'src/hello-world.ts'],
 	cwd: new URL('../../hello-world', import.meta.url).pathname,
 	env: { CLACK_UI_SEMANTIC: '1' },
 	trace: 'off' as const,
@@ -23,6 +23,26 @@ test('producer and CSS adapter compose with core assertions over real terminal o
 		await expectUI(ui, to).toHaveInputFocus();
 		await ui.expect(say).toHaveEdgeStyle('top', { foreground: '#646464' });
 	});
+});
+
+test('custom attribute names survive the producer, wire decoder, and CSS query', async () => {
+	await withTerminalAsync(
+		{
+			command: process.execPath,
+			args: [
+				'--import',
+				import.meta.resolve('tsx'),
+				new URL('fixtures/custom-attributes.ts', import.meta.url).pathname,
+			],
+			extensions: [clackTtyExtension()],
+		},
+		async (ui) => {
+			const contact = locator(
+				'box[data-__proto__="contact"][data-constructor="field"][data-toString="label"]',
+			);
+			await ui.expect(contact).toContainText('Contact details');
+		},
+	);
 });
 
 test('ambiguous location fails immediately, not as an assertion timeout', async () => {

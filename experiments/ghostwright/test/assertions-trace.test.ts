@@ -98,6 +98,50 @@ test('trace-on artifacts replay the same final terminal state', async () => {
 	}
 });
 
+test('resize repaints and replay use the new viewport before child output', async () => {
+	const directory = await mkdtemp(join(tmpdir(), 'ghostwright-resize-replay-'));
+	try {
+		const expected = await withTerminalAsync(
+			{
+				command: node,
+				args: [
+					'-e',
+					String.raw`
+				process.stdin.setRawMode(true);
+				process.stdout.on('resize', () => {
+					const { columns, rows } = process.stdout;
+					const lines = Array.from({ length: rows }, (_, row) =>
+						(row === 0 ? 'TOP' : row === rows - 1 ? 'BOTTOM' : 'body').padEnd(columns, '.'));
+					process.stdout.write('\x1b[2J\x1b[H' + lines.join('\r\n'));
+				});
+				process.stdin.once('data', () => process.exit(0));
+				process.stdout.write('\x1b[?1049hREADY');
+			`,
+				],
+				viewport: { columns: 80, rows: 10 },
+				trace: { policy: 'on', directory },
+			},
+			async (terminal) => {
+				await expectTerminal(terminal.getByText('READY')).toBePresent();
+				await terminal.resize({ columns: 36, rows: 4 });
+				await expectTerminal(terminal).toSatisfy(
+					(screen) =>
+						screen.lines[0].text.startsWith('TOP') && screen.lines[3].text.startsWith('BOTTOM'),
+				);
+				await terminal.keyboard.press('Enter');
+				await terminal.process.waitForExit();
+				return terminal.screen.getText();
+			},
+		);
+		const [artifact] = await readdir(directory);
+		const replay = await replayTrace(join(directory, artifact));
+		expect(replay.finalSnapshot.viewport).toMatchObject({ columns: 36, rows: 4 });
+		expect(replay.finalSnapshot.lines.map((line) => line.text).join('\n')).toBe(expected);
+	} finally {
+		await rm(directory, { recursive: true, force: true });
+	}
+});
+
 test('marked input is redacted from trace bytes', async () => {
 	const directory = await mkdtemp(join(tmpdir(), 'ghostwright-redaction-test-'));
 	try {

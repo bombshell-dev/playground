@@ -1,5 +1,7 @@
 {
+	"extends": "../../tsconfig.json",
 	"compilerOptions": {
+		"composite": false,
 		"types": ["node"],
 		"paths": {
 			"@clack/ui": ["../../vendor/clack-ui/src/index.ts"],
@@ -8,5 +10,6 @@
 			"@clack/ui/focus": ["../../vendor/clack-ui/src/focus.ts"],
 			"@clack/ui/core": ["../../vendor/clack-ui/src/core.ts"]
 		}
-	}
+	},
+	"include": ["src/**/*.ts", "test/**/*.ts", "vitest.config.ts"]
 }

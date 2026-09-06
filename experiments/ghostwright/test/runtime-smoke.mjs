@@ -1,5 +1,4 @@
-import { expectTerminal, withTerminalAsync } from '../dist/index.js';
-import { GhostwrightError } from '../src/errors.ts';
+import { expectTerminal, GhostwrightError, withTerminalAsync } from '../dist/index.js';
 
 await withTerminalAsync(
 	{ command: '/bin/sh', args: ['-c', 'printf runtime-smoke'], trace: 'off' },
@@ -14,5 +13,4 @@ await withTerminalAsync(
 		}
 	},
 );
-// oxlint-disable-next-line no-console -- test script
-console.log('Ghostwright runtime smoke passed');
+console.info('Ghostwright runtime smoke passed');

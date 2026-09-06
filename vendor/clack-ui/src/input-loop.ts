@@ -76,7 +76,7 @@ export function createInputLoop(options: InputLoopOptions): AsyncIterable<InputE
 }
 
 async function race(
-	read: Promise<IteratorResult<any[]>>,
+	read: Promise<IteratorResult<unknown[]>>,
 	pending: Pending,
 ): Promise<IteratorResult<ReadEvent>> {
 	let timeoutId: NodeJS.Timeout | undefined = undefined;
@@ -89,16 +89,11 @@ async function race(
 			})
 		: new Promise<IteratorResult<ReadEvent>>(() => {});
 
-	const data: Promise<IteratorResult<ReadEvent>> = read.then((item) => {
-		if (item.done) {
-			return { done: true } as IteratorResult<ReadEvent>;
-		} else {
-			const [data] = item.value;
-			return {
-				done: false,
-				value: { type: 'data', data },
-			} as IteratorResult<ReadEvent>;
-		}
+	const data = read.then((item): IteratorResult<ReadEvent> => {
+		if (item.done) return { done: true, value: undefined };
+		const [chunk] = item.value;
+		if (!Buffer.isBuffer(chunk)) throw new InvalidInputChunkError();
+		return { done: false, value: { type: 'data', data: chunk } };
 	});
 
 	try {
@@ -108,13 +103,20 @@ async function race(
 	}
 }
 
+class InvalidInputChunkError extends TypeError {
+	constructor() {
+		super('Terminal input must emit Buffer chunks; do not set a text encoding on stdin');
+		this.name = 'InvalidInputChunkError';
+	}
+}
+
 type Pending = ScanResult['pending'];
 
 type ReadEvent = DataEvent | TimeoutEvent;
 
 type DataEvent = {
 	type: 'data';
-	data: Buffer<ArrayBuffer>;
+	data: Buffer;
 };
 
 type TimeoutEvent = {
@@ -134,14 +136,14 @@ async function abortable<T>(signal: AbortSignal, op: Promise<T>): Promise<Aborta
 	if (signal.aborted) {
 		return { type: 'aborted' };
 	}
-	let listener = () => {};
+	let listener: (() => void) | undefined;
 	try {
 		return await Promise.race([
-			op.then((value: T) => ({ type: 'resolved', value }) as Abortable<T>),
-			new Promise((resolve) => {
+			op.then<Abortable<T>>((value) => ({ type: 'resolved', value })),
+			new Promise<Abortable<T>>((resolve) => {
 				signal.addEventListener('abort', (listener = () => resolve({ type: 'aborted' })));
 			}),
-		] as Promise<Abortable<T>>[]);
+		]);
 	} finally {
 		if (listener) {
 			signal.removeEventListener('abort', listener);

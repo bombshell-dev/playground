@@ -1,8 +1,8 @@
 import { test } from 'vitest';
-import { withTerminalAsync } from 'ghostwright';
+import { withTerminalAsync, type TerminalLaunchOptions } from 'ghostwright';
 import { clackTtyExtension, expectUI, locator } from '@ghostwright/clack-tty';
 
-const entry = () => ({
+const entry = (): TerminalLaunchOptions => ({
 	command: process.execPath,
 	args: ['--import', 'tsx', 'src/hello-world.ts'],
 	cwd: new URL('..', import.meta.url).pathname,

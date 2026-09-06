@@ -22,7 +22,8 @@ describe('resolveIds — hierarchical key paths', () => {
 			conditionalSidebar ? box({ key: 'sidebar' }) : null,
 			box({ key: 'body' }),
 		);
-		const bodyId = (resolved: string[]) => resolved.find((id) => id.endsWith('body'));
+		const bodyId = (resolved: string[]): string | undefined =>
+			resolved.find((id) => id.endsWith('body'));
 		expect(bodyId(ids(resolveIds(withSidebar)))).toBe('app/body');
 		expect(bodyId(ids(resolveIds(withoutSidebar)))).toBe('app/body');
 	});

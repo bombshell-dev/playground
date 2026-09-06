@@ -4,10 +4,11 @@ import { resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import type { ProcessStatus, ScreenSnapshot, TerminalLaunchOptions } from '../types.ts';
 import { TraceWriteError } from '../errors.ts';
-import { normalizeViewport } from '../profile.ts';
+import { currentRuntime, normalizeViewport } from '../profile.ts';
 
+export const TRACE_SCHEMA_VERSION = 1;
 export interface TraceEvent {
-	schemaVersion: 1;
+	schemaVersion: typeof TRACE_SCHEMA_VERSION;
 	sequence: number;
 	timestamp: number;
 	type: string;
@@ -41,7 +42,7 @@ export class SessionTrace {
 	add(type: string, data: Record<string, unknown> = {}): void {
 		if (this.policy === 'off') return;
 		this.#events.push({
-			schemaVersion: 1,
+			schemaVersion: TRACE_SCHEMA_VERSION,
 			sequence: ++this.#seq,
 			timestamp: this.now(),
 			type,
@@ -98,16 +99,11 @@ export class SessionTrace {
 					typeof this.options.trace === 'object'
 						? new Set(this.options.trace.redactArgumentIndexes ?? [])
 						: new Set<number>(),
-				deno = (globalThis as unknown as { Deno?: { version: { deno: string } } }).Deno,
-				bun = (globalThis as unknown as { Bun?: { version: string } }).Bun,
 				metadata = {
-					schemaVersion: 1,
+					schemaVersion: TRACE_SCHEMA_VERSION,
 					sessionName: name,
 					startedAt: new Date().toISOString(),
-					runtime: {
-						name: deno ? 'deno' : bun ? 'bun' : 'node',
-						version: deno ? deno.version.deno : bun ? bun.version : process.version,
-					},
+					runtime: currentRuntime(),
 					platform: { os: process.platform, arch: process.arch },
 					ghostwrightVersion: '0.1.0',
 					ghostty: {

@@ -59,7 +59,7 @@ export class Observations {
 		const paired = this.#extensions.get(extensionId);
 		return paired?.screen.sequence === this.#latest.screen.sequence ? paired : undefined;
 	}
-	get sequence() {
+	get sequence(): number {
 		return this.#sequence;
 	}
 	subscribe(listener: (observation: Observation) => void): () => void {

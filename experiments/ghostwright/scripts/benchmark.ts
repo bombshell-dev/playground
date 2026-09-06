@@ -11,8 +11,8 @@ async function measure(params: {
 		await params.operation();
 		samples.push(performance.now() - started);
 	}
-	// oxlint-disable-next-line no-console -- benchmark script
-	console.log(
+	samples.sort((a, b) => a - b);
+	console.info(
 		JSON.stringify({
 			name: params.name,
 			iterations: params.iterations,
@@ -23,19 +23,19 @@ async function measure(params: {
 	);
 }
 
-await measure(
-	'launch-exit-cleanup',
-	async () => {
+await measure({
+	name: 'launch-exit-cleanup',
+	operation: async () => {
 		const terminal = await TerminalSession.launch({ command: '/usr/bin/true', trace: 'off' });
 		await terminal.process.waitForExit();
 		await terminal.close();
 	},
-	10,
-);
+	iterations: 10,
+});
 
-await measure(
-	'one-megabyte-output',
-	async () => {
+await measure({
+	name: 'one-megabyte-output',
+	operation: async () => {
 		const terminal = await TerminalSession.launch({
 			command: process.execPath,
 			args: ['-e', `process.stdout.write("x".repeat(1024 * 1024))`],
@@ -45,5 +45,5 @@ await measure(
 		await terminal.process.waitForExit();
 		await terminal.close();
 	},
-	5,
-);
+	iterations: 5,
+});

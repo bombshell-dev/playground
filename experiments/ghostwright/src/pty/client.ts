@@ -235,7 +235,7 @@ export class SidecarClient {
 		signal?.throwIfAborted();
 		const sequence = this.#sequence;
 		const response = this.request<AckResponse>(FrameKind.WRITE, data, true);
-		const abort = () => {
+		const abort = (): void => {
 			void this.request(FrameKind.CANCEL_WRITE, { sequence }).catch(() => undefined);
 		};
 		signal?.addEventListener('abort', abort, { once: true });

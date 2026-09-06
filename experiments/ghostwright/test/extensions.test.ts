@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { RegisteredOscStream } from '../src/terminal/extensions.ts';
+import { RegisteredOscStream, type OscEvent } from '../src/terminal/extensions.ts';
 import type { OscRegistration } from '../src/types.ts';
 
 const registration: OscRegistration<string> = {
@@ -10,7 +10,9 @@ const registration: OscRegistration<string> = {
 };
 const frame = new TextEncoder().encode('\u001b]7777;test.semantic;v=1;payload\u001b\\');
 
-function events(items: ReturnType<RegisteredOscStream['push']>['items']) {
+function events(
+	items: ReturnType<RegisteredOscStream['push']>['items'],
+): { kind: 'event'; event: OscEvent }[] {
 	return items.filter((item) => item.kind === 'event');
 }
 

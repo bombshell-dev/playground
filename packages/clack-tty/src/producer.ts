@@ -70,6 +70,8 @@ function siblingOrder(entry: Entry): number {
 	return order;
 }
 
+// oxlint-disable bombshell-dev/exported-function-async -- Render middleware must be installed synchronously.
+/** Install semantic emission before the host's first synchronous render. */
 export function useSemantic(host: Host, options: SemanticOptions): void {
 	const entries = new Map<object, Entry>();
 
@@ -116,15 +118,6 @@ export function useSemantic(host: Host, options: SemanticOptions): void {
 			next(_node, _parent, child);
 			if (removed) unregisterEntry(removed);
 		},
-		// Structural hooks only: attribute values ride the element property bag,
-		// which the host core keeps current. Registered so the middleware contract
-		// (create/insert/remove/setProperty/setText) is complete in one place.
-		setProperty([node, element, name, value], next) {
-			next(node, element, name, value);
-		},
-		setText([node, text, content], next) {
-			next(node, text, content);
-		},
 	});
 
 	// Adopt elements the application attached before the plugin installed.
@@ -146,14 +139,14 @@ export function useSemantic(host: Host, options: SemanticOptions): void {
 
 		// oxlint-disable-next-line bombshell-dev/max-params -- traversal carries parent identity and sibling order
 		function visit(entry: Entry, parentKey: string | null, order: number): void {
-			const custom: Record<string, JsonScalar> = {};
+			const custom: [string, JsonScalar][] = [];
 			let role: string | undefined, label: string | undefined;
 			for (const [name, value] of Object.entries(entry.element.properties)) {
 				if (name === 'role' && typeof value === 'string') role = value;
 				else if (name === 'label' && typeof value === 'string') label = value;
-				else if (name === 'type' && typeof value === 'string') custom.type = value;
+				else if (name === 'type' && typeof value === 'string') custom.push(['type', value]);
 				else if (name.startsWith('data-') && value !== null && value !== undefined)
-					custom[name.slice(5)] = value as JsonScalar;
+					custom.push([name.slice(5), value as JsonScalar]);
 			}
 			const bounds = info.get(entry.key)?.bounds;
 			const geo = bounds
@@ -171,7 +164,7 @@ export function useSemantic(host: Host, options: SemanticOptions): void {
 					...(role !== undefined ? { role } : {}),
 					...(label !== undefined ? { label } : {}),
 					...(entry.name === 'input' ? { input: true } : {}),
-					...(Object.keys(custom).length > 0 ? { custom } : {}),
+					...(custom.length > 0 ? { custom: Object.fromEntries(custom) } : {}),
 				},
 				...(geo !== undefined ? { geo } : {}),
 			});
@@ -220,3 +213,4 @@ export function useSemantic(host: Host, options: SemanticOptions): void {
 		},
 	});
 }
+// oxlint-enable bombshell-dev/exported-function-async

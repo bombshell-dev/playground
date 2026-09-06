@@ -1,10 +1,10 @@
 import { expect, test } from 'vitest';
-import { withTerminalAsync, settled } from 'ghostwright';
+import { withTerminalAsync, settled, type TerminalLaunchOptions } from 'ghostwright';
 import { clackTtyExtension, expectUI, locator } from '@ghostwright/clack-tty';
 
 // No application internals: launch the CLI, use its keyboard, and check what
 // appears in the terminal. Locators give those visible controls useful names.
-const pizza = () => ({
+const pizza = (): TerminalLaunchOptions => ({
 	command: process.execPath,
 	args: ['--import', 'tsx', 'src/pizza.ts'],
 	cwd: new URL('..', import.meta.url).pathname,

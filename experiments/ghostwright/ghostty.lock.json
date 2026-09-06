@@ -125,7 +125,7 @@
 			"sha256": "9cc284061558b47237e478107dbbe8eabd1f6139038f61b1e403bb97e74ced1f"
 		},
 		"artifacts/pty-host-darwin-arm64": {
-			"sha256": "704d2273677552ee22841b16eb06fd9d3d00216176d682220906152f8cbcec8e"
+			"sha256": "e17474ad808b84548e3d354da573cc7d6d1f434b27b51fac367e5ba3624f758d"
 		},
 		"artifacts/terminfo/67/ghostty": {
 			"sha256": "8ac69a6a57378edd05bcca8769ff49ce3d01e9496ff134781af5b9ee1d934b7b"

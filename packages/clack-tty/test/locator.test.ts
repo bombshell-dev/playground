@@ -14,7 +14,7 @@ const description: ClackFrame = {
 			name: 'input',
 			parent: 'form',
 			order: 0,
-			attrs: { label: 'name', role: 'textbox' },
+			attrs: { label: 'name', role: 'textbox', custom: { ['__proto__']: 'contact' } },
 			geo: {
 				layout: { x: 0, y: 0, width: 10, height: 1 },
 				term: { column: 0, row: 0, width: 10, height: 1 },
@@ -58,6 +58,10 @@ test('queries are immutable, pure, ordered, and work against historical descript
 			expect(locator('input + input').resolve(observation)[0]?.text().trim()).toBe('Main St');
 			expect(locator('input').nth(1).resolve(observation)[0]?.bounds.column).toBe(10);
 			expect(locator('input[label="absent"]').resolve(observation)).toEqual([]);
+			expect(locator('[data-__proto__="contact"]').resolve(observation)[0]?.text().trim()).toBe(
+				'Ryan',
+			);
+			expect(locator('[data-constructor], [data-toString]').resolve(observation)).toEqual([]);
 			expect(() => locator('form').resolve(observation)).toThrow(/no geometry/);
 			expect(
 				name.resolve({ kind: 'screen', sequence: 2, timestamp: 1, screen: t.screen.current() }),

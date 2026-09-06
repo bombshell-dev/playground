@@ -35,15 +35,21 @@ function versionAtLeast(actual: string, required: readonly [number, number]): bo
 	const [major = 0, minor = 0] = actual.replace(/^v/, '').split('.').map(Number);
 	return major > required[0] || (major === required[0] && minor >= required[1]);
 }
+/** Read runtime identity from the Node-compatible API all supported runtimes provide. */
+export function currentRuntime(): { name: 'node' | 'bun' | 'deno'; version: string } {
+	if (process.versions.deno) return { name: 'deno', version: process.versions.deno };
+	if (process.versions.bun) return { name: 'bun', version: process.versions.bun };
+	return { name: 'node', version: process.version };
+}
+
 /** Assert the current runtime meets Ghostwright minimum version requirements. */
 export function assertSupportedRuntime(): void {
-	const deno = (globalThis as unknown as { Deno?: { version: { deno: string } } }).Deno,
-		bun = (globalThis as unknown as { Bun?: { version: string } }).Bun;
-	if (deno && !versionAtLeast(deno.version.deno, [2, 2]))
-		throw new LaunchError(`Ghostwright requires Deno 2.2 or newer; found ${deno.version.deno}`);
-	if (bun && !versionAtLeast(bun.version, [1, 2]))
-		throw new LaunchError(`Ghostwright requires Bun 1.2 or newer; found ${bun.version}`);
-	if (!deno && !bun && !versionAtLeast(process.versions.node, [22, 0]))
+	const runtime = currentRuntime();
+	if (runtime.name === 'deno' && !versionAtLeast(runtime.version, [2, 2]))
+		throw new LaunchError(`Ghostwright requires Deno 2.2 or newer; found ${runtime.version}`);
+	if (runtime.name === 'bun' && !versionAtLeast(runtime.version, [1, 2]))
+		throw new LaunchError(`Ghostwright requires Bun 1.2 or newer; found ${runtime.version}`);
+	if (runtime.name === 'node' && !versionAtLeast(runtime.version, [22, 0]))
 		throw new LaunchError(`Ghostwright requires Node 22 or newer; found ${process.versions.node}`);
 }
 /** Normalize a partial viewport to required dimensions with defaults. */
@@ -76,21 +82,25 @@ export function normalizeViewport(input?: Viewport): Required<Viewport> {
 export function profileEnvironment(
 	explicit: Readonly<Record<string, string>> | undefined,
 	terminfo: string,
-) {
+): Record<string, string> {
 	const bad = RESERVED_ENVIRONMENT.filter((k) => Object.hasOwn(explicit ?? {}, k));
 	if (bad.length)
 		throw new ReservedEnvironmentError(
 			`Terminal profile variables cannot be overridden: ${bad.join(', ')}`,
 		);
+	const inherited: Record<string, string> = {};
+	for (const [key, value] of Object.entries(process.env)) {
+		if (value !== undefined) inherited[key] = value;
+	}
 	return {
-		...process.env,
+		...inherited,
 		...explicit,
 		TERM: 'xterm-ghostty',
 		TERMINFO: terminfo,
 		COLORTERM: 'truecolor',
 		TERM_PROGRAM: 'ghostwright',
 		TERM_PROGRAM_VERSION: PACKAGE_VERSION,
-	} as Record<string, string>;
+	};
 }
 /** Return the platform key for the current or specified OS/arch. */
 export function target(os = process.platform, arch = process.arch): string {

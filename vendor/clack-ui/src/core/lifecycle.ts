@@ -23,7 +23,7 @@ export const LifecycleApi = createApi('lifecycle', {
 
 export const { destroy, id } = LifecycleApi.methods;
 
-export function create(parent: Node = global) {
+export function create(parent: Node = global): Node {
 	return LifecycleApi.methods.create(parent);
 }
 

@@ -14,7 +14,8 @@ export { withTerminal, type EffectionTerminal } from './effection/index.ts';
 export { replayTrace, type ReplayResult, type ReplayOptions } from './tracing/replay.ts';
 import { expectTerminal as expectAsync } from './assertions/index.ts';
 import { EffectionLocator, EffectionTerminal, expectOperation } from './effection/index.ts';
-import { Locator, type TerminalSession } from './terminal/session.ts';
+import { InvalidOptionsError } from './errors.ts';
+import { Locator, TerminalSession } from './terminal/session.ts';
 import type {
 	AsyncLocator,
 	AsyncLocatorExpectation,
@@ -39,13 +40,9 @@ export function expectTerminal(
 	| OperationTerminalExpectation
 	| AsyncTerminalExpectation {
 	if (target instanceof AsyncExecution) return expectAsync(target.session);
-	return (
-		target instanceof EffectionLocator || target instanceof EffectionTerminal
-			? expectOperation(target)
-			: expectAsync(target instanceof Locator ? target : (target as unknown as TerminalSession))
-	) as
-		| OperationLocatorExpectation
-		| AsyncLocatorExpectation
-		| OperationTerminalExpectation
-		| AsyncTerminalExpectation;
+	if (target instanceof EffectionLocator || target instanceof EffectionTerminal)
+		return expectOperation(target);
+	if (target instanceof Locator) return expectAsync(target);
+	if (target instanceof TerminalSession) return expectAsync(target);
+	throw new InvalidOptionsError('Expected a Ghostwright terminal or locator');
 }

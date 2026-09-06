@@ -82,7 +82,7 @@ export class RegionInspection {
 					},
 		);
 	}
-	cursor() {
+	cursor(): Readonly<ScreenSnapshot['cursor'] & { inside: boolean }> {
 		const cursor = this.screen.cursor,
 			r = this.visibleBounds;
 		return Object.freeze({
@@ -108,6 +108,8 @@ export class RegionInspection {
 		]);
 	}
 }
-export function inspect(screen: ScreenSnapshot) {
+export function inspect(
+	screen: ScreenSnapshot,
+): Readonly<{ region(bounds: Rect): RegionInspection }> {
 	return Object.freeze({ region: (bounds: Rect) => new RegionInspection(screen, bounds) });
 }

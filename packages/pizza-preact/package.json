@@ -1,8 +1,8 @@
 {
 	"name": "@ghostwright/pizza-preact",
 	"version": "0.0.0",
-	"description": "A Preact clack/ui pizza delivery example tested outside-in with Ghostwright",
 	"private": true,
+	"description": "A Preact clack/ui pizza delivery example tested outside-in with Ghostwright",
 	"license": "MIT",
 	"type": "module",
 	"scripts": {

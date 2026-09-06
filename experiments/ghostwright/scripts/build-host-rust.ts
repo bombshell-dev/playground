@@ -1,4 +1,5 @@
 import { $ } from 'bun';
+import { UnsupportedPlatformError } from '../src/errors.ts';
 import { copyFile, mkdir, chmod } from 'node:fs/promises';
 
 const root = new URL('..', import.meta.url).pathname;
@@ -12,8 +13,9 @@ const targets: Record<string, string> = {
 const local = `${process.platform}-${process.arch}`;
 const target =
 	process.env.GHOSTWRIGHT_RUST_TARGET ??
-	Object.keys(targets).find((target) => targets[target] === local);
-if (!target || !targets[target]) throw new Error(`Unsupported Rust PTY target: ${target ?? local}`);
+	Object.keys(targets).find((candidate) => targets[candidate] === local);
+if (!target || !targets[target])
+	throw new UnsupportedPlatformError(`Unsupported Rust PTY target: ${target ?? local}`);
 await mkdir(`${root}/artifacts`, { recursive: true });
 await mkdir(`${root}/.cache/hosts`, { recursive: true });
 await $`cargo build --release --locked --target ${target}`.cwd(crate);
@@ -22,4 +24,4 @@ const output = `${root}/artifacts/pty-host-${targets[target]}`;
 await copyFile(binary, output);
 await chmod(output, 0o755);
 if (targets[target] === local) await copyFile(output, `${root}/.cache/hosts/pty-host-rust`);
-console.log(output);
+console.info(output);

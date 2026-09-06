@@ -4,6 +4,7 @@ import {
 	type Observation,
 	type ScreenSnapshot,
 	type RegionInspection,
+	type Rect,
 } from '../src/index.ts';
 import { GhosttyWasmTerminal } from '../src/terminal/wasm.ts';
 
@@ -39,7 +40,7 @@ test('a screen locator re-resolves geometry while historical matches keep their 
 
 		// The resolver defines the relationship. Here the child is the next
 		// cell, not a cell geometrically contained by its parent.
-		const nextCell = (parent: RegionInspection) => [
+		const nextCell = (parent: RegionInspection): Rect[] => [
 			{ ...parent.bounds, column: parent.bounds.column + 1 },
 		];
 		const letters = marks.derive('next cell', nextCell);

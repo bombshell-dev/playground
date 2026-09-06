@@ -12,7 +12,7 @@ declare module '@clack/ui/elements' {
 	}
 }
 
-export function useBoxElement(host: Host) {
+export function useBoxElement(host: Host): void {
 	LayoutApi.around(host.root, {
 		*layout([node], next) {
 			const element = getElement(node);
@@ -26,10 +26,7 @@ export function useBoxElement(host: Host) {
 }
 
 /** Container layout: box framing with literal children folded into text runs. */
-export function* containerLayout(
-	node: Node,
-	element: HostElement,
-): Generator<Op> {
+export function* containerLayout(node: Node, element: HostElement): Generator<Op> {
 	let content = '';
 	yield open(id(node), element.properties);
 	for (const child of element.children) {

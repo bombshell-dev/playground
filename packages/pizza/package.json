@@ -1,8 +1,8 @@
 {
 	"name": "@ghostwright/pizza",
 	"version": "0.0.0",
-	"description": "A clack/ui pizza delivery form with a card dialog, validated with ghostwright tree locators",
 	"private": true,
+	"description": "A clack/ui pizza delivery form with a card dialog, validated with ghostwright tree locators",
 	"license": "MIT",
 	"type": "module",
 	"scripts": {
@@ -20,9 +20,6 @@
 		"tsx": "^4.19.0",
 		"vitest": "^4.1.9"
 	},
-	"@clack/ui": {
-		"extensions": ["@ghostwright/clack-tty/auto"]
-	},
 	"devEngines": {
 		"packageManager": {
 			"name": "pnpm",
@@ -34,5 +31,10 @@
 			"version": "22.14.0",
 			"onFail": "error"
 		}
+	},
+	"@clack/ui": {
+		"extensions": [
+			"@ghostwright/clack-tty/auto"
+		]
 	}
 }

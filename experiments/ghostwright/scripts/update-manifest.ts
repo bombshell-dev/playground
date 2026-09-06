@@ -66,8 +66,7 @@ for (let dir = new URL('./', lockUrl); ; dir = new URL('../', dir)) {
 	if (dir.pathname === '/') break;
 }
 
-// oxlint-disable-next-line no-console -- build script
-console.log(
+console.info(
 	`manifest: ${refreshed.length} checksum(s) updated, ${built.length - refreshed.length} unchanged, ${preserved.length} preserved for targets not built here${
 		preserved.length ? ` (${preserved.join(', ')})` : ''
 	}`,

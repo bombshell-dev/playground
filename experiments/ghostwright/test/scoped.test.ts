@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test';
 import { run } from 'effection';
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+// oxlint-disable-next-line no-restricted-imports -- mkdtemp and readdir return filesystem paths.
 import { join } from 'node:path';
 import {
 	withTerminalAsync,
@@ -17,6 +18,7 @@ import {
 	settled,
 	replayTrace,
 	type TerminalExtensionDefinition,
+	type TerminalLaunchOptions,
 	type RegionInspection,
 } from '../src/index.ts';
 
@@ -59,7 +61,7 @@ const extension: TerminalExtensionDefinition<Description> = {
 	},
 };
 const field = defineLocator<Description>('rig', 'field', (description) => [description.bounds]);
-const launch = () => ({
+const launch = (): TerminalLaunchOptions => ({
 	command: process.execPath,
 	args: ['-e', application],
 	extensions: [extension],

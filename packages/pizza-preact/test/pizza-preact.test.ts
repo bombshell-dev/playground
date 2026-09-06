@@ -1,10 +1,10 @@
 import { test } from 'vitest';
-import { withTerminalAsync } from 'ghostwright';
+import { withTerminalAsync, type TerminalLaunchOptions } from 'ghostwright';
 import { clackTtyExtension, expectUI, locator } from '@ghostwright/clack-tty';
 
 // Launch the Preact app in a real terminal. Locators find the controls;
 // assertions check the text, borders, and cursor drawn on that terminal.
-const pizza = () => ({
+const pizza = (): TerminalLaunchOptions => ({
 	command: process.execPath,
 	args: ['--import', 'tsx', 'src/index.tsx'],
 	cwd: new URL('..', import.meta.url).pathname,
