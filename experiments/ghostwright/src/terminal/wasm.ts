@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import { FUNCTIONAL_KEYS } from '../keys.ts';
 import type {
 	CellStyle,
 	KittyGraphicsSnapshot,
@@ -1217,21 +1218,7 @@ export class GhosttyWasmTerminal {
 	encodeKey(input: KeyName | KeyPress) {
 		const event = typeof input === 'string' ? { key: input } : input,
 			name = event.key,
-			functional: Record<string, number> = {
-				Backspace: 53,
-				Enter: 58,
-				Tab: 64,
-				Delete: 68,
-				End: 69,
-				Home: 71,
-				PageDown: 73,
-				PageUp: 74,
-				ArrowDown: 75,
-				ArrowLeft: 76,
-				ArrowRight: 77,
-				ArrowUp: 78,
-				Escape: 120,
-			};
+			functional: Record<string, number> = FUNCTIONAL_KEYS;
 		let key = functional[name] ?? 0,
 			text = '';
 		const functionMatch = /^F(\d+)$/.exec(name);

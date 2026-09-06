@@ -34,6 +34,7 @@
 		}
 	},
 	"scripts": {
+		"setup": "bun run build:artifacts && bun run verify:artifacts",
 		"build": "rm -rf dist && bun build src/index.ts src/async.ts src/pty/protocol.ts --outdir dist --target node --format esm --packages external --sourcemap=external && bunx tsc -p tsconfig.build.json && bun scripts/fix-declarations.ts",
 		"fetch:ghostty": "bun scripts/fetch-ghostty.ts",
 		"build:ghostty-vt": "bun scripts/build-ghostty-vt.ts",
@@ -43,6 +44,7 @@
 		"test:host:rust:full": "GHOSTWRIGHT_CONTRACT_HOST=.cache/hosts/pty-host-rust bun test --preload ./test/preload-host.ts .",
 		"compare:hosts": "bun scripts/compare-hosts.ts",
 		"build:artifacts": "bun run fetch:ghostty && bun run build:ghostty-vt && bun scripts/build-artifacts.ts",
+		"update:manifest": "bun scripts/update-manifest.ts",
 		"verify:artifacts": "bun scripts/verify-artifacts.ts",
 		"test": "bun test",
 		"test:examples": "bun test examples"

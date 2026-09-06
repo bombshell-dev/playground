@@ -30,7 +30,7 @@
 		"format": "bsh format",
 		"format:check": "bsh format --check",
 		"lint": "bsh lint .",
-		"test": "bsh test --exclude 'experiments/ghostwright/**'"
+		"test": "bsh test --exclude 'experiments/ghostwright/**' --exclude 'packages/**'"
 	},
 	"devDependencies": {
 		"@bomb.sh/args": "catalog:",

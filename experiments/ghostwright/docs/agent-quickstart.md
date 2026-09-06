@@ -172,6 +172,22 @@ The vi examples prove Ghostwright is exercising raw input, alternate-screen rest
 
 The second example prints `hello world` in interactive Bash, enters vi's alternate screen, exits vi, and verifies Bash's primary screen still contains the original output.
 
+## Inspect what is on screen
+
+When an assertion is not enough and you need the underlying data, locators expose geometry and cells, and the screen exposes rectangles:
+
+```ts
+const [match] = terminal.getByText('Name').matches();
+match.range; // { column, row, width, height }
+match.cells; // ScreenCell[], each with .style
+
+terminal.screen.snapshot(); // whole screen (alias of screen.current())
+terminal.screen.getCells({ column: 0, row: 7, width: 40, height: 3 });
+terminal.screen.getText({ column: 0, row: 7, width: 40, height: 3 });
+```
+
+Prefer an assertion when one exists: `toHaveStyle()` and `toContainCursor()` wait for convergence, whereas `matches()` and `snapshot()` read the current instant and will not wait.
+
 ## Next references
 
 - Choose synchronization correctly: [`choosing-assertions.md`](choosing-assertions.md)
