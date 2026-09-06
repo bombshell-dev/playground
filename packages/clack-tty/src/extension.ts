@@ -1,6 +1,12 @@
 import { compile, type Options } from 'css-select';
 import { AttributeAction, parse, SelectorType, type Selector } from 'css-what';
-import { defineLocator, GhostwrightError, type TerminalExtensionDefinition } from 'ghostwright';
+import {
+	defineLocator,
+	GhostwrightError,
+	InvalidOptionsError,
+	type RegionLocator,
+	type TerminalExtensionDefinition,
+} from 'ghostwright';
 import {
 	CLACK_TTY_NAMESPACE,
 	CLACK_TTY_OSC,
@@ -146,21 +152,59 @@ function selector(source: string): Selector[][] {
 	return ast;
 }
 
-/** Construct a reusable, session-free query. Resolution never reads a live UI. */
-export function locator(source: string) {
-	const predicate = compile(selector(source), { adapter, xmlMode: true, cacheResults: false });
-	return defineLocator<ClackFrame>(ID, source, (frame) =>
-		materialize(frame)
-			.filter(predicate)
-			.map((node) => {
-				if (!node.geo)
-					return fail(
-						'GW_CLACK_NO_GEOMETRY',
-						`${source}: ${node.key}/${node.name} has no geometry`,
-					);
-				return node.geo.term; // Preserve original edges. Core inspection handles viewport clipping.
-			}),
+/** DOM queries retain node identity until the final region is inspected. */
+export interface ClackLocator extends RegionLocator {
+	/** Search strict descendants of the current matches, not their cell bounds. */
+	locator(source: string): ClackLocator;
+	nth(index: number): ClackLocator;
+}
+
+const selectorOptions: Options<Element, Element> = { adapter, xmlMode: true, cacheResults: false };
+type NodeQuery = (document: readonly Element[]) => readonly Element[];
+
+function treeLocator(source: string, select: NodeQuery): ClackLocator {
+	const regions = defineLocator<ClackFrame>(ID, source, (frame) =>
+		select(materialize(frame)).map((node) => {
+			if (!node.geo)
+				return fail('GW_CLACK_NO_GEOMETRY', `${source}: ${node.key}/${node.name} has no geometry`);
+			return node.geo.term;
+		}),
 	);
+	return Object.freeze({
+		...regions,
+		nth(index: number): ClackLocator {
+			if (!Number.isSafeInteger(index) || index < 0)
+				throw new InvalidOptionsError('Locator index must be nonnegative');
+			return treeLocator(`${source}.nth(${index})`, (document) =>
+				select(document).slice(index, index + 1),
+			);
+		},
+		locator(childSource: string): ClackLocator {
+			// Validate at construction, including selector expressions that fail compilation.
+			compile(selector(childSource), selectorOptions);
+			return treeLocator(`${source} >> ${childSource}`, (document) => {
+				const parents = select(document);
+				if (!parents.length) return [];
+				const roots = new Set(parents);
+				// css-select binds :scope/relative selectors to these nodes and mutates
+				// parsed tokens. Compile fresh tokens for this observation's context.
+				const matches = compile(childSource, selectorOptions, [...parents]);
+				return document.filter((node) => {
+					if (!matches(node)) return false;
+					for (let ancestor = node.parentNode; ancestor; ancestor = ancestor.parentNode) {
+						if (roots.has(ancestor)) return true;
+					}
+					return false;
+				});
+			});
+		},
+	});
+}
+
+/** Construct a reusable, session-free query. Resolution never reads a live UI. */
+export function locator(source: string): ClackLocator {
+	const predicate = compile(selector(source), selectorOptions);
+	return treeLocator(source, (document) => document.filter(predicate));
 }
 
 /** Pure decoder shared by live sessions and replay. */

@@ -8,6 +8,8 @@ The output pipeline publishes descriptions with the immutable screen that preced
 
 `RegionLocator` is an immutable query. It owns no session or pending work. `resolve(observation)` produces `RegionInspection` values tied to that observation. Inspections retain original bounds separately from viewport clipping. An offscreen top border does not become the first visible row.
 
+Without OSC, `defineScreenLocator(source, resolve)` passes a `ScreenSnapshot` to a pure resolver that returns zero or more rectangles. It resolves screen observations through the same inspection and execution layer. The [Vim/netrw spike](../examples/vim-netrw/README.md) demonstrates an authored spatial adapter, including its deliberate limits.
+
 ## Async API
 
 ```ts

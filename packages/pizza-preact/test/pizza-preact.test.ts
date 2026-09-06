@@ -14,14 +14,14 @@ const pizza = () => ({
 });
 
 const delivery = locator('form[label="delivery"]');
-const name = locator('input[label="name"]');
-const address = locator('input[label="address"]');
-const addCard = locator('button[label="add-card"]');
+const name = delivery.locator('input[label="name"]');
+const address = delivery.locator('input[label="address"]');
+const addCard = delivery.locator('button[label="add-card"]');
 const cardDetails = locator('dialog[label="card"]');
-const cardNumber = locator('input[label="card-number"]');
-const expiry = locator('input[label="expiry"]');
-const cvc = locator('input[label="cvc"]');
-const submitCard = locator('button[label="submit-card"]');
+const cardNumber = cardDetails.locator('input[label="card-number"]');
+const expiry = cardDetails.locator('input[label="expiry"]');
+const cvc = cardDetails.locator('input[label="cvc"]');
+const submitCard = cardDetails.locator('button[label="submit-card"]');
 
 test('return from card details without losing the delivery address', async () => {
 	await withTerminalAsync(pizza(), async (ui) => {

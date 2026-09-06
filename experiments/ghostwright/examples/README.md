@@ -9,12 +9,14 @@ Both example suites automate the same interactive CLI so the two public API styl
 - [`async/bash-vi-roundtrip.test.ts`](async/bash-vi-roundtrip.test.ts) verifies Bash's primary screen survives a vi alternate-screen round trip.
 - [`effection/bash-vi-roundtrip.test.ts`](effection/bash-vi-roundtrip.test.ts) runs the same screen-restoration check with Effection.
 
-The vi examples use an isolated temporary HOME and a fixture marker, avoiding user configuration, welcome-screen, and locale assumptions. Linux CI installs `vim-tiny`; macOS uses its system vi.
+The basic vi examples use an isolated temporary HOME and a fixture marker, avoiding user configuration, welcome-screen, and locale assumptions.
+
+The [Vim/netrw spike](vim-netrw/README.md) goes further: it finds an explorer and opens a file using only screen-derived geometry. It requires Vim with the full netrw runtime; `vim-tiny` alone is not sufficient. See its README for the supported layout and validation limits.
 
 The simple CLI application under test is `/bin/sh`, which is present on every macOS and Linux host supported by Ghostwright. The shell is launched explicitly—Ghostwright never inserts an implicit shell. Its script uses only POSIX `printf` and `read` builtins, prompts for a name, and prints a greeting.
 
 Run all examples with:
 
 ```sh
-bun test packages/ghostwright/examples
+bun test experiments/ghostwright/examples
 ```
