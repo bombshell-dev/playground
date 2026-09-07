@@ -5,6 +5,7 @@ use nix::pty::{openpty, Winsize};
 use nix::sys::signal::Signal;
 use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 use nix::unistd::{fork, ForkResult, Pid};
+use std::collections::VecDeque;
 use std::ffi::CString;
 use std::io;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
@@ -70,6 +71,12 @@ impl PreparedExec {
     }
 }
 
+struct PendingWrite {
+    correlation: u32,
+    data: Vec<u8>,
+    offset: usize,
+}
+
 pub struct Session {
     master: Option<OwnedFd>,
     child: Option<Pid>,
@@ -78,6 +85,8 @@ pub struct Session {
     pty_eof: bool,
     exited_at: Option<Instant>,
     cleanup: CleanupOptions,
+    writes: VecDeque<PendingWrite>,
+    queued_bytes: usize,
 }
 
 impl Session {
@@ -90,6 +99,8 @@ impl Session {
             pty_eof: false,
             exited_at: None,
             cleanup: CleanupOptions::default(),
+            writes: VecDeque::new(),
+            queued_bytes: 0,
         }
     }
 
@@ -147,6 +158,7 @@ impl Session {
                     || nix::libc::dup2(slave_fd, nix::libc::STDOUT_FILENO) < 0
                     || nix::libc::dup2(slave_fd, nix::libc::STDERR_FILENO) < 0
                 {
+                    write_exec_error(exec_error_write.as_raw_fd());
                     nix::libc::_exit(126);
                 }
                 if slave_fd > nix::libc::STDERR_FILENO {
@@ -179,12 +191,14 @@ impl Session {
                 nix::libc::_exit(127);
             },
             ForkResult::Parent { child } => {
+                // Own the child before any fallible parent-side operation.
+                self.child = Some(child);
+                self.process_group = Some(child);
                 drop(pty.slave);
                 drop(barrier_read);
                 drop(exec_error_write);
+                set_nonblocking(pty.master.as_raw_fd())?;
                 self.master = Some(pty.master);
-                self.child = Some(child);
-                self.process_group = Some(child);
                 self.cleanup = request.cleanup;
 
                 protocol.spawned(correlation, child.as_raw(), child.as_raw())?;
@@ -210,13 +224,89 @@ impl Session {
         }
     }
 
-    pub fn write(&self, data: &[u8]) -> Result<usize, SessionError> {
-        let fd = self
-            .master
-            .as_ref()
-            .ok_or_else(|| io::Error::from(io::ErrorKind::BrokenPipe))?
-            .as_raw_fd();
-        Ok(write_all_fd(fd, data)?)
+    pub fn wants_write(&self) -> bool {
+        !self.writes.is_empty()
+    }
+
+    pub fn queue_write(&mut self, correlation: u32, data: Vec<u8>) -> Result<(), SessionError> {
+        if self.master.is_none() {
+            return Err(io::Error::from(io::ErrorKind::BrokenPipe).into());
+        }
+        if self.queued_bytes + data.len() > 4 * 1024 * 1024 || self.writes.len() >= 1024 {
+            return Err(io::Error::other("PTY input queue limit exceeded").into());
+        }
+        self.queued_bytes += data.len();
+        self.writes.push_back(PendingWrite {
+            correlation,
+            data,
+            offset: 0,
+        });
+        Ok(())
+    }
+
+    pub fn flush_writes(&mut self, protocol: &mut Protocol) -> Result<(), SessionError> {
+        let Some(master) = self.master.as_ref() else {
+            return Ok(());
+        };
+        while let Some(pending) = self.writes.front_mut() {
+            if pending.offset < pending.data.len() {
+                let bytes = &pending.data[pending.offset..];
+                // SAFETY: bytes is a live slice and master is owned by this session.
+                let written = unsafe {
+                    nix::libc::write(master.as_raw_fd(), bytes.as_ptr().cast(), bytes.len())
+                };
+                if written < 0 {
+                    let error = io::Error::last_os_error();
+                    if error.kind() == io::ErrorKind::Interrupted {
+                        continue;
+                    }
+                    if error.kind() == io::ErrorKind::WouldBlock {
+                        return Ok(());
+                    }
+                    self.cancel_writes(protocol)?;
+                    return Ok(());
+                }
+                if written == 0 {
+                    return Ok(());
+                }
+                pending.offset += written as usize;
+                self.queued_bytes -= written as usize;
+            }
+            if pending.offset == pending.data.len() {
+                let completed = self.writes.pop_front().unwrap();
+                protocol.ack(
+                    completed.correlation,
+                    crate::protocol::kind::WRITE,
+                    Some(completed.offset),
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn cancel_write(
+        &mut self,
+        sequence: u32,
+        protocol: &mut Protocol,
+    ) -> Result<(), SessionError> {
+        if let Some(index) = self
+            .writes
+            .iter()
+            .position(|write| write.correlation == sequence)
+        {
+            let pending = self.writes.remove(index).unwrap();
+            self.queued_bytes -= pending.data.len() - pending.offset;
+            protocol.write_failed(pending.correlation, pending.offset)?;
+        }
+        Ok(())
+    }
+
+    fn cancel_writes(&mut self, protocol: &mut Protocol) -> Result<(), SessionError> {
+        while let Some(pending) = self.writes.pop_front() {
+            protocol.write_failed(pending.correlation, pending.offset)?;
+        }
+        self.queued_bytes = 0;
+        Ok(())
     }
 
     pub fn resize(&self, viewport: Viewport) -> Result<(), SessionError> {
@@ -269,11 +359,15 @@ impl Session {
                 ))
         {
             self.master.take();
+            self.cancel_writes(protocol)?;
             if !self.pty_eof {
                 protocol.pty_eof()?;
                 self.pty_eof = true;
             }
-        } else if io::Error::last_os_error().raw_os_error() != Some(nix::libc::EINTR) {
+        } else if !matches!(
+            io::Error::last_os_error().kind(),
+            io::ErrorKind::Interrupted | io::ErrorKind::WouldBlock
+        ) {
             return Err(io::Error::last_os_error().into());
         }
         Ok(())
@@ -297,6 +391,7 @@ impl Session {
 
     pub fn cleanup(&mut self, protocol: &mut Protocol) -> Result<(), SessionError> {
         self.terminate_group(protocol)?;
+        self.cancel_writes(protocol)?;
         self.master.take();
         if let Some(child) = self.child {
             if !self.child_exited {
@@ -312,6 +407,7 @@ impl Session {
                 }
             }
         }
+        self.process_group = None;
         Ok(())
     }
 
@@ -328,9 +424,9 @@ impl Session {
             WaitStatus::Signaled(_, signal, _) => (None, Some(signal as i32)),
             _ => return Ok(()),
         };
-        protocol.process_exit(exit_code, signal)?;
         self.child_exited = true;
         self.exited_at = Some(Instant::now());
+        protocol.process_exit(exit_code, signal)?;
         Ok(())
     }
 
@@ -395,6 +491,20 @@ impl Session {
     }
 }
 
+// Protocol failures must not bypass process ownership. This fallback performs no
+// allocation or output and runs even when normal cleanup cannot report an exit.
+impl Drop for Session {
+    fn drop(&mut self) {
+        if let Some(group) = self.process_group {
+            unsafe { nix::libc::kill(-group.as_raw(), nix::libc::SIGKILL) };
+        }
+        if let Some(child) = self.child.filter(|_| !self.child_exited) {
+            unsafe { nix::libc::kill(child.as_raw(), nix::libc::SIGKILL) };
+            while let Err(nix::errno::Errno::EINTR) = waitpid(child, None) {}
+        }
+    }
+}
+
 fn parse_signal(name: &str) -> Result<Signal, SessionError> {
     match name {
         "SIGINT" | "INT" => Ok(Signal::SIGINT),
@@ -405,6 +515,18 @@ fn parse_signal(name: &str) -> Result<Signal, SessionError> {
         "SIGUSR2" | "USR2" => Ok(Signal::SIGUSR2),
         _ => Err(SessionError::InvalidSignal(name.to_owned())),
     }
+}
+
+pub fn set_nonblocking(fd: i32) -> Result<(), io::Error> {
+    // SAFETY: fcntl only changes flags on the provided open descriptor.
+    unsafe {
+        let flags = nix::libc::fcntl(fd, nix::libc::F_GETFL);
+        if flags < 0 || nix::libc::fcntl(fd, nix::libc::F_SETFL, flags | nix::libc::O_NONBLOCK) < 0
+        {
+            return Err(io::Error::last_os_error());
+        }
+    }
+    Ok(())
 }
 
 fn pipe_cloexec() -> Result<(OwnedFd, OwnedFd), io::Error> {

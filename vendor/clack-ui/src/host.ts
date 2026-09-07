@@ -1,5 +1,5 @@
 // oxlint-disable max-params
-import { text } from '@bomb.sh/tty';
+import { text as textOperation } from '@bomb.sh/tty';
 import { type Node, create, createApi, createContext, destroy, LifecycleApi } from './core.ts';
 import {
 	getElement,
@@ -35,7 +35,7 @@ export interface Host {
 
 export function createHost(): Host {
 	const root = create();
-	const element: HostElement = {
+	const rootElement: HostElement = {
 		type: 'element',
 		name: 'root',
 		node: root,
@@ -44,8 +44,8 @@ export function createHost(): Host {
 		children: [],
 	};
 
-	setElement(root, element);
-	useRootLayout(root, element);
+	setElement(root, rootElement);
+	useRootLayout(root, rootElement);
 
 	LifecycleApi.around(root, {
 		destroy([node], next) {
@@ -64,21 +64,13 @@ export function createHost(): Host {
 			const target = getElement(node);
 			const map = ListenerContext.expect(node);
 			const types = map.get(target);
-			if (types) {
-				const listeners = types.get(event.type);
-				if (listeners) {
-					const active = [...listeners];
-					for (const listener of active) {
-						listener(event);
-					}
-				}
-			}
+			if (types) dispatchListeners(types, event);
 		},
 	});
 
 	const host: Host = {
 		root,
-		element,
+		element: rootElement,
 		createElement(type) {
 			return HostApi.methods.createElement(root, type);
 		},
@@ -172,42 +164,59 @@ export const HostApi = createApi('host', {
 		return HostContext.expect(node);
 	},
 
-	addEventListener(node, element, type, listener): void {
+	addEventListener<T extends HostEventType>(
+		node: Node,
+		element: HostElement,
+		type: T,
+		listener: HostEventListener<T>,
+	): void {
 		const map = ListenerContext.expect(node);
 		let types = map.get(element);
 		if (!types) {
-			map.set(element, (types = new Map()));
+			// Event names come from an open interface, not Object.prototype.
+			types = Object.create(null) as Listeners;
+			map.set(element, types);
 		}
-		let listeners = types.get(type);
-		if (!listeners) {
-			types.set(type, (listeners = new Set()));
-		}
+		// TS cannot correlate a generic mapped key with the Set created for that key.
+		const listeners = (types[type] ??= new Set<HostEventListener<T>>() as NonNullable<
+			Listeners[T]
+		>);
 		listeners.add(listener);
 	},
 
-	removeEventListener(node, element, type, listener): void {
+	removeEventListener<T extends HostEventType>(
+		node: Node,
+		element: HostElement,
+		type: T,
+		listener: HostEventListener<T>,
+	): void {
 		const map = ListenerContext.expect(node);
 		const types = map.get(element);
-		if (types) {
-			const listeners = types.get(type);
-			if (listeners) {
-				listeners.delete(listener);
-				if (listeners.size === 0) {
-					types.delete(type);
-				}
-			}
-			if (types.size === 0) {
-				map.delete(element);
-			}
+		if (!types) return;
+		const listeners = types[type];
+		if (listeners) {
+			listeners.delete(listener);
+			if (listeners.size === 0) delete types[type];
 		}
+		if (Reflect.ownKeys(types).length === 0) map.delete(element);
 	},
 });
 
 const HostContext = createContext<Host>('host');
-const ListenerContext =
-	createContext<WeakMap<HostElement, Map<string, Set<HostEventListener<keyof HostEvents>>>>>(
-		'listeners',
-	);
+type Listeners = { [T in HostEventType]?: Set<HostEventListener<T>> };
+const ListenerContext = createContext<WeakMap<HostElement, Listeners>>('listeners');
+
+function dispatchListeners<T extends HostEventType>(
+	types: Listeners,
+	event: HostEvents[T] & { type: T },
+): void {
+	const listeners = types[event.type];
+	if (listeners) {
+		// Listeners may remove themselves or add other listeners during dispatch.
+		const active = [...listeners];
+		for (const listener of active) listener(event);
+	}
+}
 
 function isAttached(element: HostElement): boolean {
 	return !!element.node;
@@ -243,7 +252,7 @@ function useRootLayout(root: Node, element: HostElement): void {
 			for (const child of element.children) {
 				if (child.type === 'element') {
 					if (content !== '') {
-						yield text(content);
+						yield textOperation(content);
 						content = '';
 					}
 					yield* layout(child.node!);
@@ -252,7 +261,7 @@ function useRootLayout(root: Node, element: HostElement): void {
 				}
 			}
 			if (content !== '') {
-				yield text(content);
+				yield textOperation(content);
 			}
 		},
 	});

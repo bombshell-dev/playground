@@ -84,8 +84,7 @@ if (lock.graphics?.kittyGraphics) {
 		wasmExports.ghostty_wasm_free_u8_array(out, 1);
 	}
 }
-// oxlint-disable-next-line no-console -- verify script
-console.log(
+console.info(
 	`verified ${verified} Ghostwright artifacts and ${Object.keys(lock.abi.structSizes).length} ABI layouts${
 		absent.size ? `; skipped ${absent.size} not built here (${[...absent].join(', ')})` : ''
 	}`,

@@ -1,5 +1,5 @@
 import type { Operation } from 'effection';
-import type { GhostwrightError } from './errors.ts';
+import type { RegionLocator } from './locators.ts';
 
 export interface Viewport {
 	columns: number;
@@ -45,32 +45,15 @@ export interface OscRegistration<TCommit = unknown> {
 	decode(message: RegisteredOscMessage): TCommit;
 }
 
-export interface ExtensionRevision<T = unknown> {
-	sequence: number;
-	timestamp: number;
-	extensionId: string;
-	protocolFrame: number;
-	screenSequence: number;
-	value: T;
-}
-
 export interface ExtensionCommit<T> {
 	protocolFrame: number;
 	value: T;
 }
 
-export interface ExtensionSessionContext<T = unknown> {
-	readonly terminal: AsyncTerminal;
-	readonly screen: ScreenReader;
-	publish(commit: ExtensionCommit<T>): ExtensionRevision<T>;
-	diagnostic(error: GhostwrightError): void;
-}
-
-export interface TerminalExtensionDefinition<TSession = unknown, TCommit = unknown> {
+/** Pure protocol decoder. Core owns ordering, publication, and retention. */
+export interface TerminalExtensionDefinition<T = unknown> {
 	readonly id: string;
-	readonly osc?: OscRegistration<TCommit>;
-	createSession(context: ExtensionSessionContext<TCommit>): TSession;
-	accept?(session: TSession, commit: TCommit, context: ExtensionSessionContext<TCommit>): void;
+	readonly osc: OscRegistration<ExtensionCommit<T>>;
 }
 
 export interface TerminalLaunchOptions {
@@ -88,7 +71,9 @@ export interface TerminalLaunchOptions {
 	trace?: TracePolicy | TraceOptions;
 	name?: string;
 	/** Optional framework-specific extensions receiving ordered in-band OSC commits. */
-	extensions?: readonly TerminalExtensionDefinition<unknown, unknown>[];
+	extensions?: readonly TerminalExtensionDefinition[];
+	/** Adapter-owned selector syntax; protocol decoders remain pure. */
+	selector?: (source: string) => RegionLocator;
 }
 export interface Point {
 	column: number;
@@ -102,7 +87,7 @@ export interface ActionReceipt {
 	actionSequence: number;
 	screenSequenceBefore: number;
 	acknowledgedAt: number;
-	deliveredToChild: boolean;
+	/** Bytes accepted by the PTY. This does not prove application processing. */
 	bytesWritten: number;
 }
 /**
@@ -144,7 +129,6 @@ export interface MouseOptions {
 	shift?: boolean;
 	control?: boolean;
 	alt?: boolean;
-	super?: boolean;
 }
 export interface WheelOptions extends Point {
 	deltaRows: number;
@@ -424,8 +408,6 @@ export interface OperationRegion {
 	snapshot(): ScreenSnapshot;
 }
 export interface AsyncTerminal {
-	/** Return the session instance for a registered extension definition. */
-	extension<T>(definition: TerminalExtensionDefinition<T, unknown>): T;
 	readonly keyboard: {
 		press(key: KeyName | KeyPress): Promise<ActionReceipt>;
 		type(text: string, options?: TraceableInputOptions): Promise<ActionReceipt>;

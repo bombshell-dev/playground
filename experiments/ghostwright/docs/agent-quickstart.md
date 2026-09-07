@@ -63,10 +63,10 @@ Do not combine an executable and arguments into an implicit shell string.
 
 ```ts
 import { expect, test } from 'bun:test';
-import { expectTerminal, withTerminalAsync } from 'ghostwright';
+import { expectTerminal, withTerminal } from 'ghostwright';
 
 test('CLI starts and accepts input', async () => {
-	await withTerminalAsync(
+	await withTerminal(
 		{
 			command: 'bun',
 			args: ['src/cli.ts'],
@@ -102,17 +102,14 @@ Ghostwright assertions throw ordinary typed errors and require no runner plugin:
 ```ts
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { expectTerminal, withTerminalAsync } from 'ghostwright';
+import { expectTerminal, withTerminal } from 'ghostwright';
 
 test('CLI help', async () => {
-	await withTerminalAsync(
-		{ command: 'node', args: ['dist/cli.js', '--help'] },
-		async (terminal) => {
-			await expectTerminal(terminal.getByText('Usage:')).toBePresent();
-			const status = await terminal.process.waitForExit();
-			assert.equal(status.exitCode, 0);
-		},
-	);
+	await withTerminal({ command: 'node', args: ['dist/cli.js', '--help'] }, async (terminal) => {
+		await expectTerminal(terminal.getByText('Usage:')).toBePresent();
+		const status = await terminal.process.waitForExit();
+		assert.equal(status.exitCode, 0);
+	});
 });
 ```
 

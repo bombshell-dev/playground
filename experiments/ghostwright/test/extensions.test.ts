@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { RegisteredOscStream } from '../src/terminal/extensions.ts';
+import { RegisteredOscStream, type OscEvent } from '../src/terminal/extensions.ts';
 import type { OscRegistration } from '../src/types.ts';
 
 const registration: OscRegistration<string> = {
@@ -10,7 +10,9 @@ const registration: OscRegistration<string> = {
 };
 const frame = new TextEncoder().encode('\u001b]7777;test.semantic;v=1;payload\u001b\\');
 
-function events(items: ReturnType<RegisteredOscStream['push']>['items']) {
+function events(
+	items: ReturnType<RegisteredOscStream['push']>['items'],
+): { kind: 'event'; event: OscEvent }[] {
 	return items.filter((item) => item.kind === 'event');
 }
 
@@ -46,6 +48,13 @@ test('oversized registered OSC discards its complete payload through ST', () => 
 	).items;
 	expect(items.map((item) => item.kind)).toEqual(['error', 'ordinary']);
 	expect(new TextDecoder().decode((items[1] as { bytes: Uint8Array }).bytes)).toBe('VISIBLE');
+});
+
+test('an over-limit terminator does not swallow the next observation', () => {
+	const stream = new RegisteredOscStream([{ ...registration, maxBufferedBytes: frame.length - 1 }]);
+	const next = new TextEncoder().encode('\x1b]7777;test.semantic;v=1;x\x1b\\');
+	const items = stream.push(Uint8Array.from([...frame, ...next])).items;
+	expect(items.map((item) => item.kind)).toEqual(['error', 'event']);
 });
 
 test('ordinary ANSI output remains one ordinary host-frame item', () => {

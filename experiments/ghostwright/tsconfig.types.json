@@ -1,0 +1,16 @@
+{
+	"extends": "./tsconfig.build.json",
+	"compilerOptions": {
+		"noEmit": true,
+		"emitDeclarationOnly": false,
+		"rootDir": ".",
+		"types": ["node", "bun"]
+	},
+	"include": [
+		"src/**/*.ts",
+		"type-tests/**/*.ts",
+		"test/**/*.ts",
+		"examples/**/*.ts",
+		"scripts/**/*.ts"
+	]
+}

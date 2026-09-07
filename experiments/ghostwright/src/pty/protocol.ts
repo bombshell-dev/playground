@@ -10,6 +10,7 @@ export const enum FrameKind {
 	RESIZE = 0x0004,
 	SIGNAL = 0x0005,
 	CLOSE = 0x0006,
+	CANCEL_WRITE = 0x0007,
 	READY = 0x8001,
 	SPAWNED = 0x8002,
 	ACK = 0x8003,
@@ -77,7 +78,7 @@ const bad = (): ProtocolError => new ProtocolError('Truncated CBOR payload');
 /** Decode a CBOR binary payload to a JavaScript value. */
 export function decodeCbor(bytes: Uint8Array): unknown {
 	let p = 0;
-	const readLen = (ai: number) => {
+	const readLen = (ai: number): number => {
 		if (ai < 24) return ai;
 		if (ai === 24) {
 			if (p + 1 > bytes.length) throw bad();
@@ -176,7 +177,7 @@ export function encodeFrame(frame: Frame): Uint8Array {
 	return out;
 }
 export class FrameDecoder {
-	#buffer = new Uint8Array();
+	#buffer: Uint8Array = new Uint8Array();
 	#last = 0;
 	push(chunk: Uint8Array): Frame[] {
 		this.#buffer = concat([this.#buffer, chunk]);

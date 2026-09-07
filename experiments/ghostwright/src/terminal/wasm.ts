@@ -18,8 +18,9 @@ import type {
 } from '../types.ts';
 import { AssetIntegrityError, GhostwrightError } from '../errors.ts';
 
-type Fn = (...args: any[]) => number;
-type Exports = Record<string, Fn> & {
+// This VT ABI passes numeric pointers and scalar values, never JS objects.
+type Fn = (...args: (number | bigint)[]) => number;
+type Exports = Record<`ghostty_${string}`, Fn> & {
 	memory: WebAssembly.Memory;
 	__indirect_function_table: WebAssembly.Table;
 };
@@ -44,12 +45,12 @@ function unsignedLeb(value: number): number[] {
 	return bytes;
 }
 function callbackModule(parameterCount: number, returnsInt = false): WebAssembly.Module {
-	const section = (id: number, payload: number[]) => [
+	const section = (id: number, payload: number[]): number[] => [
 			id,
 			...unsignedLeb(payload.length),
 			...payload,
 		],
-		name = (value: string) => {
+		name = (value: string): number[] => {
 			const bytes = [...encoder.encode(value)];
 			return [...unsignedLeb(bytes.length), ...bytes];
 		},
@@ -104,7 +105,7 @@ const defaultStyle: CellStyle = Object.freeze({
 	background: Object.freeze({ kind: 'default' as const }),
 });
 let compiled: Promise<WebAssembly.Module> | undefined;
-async function moduleFor(url: URL) {
+async function moduleFor(url: URL): Promise<WebAssembly.Module> {
 	return (compiled ??= WebAssembly.compile(await readFile(url)));
 }
 function freeze<T>(value: T): T {
@@ -150,7 +151,10 @@ export class GhosttyWasmTerminal {
 	private constructor(viewport: Required<Viewport>) {
 		this.#viewport = viewport;
 	}
-	static async create(viewport: Required<Viewport>, storageLimitBytes = 64 * 1024 * 1024) {
+	static async create(
+		viewport: Required<Viewport>,
+		storageLimitBytes = 64 * 1024 * 1024,
+	): Promise<GhosttyWasmTerminal> {
 		const self = new GhosttyWasmTerminal(viewport);
 		const url = new URL(
 			import.meta.url.includes('/dist/')
@@ -165,34 +169,36 @@ export class GhosttyWasmTerminal {
 			throw new AssetIntegrityError(`Unable to load ${url.pathname}`, { cause });
 		}
 		const instance = await WebAssembly.instantiate(mod, { env: { log() {} } });
-		self.#e = instance.exports as unknown as Exports;
+		// The pinned, hash-checked module supplies this C ABI. WebAssembly's
+		// standard typings do not describe individual exported signatures.
+		self.#e = instance.exports as Exports;
 		self.#initialize(storageLimitBytes);
 		return self;
 	}
-	#view() {
+	#view(): DataView<ArrayBuffer> {
 		return new DataView(this.#e.memory.buffer);
 	}
-	#bytes() {
+	#bytes(): Uint8Array<ArrayBuffer> {
 		return new Uint8Array(this.#e.memory.buffer);
 	}
-	#opaque() {
+	#opaque(): number {
 		const p = this.#e.ghostty_wasm_alloc_opaque();
 		if (!p) throw new AssetIntegrityError('WASM allocation failed');
 		this.#opaqueAllocations.push(p);
 		return p;
 	}
-	#alloc(n: number) {
+	#alloc(n: number): number {
 		const p = this.#e.ghostty_wasm_alloc_u8_array(n);
 		if (!p) throw new AssetIntegrityError('WASM allocation failed');
 		this.#allocations.push({ pointer: p, size: n });
 		return p;
 	}
-	#release(pointer: number, size: number) {
+	#release(pointer: number, size: number): void {
 		this.#e.ghostty_wasm_free_u8_array(pointer, size);
 		const index = this.#allocations.findIndex((item) => item.pointer === pointer);
 		if (index >= 0) this.#allocations.splice(index, 1);
 	}
-	#readTypeLayouts() {
+	#readTypeLayouts(): LayoutMap {
 		const pointer = this.#e.ghostty_type_json();
 		const bytes = this.#bytes();
 		let end = pointer;
@@ -203,7 +209,7 @@ export class GhosttyWasmTerminal {
 			throw new AssetIntegrityError('Unable to decode libghostty-vt ABI metadata', { cause });
 		}
 	}
-	#initialize(storageLimitBytes: number) {
+	#initialize(storageLimitBytes: number): void {
 		this.#layouts = this.#readTypeLayouts();
 		const terminalLayout = this.#layouts.GhosttyTerminalOptions;
 		if (!terminalLayout || terminalLayout.size !== 8)
@@ -300,17 +306,17 @@ export class GhosttyWasmTerminal {
 		this.#configureEffects();
 		this.#lastVisual = this.now();
 	}
-	now() {
+	now(): number {
 		return performance.now() - this.#started;
 	}
-	write(data: Uint8Array) {
+	write(data: Uint8Array): void {
 		if (!data.length) return;
 		const p = this.#alloc(data.length);
 		this.#bytes().set(data, p);
 		this.#e.ghostty_terminal_vt_write(this.#terminal, p, data.length);
 		this.#e.ghostty_wasm_free_u8_array(p, data.length);
 	}
-	resize(v: Required<Viewport>) {
+	resize(v: Required<Viewport>): void {
 		this.#viewport = v;
 		if (this.#e.ghostty_terminal_resize(this.#terminal, v.columns, v.rows, 10, 20) !== 0)
 			throw new GhostwrightError({
@@ -325,7 +331,7 @@ export class GhosttyWasmTerminal {
 		parameterCount: number,
 		callback: (...args: number[]) => number | void,
 		returnsInt = false,
-	) {
+	): void {
 		const instance = new WebAssembly.Instance(callbackModule(parameterCount, returnsInt), {
 				env: { callback },
 			}),
@@ -338,7 +344,7 @@ export class GhosttyWasmTerminal {
 		if (this.#e.ghostty_terminal_set(this.#terminal, option, index) !== 0)
 			throw new AssetIntegrityError(`Unable to configure Ghostty terminal effect ${option}`);
 	}
-	#configureEffects() {
+	#configureEffects(): void {
 		// oxlint-disable-next-line bombshell-dev/max-params -- ghostty write-pty callback API
 		this.#installCallback(1, 4, (_terminal, _userdata, data, length) => {
 			this.#effects.push({ type: 'write-pty', data: this.#bytes().slice(data, data + length) });
@@ -366,7 +372,7 @@ export class GhosttyWasmTerminal {
 			// oxlint-disable-next-line bombshell-dev/max-params -- ghostty size report callback API
 			(_terminal, _userdata, output) => {
 				const layout = this.#layouts.GhosttySizeReportSize,
-					field = (name: string) => layout.fields[name].offset,
+					field = (name: string): number => layout.fields[name].offset,
 					view = this.#view();
 				view.setUint16(output + field('rows'), this.#viewport.rows, true);
 				view.setUint16(output + field('columns'), this.#viewport.columns, true);
@@ -379,8 +385,9 @@ export class GhosttyWasmTerminal {
 		this.#installCallback(
 			7,
 			3,
-			// oxlint-disable-next-line bombshell-dev/max-params -- ghostty terminal mode query callback API
-			(_terminal, _userdata, _output) => {
+			// oxlint-disable-next-line bombshell-dev/max-params -- ghostty color scheme callback API
+			(_terminal, _userdata, output) => {
+				this.#view().setInt32(output, 1, true); // GHOSTTY_COLOR_SCHEME_DARK
 				return 1;
 			},
 			true,
@@ -433,19 +440,19 @@ export class GhosttyWasmTerminal {
 			true,
 		);
 	}
-	takeEffects() {
+	takeEffects(): TerminalEffect[] {
 		return this.#effects.splice(0);
 	}
-	clipboard() {
+	clipboard(): string {
 		return this.#clipboard;
 	}
-	#configureMouseSize() {
+	#configureMouseSize(): void {
 		if (!this.#mouseEncoder) return;
 		const layout = this.#layouts.GhosttyMouseEncoderSize;
 		if (!layout) throw new AssetIntegrityError('Missing GhosttyMouseEncoderSize ABI metadata');
 		const pointer = this.#alloc(layout.size),
 			view = this.#view(),
-			field = (name: string) => layout.fields[name].offset;
+			field = (name: string): number => layout.fields[name].offset;
 		view.setUint32(pointer + field('size'), layout.size, true);
 		view.setUint32(pointer + field('screen_width'), this.#viewport.widthPixels, true);
 		view.setUint32(pointer + field('screen_height'), this.#viewport.heightPixels, true);
@@ -456,7 +463,7 @@ export class GhosttyWasmTerminal {
 		this.#e.ghostty_mouse_encoder_setopt(this.#mouseEncoder, 2, pointer);
 		this.#release(pointer, layout.size);
 	}
-	#get(kind: number, size = 4) {
+	#get(kind: number, size = 4): number {
 		const p = this.#alloc(size);
 		try {
 			this.#e.ghostty_terminal_get(this.#terminal, kind, p);
@@ -469,7 +476,7 @@ export class GhosttyWasmTerminal {
 			this.#release(p, size);
 		}
 	}
-	mode(n: number) {
+	mode(n: number): boolean {
 		const p = this.#alloc(1);
 		try {
 			return (
@@ -480,7 +487,7 @@ export class GhosttyWasmTerminal {
 			this.#release(p, 1);
 		}
 	}
-	text() {
+	text(): string {
 		const lp = this.#alloc(4);
 		let p = 0,
 			n = 0;
@@ -533,7 +540,7 @@ export class GhosttyWasmTerminal {
 			privateModes,
 		};
 	}
-	#renderGet(kind: number, size = 4) {
+	#renderGet(kind: number, size = 4): number {
 		const pointer = this.#alloc(size);
 		try {
 			if (this.#e.ghostty_render_state_get(this.#renderState, kind, pointer) !== 0) return 0;
@@ -564,7 +571,7 @@ export class GhosttyWasmTerminal {
 			underlineColor: this.#color(stylePointer, 'underline_color'),
 		});
 	}
-	#terminalString(kind: number) {
+	#terminalString(kind: number): string {
 		const layout = this.#layouts.GhosttyString,
 			pointer = this.#alloc(layout.size);
 		try {
@@ -577,7 +584,10 @@ export class GhosttyWasmTerminal {
 			this.#release(pointer, layout.size);
 		}
 	}
-	#color(stylePointer: number, fieldName: 'fg_color' | 'bg_color' | 'underline_color') {
+	#color(
+		stylePointer: number,
+		fieldName: 'fg_color' | 'bg_color' | 'underline_color',
+	): CellStyle['foreground'] {
 		const style = this.#layouts.GhosttyStyle,
 			color = this.#layouts.GhosttyStyleColor,
 			base = stylePointer + style.fields[fieldName].offset,
@@ -593,7 +603,7 @@ export class GhosttyWasmTerminal {
 			};
 		return { kind: 'default' as const };
 	}
-	scrollbackRows() {
+	scrollbackRows(): number {
 		return this.#get(15);
 	}
 	/** Copies a bounded oldest-based scrollback range without moving Ghostty's viewport. */
@@ -721,7 +731,7 @@ export class GhosttyWasmTerminal {
 		const image = this.#e.ghostty_kitty_graphics_image(graphics, id);
 		if (!image) return undefined;
 		const output = this.#alloc(8);
-		const getU32 = (kind: number) => {
+		const getU32 = (kind: number): number => {
 			if (this.#e.ghostty_kitty_graphics_image_get(image, kind, output) !== 0) return 0;
 			return this.#view().getUint32(output, true);
 		};
@@ -762,7 +772,7 @@ export class GhosttyWasmTerminal {
 			this.#release(output, 8);
 		}
 	}
-	#pruneKittyImages() {
+	#pruneKittyImages(): void {
 		for (const key of this.#images.keys())
 			if (!this.#currentImageKeys.has(key)) this.#images.delete(key);
 	}
@@ -791,7 +801,7 @@ export class GhosttyWasmTerminal {
 						if (this.#e.ghostty_kitty_graphics_get(graphics, 1, iteratorOutput) !== 0)
 							throw new AssetIntegrityError('Unable to initialize Kitty placement iterator');
 						while (this.#e.ghostty_kitty_graphics_placement_next(iterator)) {
-							const get = (kind: number, signed = false) => {
+							const get = (kind: number, signed = false): number => {
 								if (this.#e.ghostty_kitty_graphics_placement_get(iterator, kind, value) !== 0)
 									throw new AssetIntegrityError(`Unable to read Kitty placement field ${kind}`);
 								return signed
@@ -904,7 +914,7 @@ export class GhosttyWasmTerminal {
 			this.#release(graphicsOutput, 4);
 		}
 	}
-	inspectImage(id: number) {
+	inspectImage(id: number): KittyImageSnapshot | undefined {
 		const graphics = this.#alloc(4);
 		try {
 			if (!this.#kittySupported || this.#e.ghostty_terminal_get(this.#terminal, 30, graphics) !== 0)
@@ -920,7 +930,7 @@ export class GhosttyWasmTerminal {
 			this.#release(graphics, 4);
 		}
 	}
-	copyImageData(id: number) {
+	copyImageData(id: number): Uint8Array<ArrayBuffer> | undefined {
 		const graphics = this.#alloc(4);
 		try {
 			if (!this.#kittySupported || this.#e.ghostty_terminal_get(this.#terminal, 30, graphics) !== 0)
@@ -949,12 +959,12 @@ export class GhosttyWasmTerminal {
 			this.#release(graphics, 4);
 		}
 	}
-	cachedImage(id: number) {
+	cachedImage(id: number): KittyImageSnapshot | undefined {
 		return [...this.#images.entries()].find(
 			([key, image]) => image.id === id && this.#currentImageKeys.has(key),
 		)?.[1];
 	}
-	snapshot(cause?: 'pty-output' | 'resize' | 'reset') {
+	snapshot(cause?: 'pty-output' | 'resize' | 'reset'): ScreenSnapshot {
 		const pointLayout = this.#layouts.GhosttyPoint,
 			coordinateLayout = this.#layouts.GhosttyPointCoordinate,
 			refLayout = this.#layouts.GhosttyGridRef,
@@ -1215,7 +1225,7 @@ export class GhosttyWasmTerminal {
 			...(workingDirectory ? { workingDirectory } : {}),
 		} satisfies ScreenSnapshot);
 	}
-	encodeKey(input: KeyName | KeyPress) {
+	encodeKey(input: KeyName | KeyPress): Uint8Array<ArrayBuffer> {
 		const event = typeof input === 'string' ? { key: input } : input,
 			name = event.key,
 			functional: Record<string, number> = FUNCTIONAL_KEYS;
@@ -1277,7 +1287,7 @@ export class GhosttyWasmTerminal {
 		point: Point,
 		options: MouseOptions = {},
 		anyButtonPressed = false,
-	) {
+	): Uint8Array<ArrayBuffer> {
 		this.#e.ghostty_mouse_encoder_setopt_from_terminal(this.#mouseEncoder, this.#terminal);
 		this.#configureMouseSize();
 		this.#e.ghostty_mouse_event_set_action(
@@ -1301,7 +1311,6 @@ export class GhosttyWasmTerminal {
 		if (options.shift) modifiers |= 1;
 		if (options.control) modifiers |= 2;
 		if (options.alt) modifiers |= 4;
-		if (options.super) modifiers |= 8;
 		this.#e.ghostty_mouse_event_set_mods(this.#mouseEvent, modifiers);
 		const positionLayout = this.#layouts.GhosttyMousePosition,
 			position = this.#alloc(positionLayout.size),
@@ -1336,7 +1345,7 @@ export class GhosttyWasmTerminal {
 			this.#release(length, 4);
 		}
 	}
-	encodePaste(text: string) {
+	encodePaste(text: string): Uint8Array<ArrayBuffer> {
 		const data = encoder.encode(text),
 			p = this.#alloc(data.length || 1),
 			lp = this.#alloc(4);
@@ -1358,7 +1367,7 @@ export class GhosttyWasmTerminal {
 			this.#release(out, n || 1);
 		}
 	}
-	encodeFocus(state: 'in' | 'out') {
+	encodeFocus(state: 'in' | 'out'): Uint8Array<ArrayBuffer> {
 		if (!this.mode(1004)) return new Uint8Array();
 		const out = this.#alloc(8),
 			lp = this.#alloc(4);
@@ -1371,7 +1380,7 @@ export class GhosttyWasmTerminal {
 			this.#release(lp, 4);
 		}
 	}
-	free() {
+	free(): void {
 		if (this.#mouseEvent) this.#e.ghostty_mouse_event_free(this.#mouseEvent);
 		if (this.#mouseEncoder) this.#e.ghostty_mouse_encoder_free(this.#mouseEncoder);
 		if (this.#keyEvent) this.#e.ghostty_key_event_free(this.#keyEvent);

@@ -7,7 +7,7 @@
  * leave it when they are detached (removeChild), and structural state is never
  * rebuilt by walking the host tree. Attribute values (`role`, `label`,
  * `data-*`) ride the ordinary property channel and are read from the element's
- * property bag at frame time; focus truth comes from clack/ui's focus API.
+ * property bag at frame time. Focus, value, and cursor assertions use terminal evidence.
  *
  * Emission is opt-in and render-driven: `useSemantic` installs a render
  * observer via `RenderApi.around`. Each committed render emits exactly one
@@ -16,7 +16,6 @@
  */
 import type { RenderInfo } from '@bomb.sh/tty';
 import type { HostElement } from '@clack/ui/elements';
-import { FocusApi } from '@clack/ui/focus';
 import { HostApi, type Host } from '@clack/ui';
 import { RenderApi } from '@clack/ui/render';
 import { id } from '@clack/ui/core';
@@ -24,8 +23,8 @@ import {
 	encodeFrame,
 	geometryFor,
 	LIMITS,
-	type ClackFrameV1,
-	type ClackNodeV1,
+	type ClackFrame,
+	type ClackNode,
 	type JsonScalar,
 } from './protocol.ts';
 
@@ -71,6 +70,8 @@ function siblingOrder(entry: Entry): number {
 	return order;
 }
 
+// oxlint-disable bombshell-dev/exported-function-async -- Render middleware must be installed synchronously.
+/** Install semantic emission before the host's first synchronous render. */
 export function useSemantic(host: Host, options: SemanticOptions): void {
 	const entries = new Map<object, Entry>();
 
@@ -96,7 +97,8 @@ export function useSemantic(host: Host, options: SemanticOptions): void {
 	}
 
 	function unregisterEntry(entry: Entry): void {
-		for (const child of entry.children) unregisterEntry(child);
+		// oxlint-disable-next-line unicorn/no-useless-spread -- unregister mutates this array
+		for (const child of [...entry.children]) unregisterEntry(child);
 		entries.delete(entry.node);
 		if (entry.parent) {
 			const index = entry.parent.children.indexOf(entry);
@@ -116,15 +118,6 @@ export function useSemantic(host: Host, options: SemanticOptions): void {
 			next(_node, _parent, child);
 			if (removed) unregisterEntry(removed);
 		},
-		// Structural hooks only: attribute values ride the element property bag,
-		// which the host core keeps current. Registered so the middleware contract
-		// (create/insert/remove/setProperty/setText) is complete in one place.
-		setProperty([node, element, name, value], next) {
-			next(node, element, name, value);
-		},
-		setText([node, text, content], next) {
-			next(node, text, content);
-		},
 	});
 
 	// Adopt elements the application attached before the plugin installed.
@@ -138,30 +131,22 @@ export function useSemantic(host: Host, options: SemanticOptions): void {
 		return { columns: surface.columns, rows: surface.rows, row: surface.row ?? 1 };
 	};
 
-	function focusStack(): string[] {
-		const focus = FocusApi.methods.getFocus(host.root);
-		return focus === host.root ? [] : [id(focus)];
-	}
-
 	function buildNodes(
 		info: RenderInfo,
 		surface: { columns: number; rows: number; row: number },
-	): ClackNodeV1[] {
-		const focusNode = FocusApi.methods.getFocus(host.root);
-		const nodes: ClackNodeV1[] = [];
+	): ClackNode[] {
+		const nodes: ClackNode[] = [];
 
+		// oxlint-disable-next-line bombshell-dev/max-params -- traversal carries parent identity and sibling order
 		function visit(entry: Entry, parentKey: string | null, order: number): void {
-			const focusable = FocusApi.methods.isFocusable(entry.node);
-			const focused = entry.node === focusNode;
-			const custom: Record<string, JsonScalar> = {};
-			let role: string | undefined,
-				label: string | undefined;
+			const custom: [string, JsonScalar][] = [];
+			let role: string | undefined, label: string | undefined;
 			for (const [name, value] of Object.entries(entry.element.properties)) {
 				if (name === 'role' && typeof value === 'string') role = value;
 				else if (name === 'label' && typeof value === 'string') label = value;
-				else if (name === 'type' && typeof value === 'string') custom.type = value;
+				else if (name === 'type' && typeof value === 'string') custom.push(['type', value]);
 				else if (name.startsWith('data-') && value !== null && value !== undefined)
-					custom[name.slice(5)] = value as JsonScalar;
+					custom.push([name.slice(5), value as JsonScalar]);
 			}
 			const bounds = info.get(entry.key)?.bounds;
 			const geo = bounds
@@ -179,10 +164,8 @@ export function useSemantic(host: Host, options: SemanticOptions): void {
 					...(role !== undefined ? { role } : {}),
 					...(label !== undefined ? { label } : {}),
 					...(entry.name === 'input' ? { input: true } : {}),
-					focusable,
-					...(Object.keys(custom).length > 0 ? { custom } : {}),
+					...(custom.length > 0 ? { custom: Object.fromEntries(custom) } : {}),
 				},
-				states: { focused, focusRoot: focused },
 				...(geo !== undefined ? { geo } : {}),
 			});
 			entry.children.forEach((child, index) => visit(child, entry.key, index));
@@ -199,11 +182,10 @@ export function useSemantic(host: Host, options: SemanticOptions): void {
 	function emit(info: RenderInfo, output: { write(chunk: Uint8Array): unknown }): void {
 		try {
 			const surface = deriveSurface();
-			const frame: ClackFrameV1 = {
+			const frame: ClackFrame = {
 				v: 1,
-				frame: ++frameCounter,
+				frame: frameCounter + 1,
 				surface,
-				focusStack: focusStack(),
 				nodes: buildNodes(info, surface),
 			};
 			if (frame.nodes.length > LIMITS.nodes) {
@@ -213,6 +195,7 @@ export function useSemantic(host: Host, options: SemanticOptions): void {
 				return;
 			}
 			output.write(encodeFrame(frame));
+			frameCounter++;
 		} catch (error) {
 			// A semantic failure is a diagnostic, never a broken paint.
 			options.onDiagnostic?.(error as Error);
@@ -230,3 +213,4 @@ export function useSemantic(host: Host, options: SemanticOptions): void {
 		},
 	});
 }
+// oxlint-enable bombshell-dev/exported-function-async

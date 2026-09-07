@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 // oxlint-disable-next-line no-restricted-imports -- path module needed for path resolution
 import { join } from 'node:path';
-import { expectTerminal, withTerminalAsync } from '../../src/index.ts';
+import { expectTerminal, withTerminal } from '../../src/index.ts';
 
 test('a coding agent can successfully close vi', async () => {
 	const directory = await mkdtemp(join(tmpdir(), 'ghostwright-vi-')),
@@ -11,7 +11,7 @@ test('a coding agent can successfully close vi', async () => {
 	await writeFile(fixture, 'GHOSTWRIGHT_VI_MARKER\n');
 
 	try {
-		await withTerminalAsync(
+		await withTerminal(
 			{
 				command: 'vi',
 				args: [fixture],

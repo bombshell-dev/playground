@@ -1,8 +1,8 @@
 {
 	"name": "@clack/ui-preact",
 	"version": "0.0.0",
-	"description": "Vendored Preact adapter for @clack/ui",
 	"private": true,
+	"description": "Vendored Preact adapter for @clack/ui",
 	"license": "MIT",
 	"type": "module",
 	"exports": {

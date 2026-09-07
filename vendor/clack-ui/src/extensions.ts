@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+// oxlint-disable-next-line no-restricted-imports -- Walk filesystem parents from a caller-supplied directory.
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { ReadStream, WriteStream } from 'node:tty';
@@ -15,6 +16,13 @@ export interface UIExtensionContext {
 }
 
 export type UIExtension = (context: UIExtensionContext) => void;
+
+class InvalidUIExtensionError extends TypeError {
+	constructor(specifier: string) {
+		super(`@clack/ui extension "${specifier}" must default-export a UIExtension function`);
+		this.name = 'InvalidUIExtensionError';
+	}
+}
 
 const REGISTRY = Symbol.for('@clack/ui/extensions');
 const globals = globalThis as typeof globalThis & Record<symbol, unknown>;
@@ -60,9 +68,7 @@ export async function loadDeclaredExtensions(from: string): Promise<UIExtension[
 			const module = await import(pathToFileURL(resolved).href);
 			const extension = module.default;
 			if (typeof extension !== 'function') {
-				throw new Error(
-					`@clack/ui extension "${specifier}" must default-export a UIExtension function`,
-				);
+				throw new InvalidUIExtensionError(specifier);
 			}
 			return extension as UIExtension;
 		}),

@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { expectTerminal, withTerminalAsync } from '../../src/index.ts';
+import { launchTerminal } from '../../src/index.ts';
 
 const cli = {
 	command: '/bin/sh',
@@ -11,17 +11,20 @@ const cli = {
 	trace: 'off' as const,
 };
 
-test('async API drives a portable interactive shell CLI', async () => {
-	await withTerminalAsync(cli, async (terminal) => {
-		await expectTerminal(terminal.getByText('What is your name?')).toBePresent();
+test('await using drives a portable CLI and owns terminal cleanup', async () => {
+	await using terminal = await launchTerminal(cli);
+	const { screen, keyboard } = terminal;
+	const prompt = await screen.findByText('What is your name?');
 
-		await terminal.keyboard.type('Ada');
-		await terminal.keyboard.press('Enter');
+	await keyboard.type('Ada');
+	await keyboard.press('Enter');
 
-		await expectTerminal(terminal.getByText('Hello, Ada!')).toBeStable();
+	const greeting = await screen.findByText('Hello, Ada!');
+	expect(greeting.text()).toBe('Hello, Ada!');
+	// A query result keeps its original evidence after later output.
+	expect(prompt.text()).toBe('What is your name?');
 
-		const status = await terminal.process.waitForExit();
-		expect(status.exitCode).toBe(0);
-		expect(status.ptyEof).toBe(true);
-	});
+	const status = await terminal.process.waitForExit();
+	expect(status.exitCode).toBe(0);
+	expect(status.ptyEof).toBe(true);
 });

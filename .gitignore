@@ -32,6 +32,9 @@ build/Release
 node_modules/
 jspm_packages/
 
+# Terminal test failure artifacts
+.ghostwright/
+
 # TypeScript cache
 *.tsbuildinfo
 

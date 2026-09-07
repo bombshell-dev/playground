@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test';
-import { expectTerminal, withTerminalAsync } from '../src/index.ts';
+import { expectTerminal, withTerminal } from '../src/index.ts';
 
 test('user Control-C travels through PTY line discipline', async () => {
-	await withTerminalAsync(
+	await withTerminal(
 		{
 			command: '/bin/sh',
 			args: [
@@ -21,7 +21,7 @@ test('user Control-C travels through PTY line discipline', async () => {
 });
 
 test('raw Control-C remains input while administrative signals target the OS process', async () => {
-	await withTerminalAsync(
+	await withTerminal(
 		{
 			command: process.execPath,
 			args: [
@@ -44,7 +44,7 @@ test('raw Control-C remains input while administrative signals target the OS pro
 
 test('natural direct-child exit drains and then owns a PTY-holding descendant', async () => {
 	const started = performance.now();
-	await withTerminalAsync(
+	await withTerminal(
 		{
 			command: '/bin/sh',
 			args: ['-c', `node -e 'setInterval(()=>{}, 1000)' & child=$!; printf FINAL; exit 0`],

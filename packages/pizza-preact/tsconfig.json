@@ -1,0 +1,19 @@
+{
+	"extends": "@bomb.sh/tools/tsconfig.json",
+	"compilerOptions": {
+		"composite": false,
+		"declaration": false,
+		"declarationMap": false,
+		"jsx": "react-jsx",
+		"jsxImportSource": "@clack/ui-preact",
+		"noEmit": true,
+		"types": ["node"]
+	},
+	"include": [
+		"src/**/*.ts",
+		"src/**/*.tsx",
+		"test/**/*.ts",
+		"vitest.config.ts",
+		"../../vendor/clack-ui-preact/src/**/*.ts"
+	]
+}

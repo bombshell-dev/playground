@@ -1,7 +1,6 @@
-// oxlint-disable no-unused-vars
 import { createApi, type Node } from './core.ts';
 import { getElement, type HostElement } from './elements.ts';
-import type { AnyHostEvent, HostEvent, HostEvents } from './events.ts';
+import type { AnyHostEvent, HostEventType, HostEvents } from './events.ts';
 
 export const EmitApi = createApi('emit', {
 	emit(node, event: AnyHostEvent): void {
@@ -11,11 +10,13 @@ export const EmitApi = createApi('emit', {
 	},
 });
 
-export function emit<E extends Omit<AnyHostEvent, 'target'>>(node: Node, data: E): void {
+type EventData = { [T in HostEventType]: Omit<HostEvents[T], 'target'> }[HostEventType];
+
+export function emit(node: Node, data: EventData): void {
 	return EmitApi.methods.emit(node, {
 		...data,
 		target: getElement(node),
-	} as AnyHostEvent);
+	});
 }
 
 class InvalidEventTargetError extends TypeError {

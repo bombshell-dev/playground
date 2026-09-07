@@ -11,7 +11,10 @@ export class GhostwrightError extends Error {
 		this.sessionName = params.sessionName;
 	}
 }
-function errorType<T extends string>(name: T, code: string) {
+function errorType(
+	name: string,
+	code: string,
+): new (message: string, options?: ErrorOptions & { sessionName?: string }) => GhostwrightError {
 	return class extends GhostwrightError {
 		constructor(message: string, options?: ErrorOptions & { sessionName?: string }) {
 			super({ code, message, ...options });
@@ -47,6 +50,16 @@ export class ExtensionOscLimitError extends errorType(
 	'ExtensionOscLimitError',
 	'GW_EXTENSION_OSC_LIMIT',
 ) {}
+/** A cancelled or closed write with a known PTY-accepted prefix. */
+export class WriteInterruptedError extends GhostwrightError {
+	readonly bytesWritten: number;
+	constructor(bytesWritten: number, message = 'PTY write interrupted', options?: ErrorOptions) {
+		super({ code: 'GW_WRITE_INTERRUPTED', message, ...options });
+		this.bytesWritten = bytesWritten;
+	}
+}
+/** Invalid execution or condition options. */
+export class InvalidOptionsError extends errorType('InvalidOptionsError', 'GW_INVALID_OPTIONS') {}
 /** Error when host command exceeds timeout. */
 export class HostCommandTimeoutError extends errorType(
 	'HostCommandTimeoutError',

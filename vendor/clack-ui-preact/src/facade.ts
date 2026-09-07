@@ -1,5 +1,6 @@
 // oxlint-disable bombshell-dev/exported-function-async -- This is an internal synchronous adapter factory.
 import type { Host } from '@clack/ui';
+import type { ContainerNode } from 'preact';
 import type { HostElement, HostElementChild, HostLiteral } from '@clack/ui/elements';
 import type { HostEventListener, HostEventType } from '@clack/ui/events';
 
@@ -10,7 +11,7 @@ interface HostAttribute {
 	readonly value: unknown;
 }
 
-export interface ElementHandle {
+export interface ElementHandle extends ContainerNode {
 	/** The framework-neutral element represented by this Preact host instance. */
 	readonly element: HostElement;
 }
@@ -18,7 +19,7 @@ export interface ElementHandle {
 /** Create the DOM-shaped container Preact uses to mutate a Host. */
 export function createContainer(host: Host, element: HostElement): ElementHandle {
 	const document = new HostDocument(host);
-	return document.wrap(element) as PreactElementNode;
+	return document.wrap(element);
 }
 
 const XHTML_NAMESPACE = 'http://www.w3.org/1999/xhtml';
@@ -33,13 +34,16 @@ class HostDocument {
 	}
 
 	createElementNS(_namespace: string | null, name: string): PreactElementNode {
-		return this.wrap(this.host.createElement(name)) as PreactElementNode;
+		return this.wrap(this.host.createElement(name));
 	}
 
 	createTextNode(content: string): PreactTextNode {
-		return this.wrap(this.host.createLiteral(String(content))) as PreactTextNode;
+		return this.wrap(this.host.createLiteral(String(content)));
 	}
 
+	wrap(child: HostElement): PreactElementNode;
+	wrap(child: HostLiteral): PreactTextNode;
+	wrap(child: HostElementChild): PreactNode;
 	wrap(child: HostElementChild): PreactNode {
 		const existing = this.#instances.get(child);
 		if (existing) return existing;
@@ -53,7 +57,14 @@ class HostDocument {
 	}
 }
 
-abstract class PreactNodeBase<Child extends HostElementChild> {
+class InvalidTextMutationError extends TypeError {
+	constructor() {
+		super('Text nodes cannot contain children');
+		this.name = 'InvalidTextMutationError';
+	}
+}
+
+abstract class PreactNodeBase<Child extends HostElementChild> implements ContainerNode {
 	abstract readonly nodeType: number;
 	readonly ownerDocument: HostDocument;
 	readonly [hostChild]: Child;
@@ -63,9 +74,25 @@ abstract class PreactNodeBase<Child extends HostElementChild> {
 		this[hostChild] = child;
 	}
 
+	get childNodes(): PreactNode[] {
+		return [];
+	}
+	get firstChild(): PreactNode | null {
+		return null;
+	}
+	insertBefore(_child: PreactNode, _anchor: PreactNode | null): PreactNode {
+		throw new InvalidTextMutationError();
+	}
+	appendChild(child: PreactNode): PreactNode {
+		return this.insertBefore(child, null);
+	}
+	removeChild(_child: PreactNode): PreactNode {
+		throw new InvalidTextMutationError();
+	}
+
 	get parentNode(): PreactElementNode | null {
 		const parent = this[hostChild].parent;
-		return parent ? (this.ownerDocument.wrap(parent) as PreactElementNode) : null;
+		return parent ? this.ownerDocument.wrap(parent) : null;
 	}
 
 	get nextSibling(): PreactNode | null {
@@ -101,11 +128,11 @@ class PreactElementNode extends PreactNodeBase<HostElement> implements ElementHa
 		return Object.entries(this.element.properties).map(([name, value]) => ({ name, value }));
 	}
 
-	get childNodes(): PreactNode[] {
+	override get childNodes(): PreactNode[] {
 		return this.element.children.map((child) => this.ownerDocument.wrap(child));
 	}
 
-	get firstChild(): PreactNode | null {
+	override get firstChild(): PreactNode | null {
 		const child = this.element.children[0];
 		return child ? this.ownerDocument.wrap(child) : null;
 	}
@@ -118,16 +145,16 @@ class PreactElementNode extends PreactNodeBase<HostElement> implements ElementHa
 		this.ownerDocument.host.setProperty(this.element, name, undefined);
 	}
 
-	insertBefore(child: PreactNode, anchor: PreactNode | null): PreactNode {
+	override insertBefore(child: PreactNode, anchor: PreactNode | null): PreactNode {
 		this.ownerDocument.host.insertBefore(this.element, child[hostChild], anchor?.[hostChild]);
 		return child;
 	}
 
-	appendChild(child: PreactNode): PreactNode {
+	override appendChild(child: PreactNode): PreactNode {
 		return this.insertBefore(child, null);
 	}
 
-	removeChild(child: PreactNode): PreactNode {
+	override removeChild(child: PreactNode): PreactNode {
 		this.ownerDocument.host.removeChild(this.element, child[hostChild]);
 		return child;
 	}

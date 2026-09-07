@@ -1,6 +1,6 @@
 // oxlint-disable-next-line no-restricted-imports -- path module needed for path resolution
 import { resolve } from 'node:path';
-import { expectTerminal, withTerminalAsync } from '../src/index.ts';
+import { expectTerminal, withTerminal } from '../src/index.ts';
 import { usePtyHostForTesting } from '../src/profile.ts';
 import { SidecarClient } from '../src/pty/client.ts';
 import { GhostwrightError } from '../src/errors.ts';
@@ -10,7 +10,7 @@ export async function runHostContract(hostPath: string): Promise<void> {
 	const absolute = resolve(hostPath),
 		restore = usePtyHostForTesting(absolute);
 	try {
-		await withTerminalAsync(
+		await withTerminal(
 			{
 				command: '/bin/sh',
 				args: ['-c', `test -t 0 && test -t 1 && test -t 2 && printf 'TTY READY'`],
@@ -27,7 +27,7 @@ export async function runHostContract(hostPath: string): Promise<void> {
 			},
 		);
 
-		await withTerminalAsync(
+		await withTerminal(
 			{
 				command: '/bin/sh',
 				args: ['-c', `trap 'stty size; exit' WINCH; printf READY; while :; do sleep 1; done`],
@@ -41,7 +41,7 @@ export async function runHostContract(hostPath: string): Promise<void> {
 			},
 		);
 
-		await withTerminalAsync(
+		await withTerminal(
 			{
 				command: '/bin/sh',
 				args: [
@@ -63,7 +63,7 @@ export async function runHostContract(hostPath: string): Promise<void> {
 			},
 		);
 
-		await withTerminalAsync(
+		await withTerminal(
 			{
 				command: process.execPath,
 				args: [
@@ -85,7 +85,7 @@ export async function runHostContract(hostPath: string): Promise<void> {
 		);
 
 		const started = performance.now();
-		await withTerminalAsync(
+		await withTerminal(
 			{
 				command: '/bin/sh',
 				args: ['-c', `node -e 'setInterval(()=>{}, 1000)' & printf FINAL; exit 0`],
@@ -137,6 +137,5 @@ if (import.meta.main) {
 			message: 'usage: bun test/host-contract.ts <pty-host-path>',
 		});
 	await runHostContract(contractPath);
-	// oxlint-disable-next-line no-console -- test script
-	console.log(`host contract passed: ${contractPath}`);
+	console.info(`host contract passed: ${contractPath}`);
 }

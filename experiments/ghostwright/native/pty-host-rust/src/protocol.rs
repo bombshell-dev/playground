@@ -1,6 +1,7 @@
 use minicbor::{Decoder, Encoder};
+use std::collections::VecDeque;
 use std::convert::Infallible;
-use std::io::{self, Write};
+use std::io;
 use thiserror::Error;
 
 pub const VERSION: u16 = 1;
@@ -19,6 +20,7 @@ pub mod kind {
     pub const RESIZE: u16 = 0x0004;
     pub const SIGNAL: u16 = 0x0005;
     pub const CLOSE: u16 = 0x0006;
+    pub const CANCEL_WRITE: u16 = 0x0007;
     pub const READY: u16 = 0x8001;
     pub const SPAWNED: u16 = 0x8002;
     pub const ACK: u16 = 0x8003;
@@ -100,6 +102,7 @@ pub struct Protocol {
     input_sequence: u32,
     output_sequence: u32,
     input: Vec<u8>,
+    output: VecDeque<u8>,
 }
 
 impl Protocol {
@@ -108,6 +111,7 @@ impl Protocol {
             input_sequence: 0,
             output_sequence: 1,
             input: Vec::new(),
+            output: VecDeque::new(),
         }
     }
 
@@ -164,11 +168,60 @@ impl Protocol {
             .output_sequence
             .checked_add(1)
             .ok_or(ProtocolError::InvalidFrame)?;
-        let mut stdout = io::stdout().lock();
-        stdout.write_all(&header)?;
-        stdout.write_all(payload)?;
-        stdout.flush()?;
+        if self.output.len() + header.len() + payload.len() > 8 * 1024 * 1024 {
+            return Err(ProtocolError::InvalidPayload(
+                "host output queue exceeded limit",
+            ));
+        }
+        self.output.extend(header);
+        self.output.extend(payload);
         Ok(())
+    }
+
+    pub fn has_output(&self) -> bool {
+        !self.output.is_empty()
+    }
+    pub fn can_read_pty(&self) -> bool {
+        self.output.len() < 4 * 1024 * 1024
+    }
+    pub fn flush_output(&mut self) -> Result<(), ProtocolError> {
+        while !self.output.is_empty() {
+            let bytes = self.output.as_slices().0;
+            // SAFETY: the queue slice remains valid for this synchronous syscall.
+            let written = unsafe {
+                nix::libc::write(nix::libc::STDOUT_FILENO, bytes.as_ptr().cast(), bytes.len())
+            };
+            if written < 0 {
+                let error = io::Error::last_os_error();
+                if error.kind() == io::ErrorKind::Interrupted {
+                    continue;
+                }
+                if error.kind() == io::ErrorKind::WouldBlock {
+                    return Ok(());
+                }
+                return Err(error.into());
+            }
+            if written == 0 {
+                return Err(io::Error::from(io::ErrorKind::WriteZero).into());
+            }
+            self.output.drain(..written as usize);
+        }
+        Ok(())
+    }
+
+    pub fn write_failed(&mut self, correlation: u32, written: usize) -> Result<(), ProtocolError> {
+        let mut encoder = Encoder::new(Vec::new());
+        encoder
+            .map(4)?
+            .str("code")?
+            .str("GW_WRITE_INTERRUPTED")?
+            .str("fatal")?
+            .bool(false)?
+            .str("message")?
+            .str("PTY write interrupted")?
+            .str("bytesWritten")?
+            .u64(written as u64)?;
+        self.emit(kind::ERROR, correlation, &encoder.into_writer())
     }
 
     pub fn ready(&mut self, correlation: u32) -> Result<(), ProtocolError> {
@@ -342,6 +395,9 @@ pub fn decode_spawn(bytes: &[u8]) -> Result<SpawnRequest, ProtocolError> {
             _ => decoder.skip()?,
         }
     }
+    if decoder.position() != bytes.len() {
+        return Err(ProtocolError::InvalidPayload("trailing spawn data"));
+    }
     let command = command.ok_or(ProtocolError::InvalidPayload("missing command"))?;
     if command.is_empty() {
         return Err(ProtocolError::InvalidPayload("empty command"));
@@ -357,7 +413,26 @@ pub fn decode_spawn(bytes: &[u8]) -> Result<SpawnRequest, ProtocolError> {
 }
 
 pub fn decode_viewport(bytes: &[u8]) -> Result<Viewport, ProtocolError> {
-    decode_viewport_from(&mut Decoder::new(bytes))
+    let mut decoder = Decoder::new(bytes);
+    let viewport = decode_viewport_from(&mut decoder)?;
+    if decoder.position() != bytes.len() {
+        return Err(ProtocolError::InvalidPayload("trailing viewport data"));
+    }
+    Ok(viewport)
+}
+
+pub fn decode_cancel(bytes: &[u8]) -> Result<u32, ProtocolError> {
+    let mut decoder = Decoder::new(bytes);
+    if definite_map(&mut decoder)? != 1 || decoder.str()? != "sequence" {
+        return Err(ProtocolError::InvalidPayload("invalid cancellation"));
+    }
+    let sequence = decoder.u32()?;
+    if sequence == 0 || decoder.position() != bytes.len() {
+        return Err(ProtocolError::InvalidPayload(
+            "invalid cancellation sequence",
+        ));
+    }
+    Ok(sequence)
 }
 
 pub fn decode_signal(bytes: &[u8]) -> Result<SignalRequest, ProtocolError> {
@@ -371,8 +446,15 @@ pub fn decode_signal(bytes: &[u8]) -> Result<SignalRequest, ProtocolError> {
             _ => decoder.skip()?,
         }
     }
+    if decoder.position() != bytes.len() {
+        return Err(ProtocolError::InvalidPayload("trailing signal data"));
+    }
+    let target = target.ok_or(ProtocolError::InvalidPayload("missing target"))?;
+    if target != "child" && target != "process-group" {
+        return Err(ProtocolError::InvalidPayload("invalid signal target"));
+    }
     Ok(SignalRequest {
         signal: signal.ok_or(ProtocolError::InvalidPayload("missing signal"))?,
-        target: target.ok_or(ProtocolError::InvalidPayload("missing target"))?,
+        target,
     })
 }

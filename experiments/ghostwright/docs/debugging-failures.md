@@ -7,7 +7,7 @@ Ghostwright failures are designed for coding agents to diagnose from the thrown 
 The default trace policy is `retain-on-failure`:
 
 ```ts
-await withTerminalAsync(
+await withTerminal(
 	{
 		command: 'my-cli',
 		name: 'save-flow',

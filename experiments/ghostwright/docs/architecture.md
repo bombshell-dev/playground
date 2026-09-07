@@ -53,12 +53,7 @@ The host performs only OS-facing work that `wasm32-freestanding` cannot perform:
 
 It does not parse VT sequences, maintain cells, encode input, or evaluate assertions.
 
-Two implementations are maintained side by side:
-
-- `native/pty-host-c`: packaged default, pure C compiled with Clang or `musl-gcc`
-- `native/pty-host-rust`: synchronous Rust candidate using `nix`, `minicbor`, and `thiserror`
-
-Both implement the same protocol and pass the same host/full Ghostwright contract. See [`../HOST-COMPARISON.md`](../HOST-COMPARISON.md).
+`native/pty-host-rust` is the sole implementation. It uses `nix`, `minicbor`, and `thiserror`, without Tokio. Nonblocking queues keep control commands responsive when a child stops reading or a client stops consuming output. Rust ownership includes a process-killing fallback when protocol failure prevents normal cleanup.
 
 ### Ghostty WASM
 
@@ -73,12 +68,12 @@ Ghostty is the sole authority for:
 - Key, focus, mouse, and paste encoding
 - Terminal query responses and effects
 
-JavaScript does not maintain a second CSI/OSC parser.
+JavaScript does not interpret terminal control sequences. It extracts only registered description OSC messages before forwarding ordinary bytes to Ghostty.
 
 ## Session resource tree
 
 ```text
-withTerminal / withTerminalAsync scope
+launchTerminal / withTerminal scope
 ├── Ghostty WASM instance
 ├── render state and input encoders
 ├── PTY-host subprocess
@@ -109,21 +104,25 @@ A 20-byte little-endian header contains:
 
 Control messages use deterministic CBOR. PTY `WRITE` and `OUTPUT` payloads remain raw bytes. Limits are enforced before allocation/action.
 
-Commands include handshake, spawn, write, resize, signal, and close. Events include output, process exit, PTY EOF, acknowledgement, and structured error.
+Commands include handshake, spawn, write, cancel-write, resize, signal, and close. Events include output, process exit, PTY EOF, acknowledgement, and structured error.
 
 The spawn barrier establishes and reports trusted PID/process-group information before application code can create descendants. Exec confirmation completes the public spawn operation.
+
+The host bounds queued PTY input at 4 MiB / 1,024 writes and protocol output at 8 MiB. It pauses PTY reads above 4 MiB of queued protocol output. Close and cancel-write commands can overtake blocked PTY input. Input completion acknowledges bytes accepted by the PTY, not application processing. Interrupted native writes report `GW_WRITE_INTERRUPTED` and their partial `bytesWritten` count. Cancellation removes only the unwritten remainder. Client disappearance triggers process cleanup; final protocol flushing has a one-second bound.
 
 ## Output and effects
 
 For each PTY-host output frame:
 
 1. Record raw offset and frame sequence.
-2. Write the complete frame once to the session's Ghostty instance.
-3. Copy synchronous terminal effects out of callbacks.
-4. Extract the Ghostty render grid and evaluate one revision boundary.
-5. Publish an immutable revision if observable state changed.
-6. Drain terminal effects in callback order.
-7. Serialize PTY-response writes with user actions.
+2. Split ordinary bytes and registered description OSC messages in stream order.
+3. Write each ordinary segment once to Ghostty and publish its screen observation.
+4. Decode each description with a pure extension decoder.
+5. Validate its frame sequence and pair it with the preceding immutable screen.
+6. Copy synchronous terminal effects out of callbacks.
+7. Queue PTY responses with user actions without blocking output parsing.
+
+Live sessions and replay share this pipeline. See [Scoped observations and assertions](scoped-execution.md) for the query, matcher, and capture layers.
 
 Ghostty callbacks never re-enter terminal write.
 
@@ -147,7 +146,7 @@ Visual convergence compares visible cells/styles, cursor, active buffer, and vie
 
 The PTY host emits one output frame for each successful OS read, up to 64 KiB. JavaScript processes frames serially and does not debounce or coalesce them.
 
-The kernel may combine application writes before the host reads. Ghostwright cannot recover a state overwritten inside one kernel-coalesced read and does not manufacture per-byte/parser-action revisions. A revision is a terminal-state boundary, not a claim that a user saw a separate pixel-rendered frame.
+The kernel may combine application writes before the host reads. Without a registered description boundary, Ghostwright cannot recover a state overwritten inside one kernel-coalesced read. It does not manufacture per-byte/parser-action revisions. A revision is a terminal-state boundary, not a claim that a user saw a separate pixel-rendered frame.
 
 ## Process lifecycle
 
@@ -181,8 +180,8 @@ Explicit overrides of profile-owned environment keys are rejected. Other explici
 
 ## Generated artifacts
 
-`dist/`, `artifacts/`, native candidate outputs, and Rust `target/` are generated and Git-ignored. Release jobs build them before packing. Consumers receive prebuilt WASM, terminfo, and four native hosts and do not need native toolchains.
+`dist/`, `artifacts/`, native candidate outputs, and Rust `target/` are generated and Git-ignored. Release jobs build them before packing. Consumers receive prebuilt WASM, terminfo, and native hosts and do not need native toolchains. This rewrite has only been built and tested locally on macOS arm64; the other target artifacts still need release validation.
 
-Zig is required only to build upstream Ghostty WASM. The pure-C PTY host does not use a Zig wrapper or `zig cc`.
+Maintainers use pinned Zig for upstream Ghostty WASM and Cargo plus the target linker for the Rust host.
 
 Artifact metadata pins source commit, toolchains, build flags, protocol/binding versions, ABI layouts, and checksums. Independent verification checks files without rebuilding them.

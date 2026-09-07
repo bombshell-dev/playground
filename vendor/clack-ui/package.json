@@ -67,6 +67,9 @@
 		"@bomb.sh/tty": "^0.8.0",
 		"@types/node": "^22.20.0"
 	},
+	"devDependencies": {
+		"vitest": "^4.1.9"
+	},
 	"devEngines": {
 		"packageManager": {
 			"name": "pnpm",

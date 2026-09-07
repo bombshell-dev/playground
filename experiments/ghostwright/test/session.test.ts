@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
-import { expectTerminal, withTerminalAsync } from '../src';
+import { expectTerminal, withTerminal } from '../src';
 test('launches under a real PTY and snapshots output', async () => {
-	await withTerminalAsync(
+	await withTerminal(
 		{
 			command: '/bin/sh',
 			args: ['-c', `test -t 0 && test -t 1 && test -t 2 && printf 'TTY READY'`],
@@ -17,7 +17,7 @@ test('launches under a real PTY and snapshots output', async () => {
 	);
 });
 test('resizes the kernel PTY without synthetic input', async () => {
-	await withTerminalAsync(
+	await withTerminal(
 		{
 			command: '/bin/sh',
 			args: ['-c', `trap 'stty size; exit' WINCH; printf READY; while :; do sleep 1; done`],

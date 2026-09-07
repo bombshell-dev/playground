@@ -1,4 +1,6 @@
-# PTY Host C vs. Rust Comparison
+# Historical PTY Host C vs. Rust Comparison
+
+This report predates the scoped-execution rewrite. Rust is now the sole packaged host. The C implementation and comparison script were removed. These measurements were not rerun and do not describe the current queues or cancellation behavior.
 
 Generated on 2026-07-15T09:03:59.623Z by `bun run compare:hosts` on darwin-arm64.
 

@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test';
 import { run } from 'effection';
-import { expectTerminal, withTerminal } from '../../src/index.ts';
+import { expectTerminal } from '../../src/index.ts';
+import { withTerminal } from '../../src/effection/index.ts';
 
 const cli = {
 	command: '/bin/sh',

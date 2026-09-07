@@ -4,7 +4,7 @@ import {
 	expectTerminal,
 	InvalidKeyError,
 	TerminalAssertionError,
-	withTerminalAsync,
+	withTerminal,
 } from '../src/index.ts';
 
 /** Emits red "ALERT", plain "READY", then parks the cursor on a known cell. */
@@ -19,14 +19,14 @@ const coloured = {
 };
 
 test('toHaveStyle matches a foreground colour', async () => {
-	await withTerminalAsync(coloured, async (terminal) => {
+	await withTerminal(coloured, async (terminal) => {
 		await expectTerminal(terminal.getByText('ALERT')).toHaveStyle({ foreground: 'rgb(255,0,0)' });
 		await expectTerminal(terminal.getByText('ALERT')).toHaveStyle({ foreground: '#ff0000' });
 	});
 });
 
 test('toHaveStyle fails when the colour differs', async () => {
-	await withTerminalAsync(coloured, async (terminal) => {
+	await withTerminal(coloured, async (terminal) => {
 		await expectTerminal(terminal.getByText('READY')).toBePresent();
 		let error: unknown;
 		try {
@@ -45,7 +45,7 @@ test('toHaveStyle fails when the colour differs', async () => {
 });
 
 test('style-filtered locators disambiguate identical text', async () => {
-	await withTerminalAsync(
+	await withTerminal(
 		{
 			command: '/bin/sh',
 			args: ['-c', `printf '\\033[38;2;255;0;0mSAVE\\033[0m\\r\\nSAVE\\r\\n'; sleep 30`],
@@ -64,7 +64,7 @@ test('style-filtered locators disambiguate identical text', async () => {
 });
 
 test('toContainCursor tracks where the terminal cursor sits', async () => {
-	await withTerminalAsync(coloured, async (terminal) => {
+	await withTerminal(coloured, async (terminal) => {
 		// The trailing escape parks the cursor at row 0, column 0, inside "ALERT".
 		await expectTerminal(terminal.getByText('ALERT')).toContainCursor();
 
@@ -80,7 +80,7 @@ test('toContainCursor tracks where the terminal cursor sits', async () => {
 });
 
 test('locator matches expose their backing cells', async () => {
-	await withTerminalAsync(coloured, async (terminal) => {
+	await withTerminal(coloured, async (terminal) => {
 		const match = await expectTerminal(terminal.getByText('ALERT')).toBePresent();
 		expect(match.cells.length).toBe(5);
 		expect(match.cells.map((cell) => cell.text).join('')).toBe('ALERT');
@@ -89,7 +89,7 @@ test('locator matches expose their backing cells', async () => {
 });
 
 test('screen.getCells returns a rectangle of cells', async () => {
-	await withTerminalAsync(coloured, async (terminal) => {
+	await withTerminal(coloured, async (terminal) => {
 		await expectTerminal(terminal.getByText('READY')).toBePresent();
 		const cells = terminal.screen.getCells({ column: 0, row: 0, width: 5, height: 1 });
 		expect(cells.map((cell) => cell.text).join('')).toBe('ALERT');
@@ -98,7 +98,7 @@ test('screen.getCells returns a rectangle of cells', async () => {
 });
 
 test('screen.snapshot aliases screen.current', async () => {
-	await withTerminalAsync(coloured, async (terminal) => {
+	await withTerminal(coloured, async (terminal) => {
 		await expectTerminal(terminal.getByText('READY')).toBePresent();
 		expect(terminal.screen.snapshot()).toBe(terminal.screen.current());
 	});
@@ -106,7 +106,7 @@ test('screen.snapshot aliases screen.current', async () => {
 
 test('a throwing predicate counts as unsatisfied and is reported', async () => {
 	// oxlint-disable bombshell-dev/no-generic-error -- throwing a plain Error is the behaviour under test
-	await withTerminalAsync(coloured, async (terminal) => {
+	await withTerminal(coloured, async (terminal) => {
 		// Converges even though early revisions make the predicate throw.
 		await expectTerminal(terminal).toSatisfy((snapshot) => {
 			if (!snapshot.lines.some((line) => line.text.includes('READY')))
@@ -133,14 +133,14 @@ test('a throwing predicate counts as unsatisfied and is reported', async () => {
 });
 
 test('unknown key names fail fast instead of timing out', async () => {
-	await withTerminalAsync(coloured, async (terminal) => {
+	await withTerminal(coloured, async (terminal) => {
 		await expectTerminal(terminal.getByText('READY')).toBePresent();
 		expect(terminal.keyboard.press('Retrun')).rejects.toBeInstanceOf(InvalidKeyError);
 	});
 });
 
 test('modifier combinations are accepted by press', async () => {
-	await withTerminalAsync(coloured, async (terminal) => {
+	await withTerminal(coloured, async (terminal) => {
 		await expectTerminal(terminal.getByText('READY')).toBePresent();
 		// Shift+Tab used to encode nothing at all and surface as a timeout.
 		const receipt = await terminal.keyboard.press('Shift+Tab');

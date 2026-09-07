@@ -1,5 +1,7 @@
 # Choosing locators and assertions
 
+This page covers the lower-level `expectTerminal` helpers. For runner-owned assertions, frozen screen queries, and general `waitFor`, start with [Queries and waiting](../README.md#queries-and-waiting).
+
 Ghostwright separates first appearance, visual convergence, stable absence, and transient revision history. Choosing the right assertion is the main defense against flaky terminal tests.
 
 ## Decision table
@@ -15,7 +17,7 @@ Ghostwright separates first appearance, visual convergence, stable absence, and 
 | Did a fleeting screen state occur after an action?  | `toHaveShown()`     |
 | Did fleeting text occur after an action?            | `toHaveShownText()` |
 
-All waits evaluate current state and subscribe to revisions. They do not use fixed-interval polling.
+These lower-level helpers evaluate current state and subscribe to revisions. The separate general-purpose `waitFor` helper also uses an interval fallback for conditions that produce no terminal output.
 
 The default timeout is `DEFAULT_ASSERTION_TIMEOUT_MS` (4000 ms), chosen to stay below the 5000 ms default of Bun, Jest, and Vitest so that a failure reports Ghostwright's screen diagnostic rather than the runner's bare timeout.
 
