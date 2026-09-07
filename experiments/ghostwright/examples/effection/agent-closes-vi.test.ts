@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 // oxlint-disable-next-line no-restricted-imports -- path module needed for path resolution
 import { join } from 'node:path';
 import { run } from 'effection';
-import { expectTerminal, withTerminal } from '../../src/index.ts';
+import { expectTerminal } from '../../src/index.ts';
+import { withTerminal } from '../../src/effection/index.ts';
 
 test('a coding agent can successfully close vi with Effection', async () => {
 	const directory = await mkdtemp(join(tmpdir(), 'ghostwright-vi-')),

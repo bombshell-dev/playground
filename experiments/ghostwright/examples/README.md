@@ -2,8 +2,8 @@
 
 Both example suites automate the same interactive CLI so the two public API styles can be compared directly:
 
-- [`async/simple-cli.test.ts`](async/simple-cli.test.ts) uses `withTerminalAsync` and promises.
-- [`effection/simple-cli.test.ts`](effection/simple-cli.test.ts) uses `withTerminal` and Effection operations.
+- [`async/simple-cli.test.ts`](async/simple-cli.test.ts) uses `launchTerminal`, `await using`, and screen queries.
+- [`effection/simple-cli.test.ts`](effection/simple-cli.test.ts) uses `withTerminal` from the Effection entry point.
 - [`async/agent-closes-vi.test.ts`](async/agent-closes-vi.test.ts) proves an async coding agent can exit vi.
 - [`effection/agent-closes-vi.test.ts`](effection/agent-closes-vi.test.ts) proves the same thing with structured concurrency.
 - [`async/bash-vi-roundtrip.test.ts`](async/bash-vi-roundtrip.test.ts) verifies Bash's primary screen survives a vi alternate-screen round trip.

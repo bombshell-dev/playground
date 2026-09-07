@@ -26,7 +26,10 @@ import type { RegionInspection } from './inspection.ts';
 import type { Condition } from './conditions.ts';
 import type { Observation } from './observations.ts';
 import { TerminalSession } from './terminal/session.ts';
-import type { ActionReceipt, AsyncTerminal, MouseOptions, TerminalLaunchOptions } from './types.ts';
+import type { ActionReceipt, AsyncTerminal, TerminalLaunchOptions } from './types.ts';
+import { createQueries, type ScreenQueries } from './queries.ts';
+import { waitForOperation, type WaitForOptions } from './wait-for.ts';
+import { locatedMouse, type LocatedMouse } from './mouse.ts';
 
 export interface CaptureOptions {
 	readonly until: Condition;
@@ -108,7 +111,11 @@ function awaitMatch(
 			const cause = ended(session);
 			if (cause) reject(cause);
 		});
-		check(session.observations.current(locator.extensionId));
+		check(
+			locator.extensionId === undefined
+				? session.observations.currentScreen()
+				: session.observations.current(locator.extensionId),
+		);
 		const cause = ended(session);
 		if (cause) reject(cause);
 		return () => {
@@ -120,8 +127,9 @@ function awaitMatch(
 
 /** A scope-bound executor. Queries and matchers themselves own no lifetime. */
 export class AsyncExecution implements AsyncTerminal {
+	readonly screen: AsyncTerminal['screen'] & ScreenQueries;
 	readonly keyboard: AsyncTerminal['keyboard'];
-	readonly mouse: AsyncTerminal['mouse'];
+	readonly mouse: LocatedMouse;
 	readonly process: AsyncTerminal['process'];
 	readonly revisions: AsyncTerminal['revisions'];
 	readonly history: AsyncTerminal['history'];
@@ -134,7 +142,9 @@ export class AsyncExecution implements AsyncTerminal {
 		this.scope = scope;
 		this.signal = signal;
 		this.keyboard = this.#bind(session.keyboardFor(signal));
-		this.mouse = this.#bind(session.mouseFor(signal));
+		this.mouse = locatedMouse(this.#bind(session.mouseFor(signal)), (locator, matcher) =>
+			this.assert(locator, matcher),
+		);
 		this.process = {
 			status: () => session.process.status(),
 			signal: (name, target) => this.#promise(() => session.signalProcess(name, target, signal)),
@@ -143,6 +153,24 @@ export class AsyncExecution implements AsyncTerminal {
 		this.revisions = this.#bind(session.revisions);
 		this.history = this.#bind(session.history);
 		this.graphics = this.#bind(session.graphics);
+		this.screen = Object.freeze({
+			...session.screen,
+			...createQueries({
+				current: (locator) => {
+					signal.throwIfAborted();
+					if (locator.extensionId && !session.hasExtension(locator.extensionId))
+						throw error(
+							'GW_EXTENSION_NOT_REGISTERED',
+							`Locator requires extension ${locator.extensionId}`,
+						);
+					return locator.extensionId === undefined
+						? session.observations.currentScreen()
+						: session.observations.current(locator.extensionId);
+				},
+				waitFor: this.waitFor,
+				selector: session.options.selector,
+			}),
+		});
 	}
 	#bind<T extends Record<string, (...args: never[]) => Promise<unknown>>>(methods: T): T {
 		const bind =
@@ -158,9 +186,10 @@ export class AsyncExecution implements AsyncTerminal {
 		this.signal.throwIfAborted();
 		// Return failures as data across Scope.run so a caller can catch an operation
 		// failure without poisoning the enclosing session's task group.
+		const signal = this.signal;
 		const outcome = await this.scope.run(function* () {
 			try {
-				return { ok: true as const, value: yield* scoped(operation) };
+				return { ok: true as const, value: yield* race([scoped(operation), aborted(signal)]) };
 			} catch (cause) {
 				return { ok: false as const, cause };
 			}
@@ -171,55 +200,45 @@ export class AsyncExecution implements AsyncTerminal {
 	#promise<T>(fn: () => Promise<T>): Promise<T> {
 		return this.#run(() => call(fn));
 	}
-	get screen(): AsyncTerminal['screen'] {
-		return this.session.screen;
-	}
-	getByText(
-		...args: Parameters<AsyncTerminal['getByText']>
-	): ReturnType<TerminalSession['getByText']> {
-		return this.session.getByText(...args);
-	}
-	region(...args: Parameters<AsyncTerminal['region']>): ReturnType<TerminalSession['region']> {
-		return this.session.region(...args);
-	}
-	resize(viewport: Parameters<AsyncTerminal['resize']>[0]): Promise<ActionReceipt> {
-		return this.#promise(() => this.session.resize(viewport, this.signal));
-	}
-	close(): Promise<ActionReceipt> {
-		return this.#promise(() => this.session.close());
-	}
-	expect(locator: RegionLocator): ReturnType<typeof expectRegion> {
-		return expectRegion(this, locator);
-	}
-	assert(locator: RegionLocator, matcher: Matcher): Promise<RegionInspection> {
-		return this.#run(() => assertRegion(this.session, locator, matcher));
-	}
-	async click(locator: RegionLocator, options?: MouseOptions): Promise<ActionReceipt> {
-		const region = await this.assert(locator, (actual) => ({
-			pass: !!actual.visibleBounds,
-			expected: 'on-screen region',
-			actual: actual.bounds,
-		}));
-		this.signal.throwIfAborted();
-		const bounds = region.visibleBounds!;
-		return this.mouse.click(
-			{
-				column: bounds.column + Math.floor((bounds.width - 1) / 2),
-				row: bounds.row + Math.floor((bounds.height - 1) / 2),
-			},
-			options,
+	waitFor = <T>(callback: () => T | PromiseLike<T>, options?: WaitForOptions): Promise<T> =>
+		this.#run(() =>
+			waitForOperation(
+				callback,
+				{
+					timeoutMs: this.session.options.assertionTimeoutMs ?? 4000,
+					diagnostics: () => this.session.screen.getText(),
+					subscribe: (notify) => {
+						const offScreen = this.session.observations.subscribe(notify);
+						const offStatus = this.session.subscribe(notify);
+						return () => {
+							offScreen();
+							offStatus();
+						};
+					},
+				},
+				options,
+			),
 		);
-	}
-	capture(
+	getByText = (
+		...args: Parameters<AsyncTerminal['getByText']>
+	): ReturnType<TerminalSession['getByText']> => this.session.getByText(...args);
+	region = (...args: Parameters<AsyncTerminal['region']>): ReturnType<TerminalSession['region']> =>
+		this.session.region(...args);
+	resize = (viewport: Parameters<AsyncTerminal['resize']>[0]): Promise<ActionReceipt> =>
+		this.#promise(() => this.session.resize(viewport, this.signal));
+	close = (): Promise<ActionReceipt> => this.#promise(() => this.session.close());
+	expect = (locator: RegionLocator): ReturnType<typeof expectRegion> => expectRegion(this, locator);
+	assert = (locator: RegionLocator, matcher: Matcher): Promise<RegionInspection> =>
+		this.#run(() => assertRegion(this.session, locator, matcher));
+	capture = (
 		options: CaptureOptions,
 		body: (execution: AsyncExecution) => Promise<unknown>,
-	): Promise<Capture> {
-		return this.#run(() =>
+	): Promise<Capture> =>
+		this.#run(() =>
 			captureOperation(this.session, options, (child) =>
 				call(() => Promise.resolve().then(() => body(child))),
 			),
 		);
-	}
 }
 
 // oxlint-disable-next-line bombshell-dev/max-params -- shared async/operation matcher executor

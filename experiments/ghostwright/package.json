@@ -31,11 +31,27 @@
 		"./protocol": {
 			"types": "./dist/types/pty/protocol.d.ts",
 			"import": "./dist/pty/protocol.js"
+		},
+		"./effection": {
+			"types": "./dist/types/effection/index.d.ts",
+			"import": "./dist/effection/index.js"
+		},
+		"./matchers": {
+			"types": "./dist/types/runner-matchers.d.ts",
+			"import": "./dist/runner-matchers.js"
+		},
+		"./vitest": {
+			"types": "./dist/types/vitest.d.ts",
+			"import": "./dist/vitest.js"
+		},
+		"./jest": {
+			"types": "./dist/types/jest.d.ts",
+			"import": "./dist/jest.js"
 		}
 	},
 	"scripts": {
 		"setup": "bun run build:artifacts && bun run verify:artifacts",
-		"build": "rm -rf dist && bun build src/index.ts src/async.ts src/pty/protocol.ts --outdir dist --target node --format esm --packages external --sourcemap=external && tsc -p tsconfig.build.json && bun scripts/fix-declarations.ts",
+		"build": "rm -rf dist && bun build src/index.ts src/async.ts src/pty/protocol.ts src/effection/index.ts src/runner-matchers.ts src/vitest.ts src/jest.ts --outdir dist --target node --format esm --packages external --splitting --sourcemap=external && tsc -p tsconfig.build.json && bun scripts/fix-declarations.ts",
 		"fetch:ghostty": "bun scripts/fetch-ghostty.ts",
 		"build:ghostty-vt": "bun scripts/build-ghostty-vt.ts",
 		"build:host:rust": "bun scripts/build-host-rust.ts",
@@ -45,15 +61,38 @@
 		"build:artifacts": "bun run fetch:ghostty && bun run build:ghostty-vt && bun scripts/build-artifacts.ts",
 		"update:manifest": "bun scripts/update-manifest.ts",
 		"verify:artifacts": "bun scripts/verify-artifacts.ts",
-		"test": "bun test",
+		"test": "bun test && pnpm run test:runners",
+		"test:runners": "pnpm run build && node test/runner-contract.mjs",
+		"test:vitest": "vitest run --config test/runner-fixtures/vitest.config.ts",
+		"test:jest": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand --config test/runner-fixtures/jest.config.mjs",
 		"test:examples": "bun test examples"
 	},
 	"dependencies": {
 		"effection": "^4.0.2"
 	},
 	"devDependencies": {
+		"@jest/globals": "^30.2.0",
 		"@types/bun": "^1.3.9",
-		"typescript": "^5.9.3"
+		"expect": "^30.2.0",
+		"jest": "^30.2.0",
+		"typescript": "^5.9.3",
+		"vitest": "^4.1.9"
+	},
+	"peerDependencies": {
+		"@jest/globals": ">=29",
+		"expect": ">=29",
+		"vitest": ">=3"
+	},
+	"peerDependenciesMeta": {
+		"vitest": {
+			"optional": true
+		},
+		"@jest/globals": {
+			"optional": true
+		},
+		"expect": {
+			"optional": true
+		}
 	},
 	"engines": {
 		"bun": ">=1.2.0",

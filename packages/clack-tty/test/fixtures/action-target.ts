@@ -74,6 +74,10 @@ function mouse(event: RegExpMatchArray): void {
 		row = Number(event[3]) - 1;
 	const count = revealed ? (mode === 'ambiguous' ? 2 : 1) : 0;
 	const target = column >= 4 && column < 12 && row >= 2 && row < 2 + count ? row - 2 : -1;
+	if (button === 51 && target !== -1) {
+		render('Hover: control'); // SGR motion without a button, with Control held.
+		return;
+	}
 	if (button !== 0) return;
 	if (event[4] === 'M') pressedTarget = target;
 	else {
@@ -111,5 +115,5 @@ process.stdin.on('data', (bytes) => {
 		}
 	}
 });
-process.stdout.write('\x1b[?1000h\x1b[?1006h');
+process.stdout.write('\x1b[?1003h\x1b[?1006h');
 render(revealed ? 'Ready' : 'Loading');

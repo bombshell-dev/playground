@@ -1,5 +1,5 @@
 import { test } from 'vitest';
-import { withTerminalAsync, type TerminalLaunchOptions } from 'ghostwright';
+import { withTerminal, type TerminalLaunchOptions } from 'ghostwright';
 import { clackTtyExtension, expectUI, locator } from '@ghostwright/clack-tty';
 
 const entry = (): TerminalLaunchOptions => ({
@@ -14,7 +14,7 @@ test('greeting reacts to typing through the real terminal', async () => {
 	const say = locator('input[label="say"]');
 	const to = locator('input[label="to"]');
 	const group = locator('box[label="hello"]');
-	await withTerminalAsync(entry(), async (ui) => {
+	await withTerminal(entry(), async (ui) => {
 		await ui.expect(group).toContainText('Hello, World!');
 		await expectUI(ui, say).toHaveInputFocus();
 		await ui.keyboard.type('Hi');

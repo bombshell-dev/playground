@@ -9,7 +9,8 @@
 		".": "./src/index.ts",
 		"./auto": "./src/auto.ts",
 		"./protocol": "./src/protocol.ts",
-		"./producer": "./src/producer.ts"
+		"./producer": "./src/producer.ts",
+		"./vitest": "./src/vitest.ts"
 	},
 	"scripts": {
 		"test": "vitest run"
@@ -25,6 +26,14 @@
 		"@types/node": "^22.20.0",
 		"tsx": "^4.19.0",
 		"vitest": "^4.1.9"
+	},
+	"peerDependencies": {
+		"vitest": ">=3"
+	},
+	"peerDependenciesMeta": {
+		"vitest": {
+			"optional": true
+		}
 	},
 	"devEngines": {
 		"packageManager": {

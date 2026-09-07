@@ -13,13 +13,13 @@ Without OSC, `defineScreenLocator(source, resolve)` passes a `ScreenSnapshot` to
 ## Async API
 
 ```ts
-import { withTerminalAsync, textContains, sequence } from 'ghostwright';
+import { withTerminal, textContains, sequence } from 'ghostwright';
 import { clackTtyExtension, expectUI, locator } from '@ghostwright/clack-tty';
 
 const name = locator('input[label="name"]');
 const notice = locator('text[label="status"]');
 
-await withTerminalAsync(
+await withTerminal(
 	{
 		command: 'node',
 		args: ['app.js'],
@@ -99,16 +99,20 @@ Async callbacks begin outside the Effection dispatcher. This permits runner asse
 
 ## Effection API
 
-`withTerminal` uses the same session resource, matcher executor, and capture operation:
+`withTerminal` from `ghostwright/effection` uses the same session resource, matcher executor, and capture operation:
 
 ```ts
-yield *
-	withTerminal(options, function* (ui) {
+import { run } from 'effection';
+import { withTerminal } from 'ghostwright/effection';
+
+await run(function* () {
+	yield* withTerminal(options, function* (ui) {
 		yield* ui.expect(name).toContainText('Ryan');
 		yield* ui.capture({ until: notice.satisfies(textContains('Saved')) }, function* (child) {
 			yield* child.keyboard.press('Enter');
 		});
 	});
+});
 ```
 
 ## Replay
@@ -117,4 +121,4 @@ yield *
 
 ## Boundaries still worth revisiting
 
-The older text-locator, screen-revision, history, and graphics APIs remain available. They have not all been redesigned into pure locator descriptions. Use the scoped region API above for the new ownership and capture model. Runner fixtures and bound-locator convenience methods are not part of this pass.
+The older text-locator, screen-revision, history, and graphics APIs remain available. They have not all been redesigned into pure locator descriptions. The [public query and lifetime APIs](../README.md#queries-and-waiting) add frozen screen queries, general `waitFor`, runner matchers, disposable acquisition, and locator-aware mouse actions over these primitives.

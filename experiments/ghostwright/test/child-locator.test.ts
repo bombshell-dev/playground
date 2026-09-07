@@ -3,7 +3,7 @@ import {
 	defineLocator,
 	defineScreenLocator,
 	textContains,
-	withTerminalAsync,
+	withTerminal,
 	type Rect,
 	type TerminalExtensionDefinition,
 } from '../src/index.ts';
@@ -92,7 +92,7 @@ for (const described of [false, true]) {
 			? defineLocator<Description>('panel', 'status', () => [statusBounds])
 			: defineScreenLocator('status', () => [statusBounds]);
 
-		await withTerminalAsync(
+		await withTerminal(
 			{
 				command: process.execPath,
 				args: ['-e', application],

@@ -10,7 +10,7 @@ Install Ghostwright, then tell your agent:
 
 Inside this repository:
 
-> Read `packages/ghostwright/AGENTS.md`, then blackbox test `<target command>` using Ghostwright's public API.
+> Read `experiments/ghostwright/AGENTS.md`, then blackbox test `<target command>` using Ghostwright's public API.
 
 Start with the [agent quickstart](docs/agent-quickstart.md) or prove your agent can [exit vi](examples/async/agent-closes-vi.test.ts).
 
@@ -27,36 +27,55 @@ Consumers receive prebuilt WASM, terminfo, and the native host for each supporte
 ## First async test
 
 ```ts
-import { expect, test } from 'bun:test';
-import { expectTerminal, withTerminalAsync } from 'ghostwright';
+import { expect, test } from 'vitest';
+import 'ghostwright/vitest';
+import { launchTerminal } from 'ghostwright';
 
 test('interactive CLI', async () => {
-	await withTerminalAsync(
-		{
-			command: 'bun',
-			args: ['src/cli.ts'],
-			cwd: process.cwd(),
-			viewport: { columns: 80, rows: 24 },
-		},
-		async (terminal) => {
-			await expectTerminal(terminal.getByText('Ready')).toBePresent();
+	await using terminal = await launchTerminal({
+		command: 'node',
+		args: ['src/cli.js'],
+		viewport: { columns: 80, rows: 24 },
+	});
+	const { screen, keyboard } = terminal;
 
-			const action = await terminal.keyboard.press('Enter');
-			await expectTerminal(terminal).toHaveShownText('Working', {
-				since: action,
-			});
-			await expectTerminal(terminal.getByText('Complete')).toBeStable();
-
-			const status = await terminal.process.waitForExit();
-			expect(status.exitCode).toBe(0);
-		},
-	);
+	expect(await screen.findByText('Ready')).toBeVisible();
+	await keyboard.press('Enter');
+	expect(await screen.findByText('Complete')).toBeVisible();
+	expect((await terminal.process.waitForExit()).exitCode).toBe(0);
 });
 ```
 
-The callback owns the terminal. Normal return, throw, assertion failure, and cancellation close the PTY, sidecar, application process group, and WASM resources before the outer operation completes.
+`launchTerminal` returns an owned execution scope. `await using` or `close()` cancels owned work and awaits PTY, sidecar, process-group, and WASM cleanup. Disposal is idempotent. Query results and locators are not disposable. TypeScript users need explicit-resource-management support in their compiler/runtime toolchain.
 
-Effection users get the same operations and lifecycle through `withTerminal`; see the [Effection examples](examples/effection/).
+The callback form uses the same lifecycle:
+
+```ts
+import { withTerminal } from 'ghostwright';
+
+await withTerminal(options, async ({ screen, keyboard }) => {
+	await screen.findByText('Ready');
+	await keyboard.press('Enter');
+});
+```
+
+**Disposal cannot observe a test-body exception.** Bare `await using` guarantees cleanup, but does not automatically retain failure-only traces. Use `trace: 'on'`, `withTerminal`, or a runner fixture for that. A runner can also call `terminal.recordFailure(error)` explicitly.
+
+With Vitest, the exported fixture owns launches and reports test failures before cleanup:
+
+```ts
+import { expect } from 'vitest';
+import { test } from 'ghostwright/vitest';
+
+test('CLI starts', async ({ launchTerminal }) => {
+	const { screen } = await launchTerminal(options);
+	expect(await screen.findByText('Ready')).toBeVisible();
+});
+```
+
+For Jest, import `ghostwright/jest` to install the same immediate matchers. Use the callback helper for automatic failure artifacts. `ghostwright/matchers` exports `terminalMatchers` and `createRunnerMatchers(definitions)` for local `expect.extend(...)` integrations. Core imports do not load a test runner.
+
+Effection users import `withTerminal` from `ghostwright/effection`; see the [Effection examples](examples/effection/).
 
 ## Scoped capture and semantic addressing
 
@@ -66,9 +85,58 @@ Descriptions provide identity and geometry, not proof of focus or value. Typed m
 
 The older text-locator and screen-history API below remains available during this experiment.
 
-## Synchronization model
+## Queries and waiting
 
-Ghostwright assertions are revision-driven rather than polling-based:
+A locator is a reusable recipe. A query returns frozen `RegionInspection` evidence from one observation. Later output does not change a previous query result.
+
+| Query        | No matches | Multiple matches     | Waits |
+| ------------ | ---------- | -------------------- | ----- |
+| `getBy`      | Throws     | Throws               | No    |
+| `queryBy`    | `null`     | Throws               | No    |
+| `findBy`     | Retries    | Retries until unique | Yes   |
+| `getAllBy`   | Throws     | Returns all          | No    |
+| `queryAllBy` | `[]`       | Returns all          | No    |
+| `findAllBy`  | Retries    | Returns all          | Yes   |
+
+Each method accepts a locator recipe. The `ByText` forms construct a cell-aware text recipe and use the same engine. Text matching is literal and case-sensitive within one physical row. By default it finds substrings; `{ exact: true }` matches the whole row after trailing padding is removed. `BySelector` forms require an adapter-owned `selector` function in the launch options; core does not interpret CSS.
+
+```ts
+import { launchTerminal } from 'ghostwright';
+import { clackTtyExtension, locator } from '@ghostwright/clack-tty';
+
+await using terminal = await launchTerminal({
+	...options,
+	env: { ...options.env, CLACK_UI_SEMANTIC: '1' },
+	extensions: [clackTtyExtension()],
+	selector: locator,
+});
+const { screen, mouse, waitFor } = terminal;
+const save = locator('button[label="save"]');
+
+await screen.findBy(save); // Same behavior as findBySelector('button[label="save"]').
+await mouse.click(save); // Resolve again before input; never reuse old query coordinates.
+await waitFor(() => {
+	expect(screen.getBySelector('text[label="status"]')).toContainText('Saved');
+});
+```
+
+Runner matchers inspect immediately. `waitFor` starts an attempt without waiting for an interval, retries thrown/rejected assertions, and returns any successful value—including `false`. It awaits an async callback without overlapping attempts. Terminal observations prompt early retries; an interval covers changes that produce no terminal output. Process exit alone does not end a generic wait. Scope disposal or an explicit abort signal cancels it.
+
+`waitFor` and `findBy` accept `{ timeoutMs, intervalMs, signal }`. The default timeout is the session's `assertionTimeoutMs` or 4000 ms. The default interval is 50 ms. Durations must be finite and between 0 and 2147483647 ms, the supported timer range. Text finders accept text and wait options in the same options object. Timeout errors retain the last assertion as their cause and include the current screen. Put input outside retry callbacks. Combine related assertions in one callback when they must describe a coherent state.
+
+Described queries require a valid description paired with the current screen. An unavailable or invalid description throws—even for `queryBy` and `queryAllBy`. Unknown structure is not proof of absence. `findBy` and `waitFor` can wait for the next valid observation.
+
+A successful query proves a match, not visibility, focus, or enabled state. Use the corresponding evidence matcher. `toBeVisible` requires viewport overlap and at least one cell without the invisible style; it does not assert terminal-window visibility or graphical occlusion. `null` is accepted by `.not.toBeVisible()`.
+
+## Input targets
+
+`mouse.move`, `hover`, `down`, `up`, `click`, and `doubleClick` accept coordinates or locator recipes. A locator action waits for one on-screen target and fails immediately on ambiguity. This differs deliberately from `findBy`, which retries ambiguity.
+
+`mouse.drag(start, destination)` accepts a locator or point as its start, and either a point or `{ by: { columns, rows } }` as its destination. The start resolves once. The gesture does not chase a moving target, retry input, or enable application mouse reporting. Invalid destinations fail before button-down. Modifier options support Shift, Alt, and Control; standard mouse reports cannot encode Super/Command. `keyboard` and `mouse` send terminal input, not application events.
+
+## Lower-level assertion helpers
+
+The `expectTerminal` helpers below remain revision-driven:
 
 | Intent                                | API                 |
 | ------------------------------------- | ------------------- |
@@ -173,7 +241,7 @@ Ghostwright validates terminal-grid and PTY behavior. It does not validate fonts
 
 Ghostwright is **not a sandbox**. Commands run directly, without an implicit shell, using the caller's filesystem, network, process, and credential permissions. Launch a shell explicitly only when shell syntax is intended.
 
-Failure tracing defaults to `retain-on-failure`. Common secret-like environment keys are redacted, and typed/pasted input can use `{ trace: "redact" }`, but application output and unmarked values may still contain secrets. Use `trace: "off"` for sensitive sessions.
+Failure tracing defaults to `retain-on-failure` when the callback helper or runner fixture reports a failure. Bare async disposal cannot detect the test outcome. Common secret-like environment keys are redacted, and typed/pasted input can use `{ trace: "redact" }`, but application output and unmarked values may still contain secrets. Use `trace: "off"` for sensitive sessions.
 
 ## Maintainer artifacts
 
@@ -190,8 +258,10 @@ That fetches the pinned Ghostty source, builds `ghostty-vt.wasm` and the native 
 Then run the tests:
 
 ```sh
-bun test examples
+pnpm test
 ```
+
+This runs the Bun suite and real Jest/Vitest matcher and failure-artifact contracts. `bun test examples` runs only the application examples.
 
 `ghostty.lock.json` is the source of truth for the build contract and is edited by hand. `bun run update:manifest` only refreshes the `artifacts` checksum map, and only for targets built on the current machine; entries for targets built elsewhere (for example the Linux hosts when building on macOS) are preserved. `bun run verify:artifacts` skips and reports artifacts that are absent locally, and fails hard on any artifact that is present but does not match.
 

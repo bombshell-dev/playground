@@ -1,0 +1,9 @@
+{
+	"workspaces": {
+		"experiments/ghostwright": {
+			// src/jest.ts augments this package's Matchers interface. TypeScript
+			// needs the direct dependency; Knip does not count module augmentation.
+			"ignoreDependencies": ["expect"],
+		},
+	},
+}

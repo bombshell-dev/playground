@@ -59,6 +59,18 @@ export class Observations {
 		const paired = this.#extensions.get(extensionId);
 		return paired?.screen.sequence === this.#latest.screen.sequence ? paired : undefined;
 	}
+	/** Read current cells independently of whether the latest commit also describes them. */
+	currentScreen(): ScreenObservation {
+		const latest = this.#latest;
+		return latest.kind === 'screen'
+			? latest
+			: Object.freeze({
+					kind: 'screen',
+					sequence: latest.sequence,
+					timestamp: latest.timestamp,
+					screen: latest.screen,
+				});
+	}
 	get sequence(): number {
 		return this.#sequence;
 	}

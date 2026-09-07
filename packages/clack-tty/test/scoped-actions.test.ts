@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 import {
 	defineScreenLocator,
 	regionLocator,
-	withTerminalAsync,
+	withTerminal,
 	type AsyncExecution,
 	type TerminalLaunchOptions,
 } from 'ghostwright';
@@ -68,11 +68,11 @@ for (const query of cases) {
 
 	for (const missing of ['missing-parent', 'missing-child'] as const) {
 		test(`${query.name} click waits for ${missing} before sending mouse input`, async () => {
-			await withTerminalAsync(launch(missing), async (ui) => {
+			await withTerminal(launch(missing), async (ui) => {
 				await ui.expect(query.status).toContainText('Loading');
 				// Start the click while its target is absent. Enter is the fixture's
 				// real interaction for revealing the form; it releases the pending click.
-				await Promise.all([ui.click(query.submit), ui.keyboard.press('Enter')]);
+				await Promise.all([ui.mouse.click(query.submit), ui.keyboard.press('Enter')]);
 				await ui.expect(query.status).toContainText('Submitted: 1');
 				const input = await finishInputAudit(ui);
 				expect(input.startsWith('\r')).toBe(true); // No input preceded the reveal key.
@@ -81,10 +81,29 @@ for (const query of cases) {
 		});
 	}
 
-	test(`${query.name} ambiguity includes the whole path and sends no input`, async () => {
-		await withTerminalAsync(launch('ambiguous'), async (ui) => {
+	test(`${query.name} hover resolves a target and transmits its modifier`, async () => {
+		await withTerminal(launch('ambiguous'), async (ui) => {
 			await ui.expect(query.status).toContainText('Ready');
-			await expect(ui.click(query.submit)).rejects.toMatchObject({
+			await ui.mouse.hover(query.submit.nth(0), { control: true });
+			await ui.expect(query.status).toContainText('Hover: control');
+			expect(await finishInputAudit(ui)).toBe('\x1b[<51;8;3M');
+		});
+	});
+
+	test(`${query.name} invalid drag destination sends no button-down`, async () => {
+		await withTerminal(launch('ambiguous'), async (ui) => {
+			await ui.expect(query.status).toContainText('Ready');
+			await expect(
+				ui.mouse.drag(query.submit.nth(0), { by: { columns: Infinity, rows: 0 } }),
+			).rejects.toMatchObject({ code: 'GW_COORDINATE_RANGE' });
+			expect(await finishInputAudit(ui)).toBe('');
+		});
+	});
+
+	test(`${query.name} ambiguity includes the whole path and sends no input`, async () => {
+		await withTerminal(launch('ambiguous'), async (ui) => {
+			await ui.expect(query.status).toContainText('Ready');
+			await expect(ui.mouse.click(query.submit)).rejects.toMatchObject({
 				code: 'GW_LOCATOR_STRICT',
 				message: expect.stringContaining(query.path),
 			});
@@ -93,9 +112,9 @@ for (const query of cases) {
 	});
 
 	test(`${query.name} timeout includes the whole path and sends no input`, async () => {
-		await withTerminalAsync(launch('missing-child'), async (ui) => {
+		await withTerminal(launch('missing-child'), async (ui) => {
 			await ui.expect(query.status).toContainText('Loading');
-			await expect(ui.click(query.submit)).rejects.toMatchObject({
+			await expect(ui.mouse.click(query.submit)).rejects.toMatchObject({
 				code: 'GW_ASSERTION',
 				message: expect.stringContaining(query.path),
 			});
@@ -104,10 +123,10 @@ for (const query of cases) {
 	});
 
 	test(`${query.name} exit while waiting identifies the full query path`, async () => {
-		await withTerminalAsync(launch('missing-child'), async (ui) => {
+		await withTerminal(launch('missing-child'), async (ui) => {
 			await ui.expect(query.status).toContainText('Loading');
 			await Promise.all([
-				expect(ui.click(query.submit)).rejects.toMatchObject({
+				expect(ui.mouse.click(query.submit)).rejects.toMatchObject({
 					code: 'GW_PROCESS_EXITED',
 					message: expect.stringContaining(query.path),
 				}),

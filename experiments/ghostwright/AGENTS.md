@@ -10,21 +10,31 @@ Test the application from the outside. Launch its real command under a PTY, inte
 
 1. Identify the repository's existing test runner and conventions.
 2. Identify the direct executable, argument array, cwd, and any nonreserved environment values.
-3. Prefer `withTerminalAsync` unless the surrounding code already uses Effection.
+3. Use `await using` with `launchTerminal`, or the `withTerminal` callback helper. Effection uses `ghostwright/effection`.
 4. Wait for a visible readiness condition before acting.
 5. Await every action. Save the receipt when a transient assertion follows.
 6. Use a stable assertion for final UI state and revision history for fleeting state.
 7. Verify process exit when exit behavior matters.
 8. Run the focused test. On failure, inspect the attached `.ghostwright` artifacts before changing timeouts.
 
-## Canonical async template
+## Public query and assertion model
+
+Use `terminal.screen.getBy/queryBy/findBy` with a locator recipe, or their `ByText` and adapter-owned `BySelector` conveniences. The `All` forms return arrays. `get` and `query` inspect now; `find` waits. A result is frozen evidence, not a live element. Query again inside `terminal.waitFor` when checking a changing value.
+
+Jest and Vitest can use `ghostwright/jest` and `ghostwright/vitest` to install immediate terminal matchers on their own `expect`. Keep keyboard and mouse input outside retried assertions. Capture observations when intermediate states matter. The README and pizza examples show this style.
+
+`launchTerminal` supports `await using`; the `withTerminal` callback form also records body failures. Bare disposal cannot detect a test assertion failure. Use the Vitest launch fixture, the callback form, or `trace: 'on'` when artifacts are required.
+
+The lower-level `expectTerminal` helpers below remain available for existing revision/history workflows.
+
+## Lower-level async template
 
 ```ts
 import { expect, test } from 'bun:test';
-import { expectTerminal, withTerminalAsync } from 'ghostwright';
+import { expectTerminal, withTerminal } from 'ghostwright';
 
 test('interactive happy path', async () => {
-	await withTerminalAsync(
+	await withTerminal(
 		{
 			command: 'bun',
 			args: ['src/cli.ts'],

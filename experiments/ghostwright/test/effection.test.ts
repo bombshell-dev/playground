@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test';
 import { run } from 'effection';
-import { expectTerminal, withTerminal } from '../src';
+import { expectTerminal } from '../src';
+import { withTerminal } from '../src/effection/index.ts';
 test('Effection facade shares scoped session behavior', async () => {
 	const result = await run(function* () {
 		return yield* withTerminal(
@@ -8,6 +9,22 @@ test('Effection facade shares scoped session behavior', async () => {
 			function* (terminal) {
 				const match = yield* expectTerminal(terminal.getByText('generator')).toBePresent();
 				return match.text;
+			},
+		);
+	});
+	expect(result).toBe('generator');
+});
+
+test('Effection queries and waitFor use the same frozen evidence contracts', async () => {
+	const result = await run(function* () {
+		return yield* withTerminal(
+			{ command: '/bin/sh', args: ['-c', 'printf generator'], trace: 'off' },
+			function* (terminal) {
+				const found = yield* terminal.screen.findByText('generator');
+				const value = yield* terminal.waitFor(() => false);
+				expect(value).toBe(false);
+				expect(terminal.screen.queryByText('missing')).toBeNull();
+				return found.text();
 			},
 		);
 	});

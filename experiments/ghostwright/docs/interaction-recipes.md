@@ -1,11 +1,11 @@
 # Interaction recipes
 
-These recipes use the async API. With Effection, replace `await` with `yield*` and `withTerminalAsync` with `withTerminal`; operation names and semantics remain the same.
+These recipes use the async API. With Effection, import `withTerminal` from `ghostwright/effection` and replace `await` with `yield*`; operation names and semantics remain the same.
 
 ## Launch an interactive command
 
 ```ts
-await withTerminalAsync(
+await withTerminal(
 	{
 		command: 'my-cli',
 		args: ['--interactive'],
@@ -190,7 +190,8 @@ Runnable versions:
 
 ```ts
 import { run } from 'effection';
-import { expectTerminal, withTerminal } from 'ghostwright';
+import { expectTerminal } from 'ghostwright';
+import { withTerminal } from 'ghostwright/effection';
 
 await run(function* () {
 	return yield* withTerminal(options, function* (terminal) {

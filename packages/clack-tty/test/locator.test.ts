@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import { locator } from '../src/extension.ts';
-import { withTerminalAsync, type Observation } from 'ghostwright';
+import { withTerminal, type Observation } from 'ghostwright';
 import type { ClackFrame } from '../src/protocol.ts';
 
 const description: ClackFrame = {
@@ -37,7 +37,7 @@ const description: ClackFrame = {
 test('queries are immutable, pure, ordered, and work against historical descriptions', async () => {
 	const name = locator('form[label="delivery"] > input[label="name"]');
 	expect(Object.isFrozen(name)).toBe(true);
-	await withTerminalAsync(
+	await withTerminal(
 		{
 			command: process.execPath,
 			args: ['-e', 'process.stdout.write("Ryan      Main St")'],

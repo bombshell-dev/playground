@@ -73,7 +73,7 @@ JavaScript does not interpret terminal control sequences. It extracts only regis
 ## Session resource tree
 
 ```text
-withTerminal / withTerminalAsync scope
+launchTerminal / withTerminal scope
 ├── Ghostty WASM instance
 ├── render state and input encoders
 ├── PTY-host subprocess

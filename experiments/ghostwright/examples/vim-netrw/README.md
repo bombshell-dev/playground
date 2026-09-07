@@ -22,7 +22,7 @@ bun test examples/vim-netrw
 
 The tests require Vim with its bundled netrw. They do not silently skip a missing installation. Set `GHOSTWRIGHT_VIM` to select another Vim executable. The spike was validated locally with Apple's Vim 9.1 and netrw v184 on macOS arm64, not Neovim or other Vim versions.
 
-The fixture disables user configuration, swap files, viminfo, and netrw history. It explicitly loads the bundled netrw and uses standard display options. Startup commands arrange the windows; opening the target file uses only normal-mode navigation and Enter.
+The shared fixture in `fixture.ts` disables user configuration, swap files, viminfo, and netrw history. It explicitly loads the bundled netrw and enables Vim's mouse handling with `mouse=a` and `ttymouse=sgr`. Startup commands arrange the windows; opening the target file uses only normal-mode navigation and Enter.
 
 ## How it finds a file
 
@@ -34,6 +34,23 @@ The fixture disables user configuration, swap files, viminfo, and netrw history.
 Every step reads the same immutable screen snapshot. Regions exclude the separator, statusline, and neighboring editor. Duplicate entries remain duplicate matches; strict execution rejects them. Ambiguous window boundaries raise an error rather than selecting the first candidate.
 
 `open()` waits for the entry and a visible cursor, then checks that the cursor belongs to the listing. It sends a counted `j` or `k` motion. It resolves the entry again and waits for visible cursor evidence before pressing Enter. It recognizes the resulting editor from the filename painted in the left statusline. Assertions then inspect that editor's actual cells.
+
+## Drag a divider, then replay the evidence
+
+`resize-replay.test.ts` extends the journey at 80×24 and 100×36:
+
+1. Open README.md through the explorer.
+2. Derive the divider and neighboring editor from the recognized left editor.
+3. Drag the divider eight columns to the right with real mouse input.
+4. Assert that the left pane grows, the right pane shrinks, and both retain their content. The terminal viewport does not change.
+5. Insert text into the opened file, then undo it and quit Vim without saving.
+6. Replay the persisted trace after Vim has closed and its temporary files have been removed.
+
+The mouse sends button-down, motion with the button held, and button-up. No command asks Vim to resize a window. This tests a split owned by Vim, not a split owned by a terminal application's GUI.
+
+Capture starts before the drag. Its completion condition requires the wider editor followed by the visible edit. The recording retains that edit after the live application undoes it. Replay compares every captured screen's cells, styles, cursor, modes, and observation order, plus the regions resolved by the same locators. It also runs the same width and text matchers on the replayed endpoint. Clock timestamps are not part of this comparison.
+
+Successful replay tests remove their trace files. Failures leave them under `.ghostwright/vim-drag-*` in the test working directory. Other Vim tests retain traces on failure.
 
 ## Deliberate limits
 
@@ -50,15 +67,17 @@ Missing geometry or a missing entry stays unmatched and ends in the normal asser
 
 ## What this validates
 
-The only new core primitive is:
+Screen recognition starts with:
 
 ```ts
 const locator = defineScreenLocator('description', (screen) => {
-	// Pure spatial reasoning over this snapshot. Return zero or more rectangles.
+	// Recognize regions in this snapshot. Return zero or more rectangles.
 	return regions;
 });
 ```
 
 It uses the same region inspection, strict matching, assertions, and scope-owned execution as OSC-backed locators. The Vim-specific interpretation and control actions stay in `netrw.ts`; they are not built into Ghostwright.
 
-The live tests cover two viewport sizes, both navigation directions, the neighboring filename decoy, and refusal to navigate from the wrong window. Focused recognition tests use grids decoded by real Ghostty to check banner scoping, duplicate matches, missing boundaries, and ambiguity.
+The live tests cover two viewport sizes, both navigation directions, the neighboring filename decoy, refusal to navigate from the wrong window, mouse-driven split resizing, in-memory editing and undo, and capture/replay evidence equivalence. Focused recognition tests use grids decoded by real Ghostty to check banner scoping, duplicate matches, missing boundaries, and ambiguity.
+
+The drag journey uses `mouse.drag(divider, { by: { columns: 8, rows: 0 } })`, frozen screen queries, and explicit `waitFor` assertions. The divider is a derived locator. Mouse resolution happens once at the start of the gesture. There is no Vim instrumentation and no action retry.

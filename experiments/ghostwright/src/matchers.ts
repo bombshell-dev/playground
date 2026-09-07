@@ -94,6 +94,11 @@ export function defineMatchers<const M extends MatcherDefinitions>(matchers: M):
 	return Object.freeze({ ...matchers });
 }
 export const builtInMatchers = defineMatchers({
+	toBeVisible: (actual: RegionInspection): MatchResult => ({
+		pass: !!actual.visibleBounds && actual.cells().some((cell) => !cell.style.invisible),
+		expected: 'a region with visible cells in the viewport',
+		actual: actual.visibleBounds ?? null,
+	}),
 	toContainText: (actual: RegionInspection, text: string) => textContains(text)(actual),
 	toContainCursor: (actual: RegionInspection, options?: { visible?: boolean }) =>
 		cursorInside(options)(actual),

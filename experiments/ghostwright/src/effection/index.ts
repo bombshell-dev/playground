@@ -36,6 +36,15 @@ import {
 	type AsyncExecution,
 } from '../execution.ts';
 import { createExpect, type Matcher } from '../matchers.ts';
+import { recordFailure, recordSuccess } from '../tracing/outcome.ts';
+import type { ScreenQueries } from '../queries.ts';
+import type { WaitForOptions } from '../wait-for.ts';
+import type { MouseTarget, DragOffset } from '../mouse.ts';
+type OperationQueries = {
+	[K in keyof ScreenQueries]: ScreenQueries[K] extends (...args: infer A) => Promise<infer R>
+		? (...args: A) => Operation<R>
+		: ScreenQueries[K];
+};
 import type { RegionLocator } from '../locators.ts';
 const expectRegion = createExpect();
 const op = <T>(fn: () => Promise<T>): Operation<T> => call(fn);
@@ -67,9 +76,8 @@ export class EffectionTerminal implements OperationTerminal {
 	expect(locator: RegionLocator): ReturnType<typeof expectRegion.operation> {
 		return expectRegion.operation(this, locator);
 	}
-	click(locator: RegionLocator, options?: MouseOptions): Operation<ActionReceipt> {
-		return op(() => this.inner.click(locator, options));
-	}
+	waitFor = <T>(callback: () => T | PromiseLike<T>, options?: WaitForOptions): Operation<T> =>
+		op(() => this.inner.waitFor(callback, options));
 	capture(
 		options: CaptureOptions,
 		body: (terminal: EffectionTerminal) => Operation<unknown>,
@@ -86,13 +94,15 @@ export class EffectionTerminal implements OperationTerminal {
 		write: (d: Uint8Array) => op(() => this.inner.keyboard.write(d)),
 	};
 	mouse = {
-		move: (p: Point, o?: MouseOptions) => op(() => this.inner.mouse.move(p, o)),
-		down: (p: Point, o?: MouseOptions) => op(() => this.inner.mouse.down(p, o)),
-		up: (p: Point, o?: MouseOptions) => op(() => this.inner.mouse.up(p, o)),
-		click: (p: Point, o?: MouseOptions) => op(() => this.inner.mouse.click(p, o)),
-		doubleClick: (p: Point, o?: MouseOptions) => op(() => this.inner.mouse.doubleClick(p, o)),
+		move: (p: MouseTarget, o?: MouseOptions) => op(() => this.inner.mouse.move(p, o)),
+		hover: (p: MouseTarget, o?: MouseOptions) => op(() => this.inner.mouse.hover(p, o)),
+		down: (p: MouseTarget, o?: MouseOptions) => op(() => this.inner.mouse.down(p, o)),
+		up: (p: MouseTarget, o?: MouseOptions) => op(() => this.inner.mouse.up(p, o)),
+		click: (p: MouseTarget, o?: MouseOptions) => op(() => this.inner.mouse.click(p, o)),
+		doubleClick: (p: MouseTarget, o?: MouseOptions) => op(() => this.inner.mouse.doubleClick(p, o)),
 		// oxlint-disable-next-line bombshell-dev/max-params -- wraps mouse.drag(start, end, options) API
-		drag: (a: Point, b: Point, o?: MouseOptions) => op(() => this.inner.mouse.drag(a, b, o)),
+		drag: (a: MouseTarget, b: Point | DragOffset, o?: MouseOptions) =>
+			op(() => this.inner.mouse.drag(a, b, o)),
 		wheel: (o: WheelOptions) => op(() => this.inner.mouse.wheel(o)),
 	};
 	process = {
@@ -100,8 +110,23 @@ export class EffectionTerminal implements OperationTerminal {
 		signal: (s: string, t?: 'child' | 'process-group') => op(() => this.inner.process.signal(s, t)),
 		waitForExit: (o?: AssertionOptions) => op(() => this.inner.process.waitForExit(o)),
 	};
-	get screen(): OperationTerminal['screen'] {
-		return this.inner.screen;
+	get screen(): OperationTerminal['screen'] & OperationQueries {
+		const screen = this.inner.screen;
+		return Object.freeze({
+			...screen,
+			findBy: (locator: RegionLocator, options?: WaitForOptions) =>
+				op(() => screen.findBy(locator, options)),
+			findAllBy: (locator: RegionLocator, options?: WaitForOptions) =>
+				op(() => screen.findAllBy(locator, options)),
+			findByText: (...args: Parameters<ScreenQueries['findByText']>) =>
+				op(() => screen.findByText(...args)),
+			findAllByText: (...args: Parameters<ScreenQueries['findAllByText']>) =>
+				op(() => screen.findAllByText(...args)),
+			findBySelector: (...args: Parameters<ScreenQueries['findBySelector']>) =>
+				op(() => screen.findBySelector(...args)),
+			findAllBySelector: (...args: Parameters<ScreenQueries['findAllBySelector']>) =>
+				op(() => screen.findAllBySelector(...args)),
+		});
 	}
 	revisions = {
 		collect: (options: RevisionCollectionOptions) =>
@@ -142,28 +167,10 @@ export function* withTerminal<T>(
 	const terminal = yield* execution(session);
 	try {
 		const result: T = yield* body(new EffectionTerminal(terminal));
-		if (session.trace.policy === 'on')
-			yield* call(() =>
-				session.trace.persist(
-					'Session completed successfully',
-					session.screen.current(),
-					session.process.status(),
-				),
-			);
+		yield* call(() => recordSuccess(session));
 		return result;
 	} catch (error) {
-		try {
-			const path = yield* call(() =>
-				session.trace.persist(error, session.screen.current(), session.process.status()),
-			);
-			if (path && error instanceof Error) {
-				(error as Error & { tracePath?: string }).tracePath = path;
-				error.message += `\ntrace artifact: ${path}`;
-			}
-		} catch (traceError) {
-			if (error instanceof Error)
-				(error as Error & { suppressed?: unknown[] }).suppressed = [traceError];
-		}
+		yield* call(() => recordFailure(session, error));
 		throw error;
 	}
 }

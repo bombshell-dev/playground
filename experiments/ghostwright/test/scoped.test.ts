@@ -1,11 +1,11 @@
 import { expect, test } from 'bun:test';
 import { run } from 'effection';
+import { withTerminal as withEffectionTerminal } from '../src/effection/index.ts';
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 // oxlint-disable-next-line no-restricted-imports -- mkdtemp and readdir return filesystem paths.
 import { join } from 'node:path';
 import {
-	withTerminalAsync,
 	withTerminal,
 	defineLocator,
 	defineMatchers,
@@ -68,8 +68,8 @@ const launch = (): TerminalLaunchOptions => ({
 	trace: 'off' as const,
 });
 
-test('capture preserves paired moving geometry, first endpoint, and pure replay', async () => {
-	await withTerminalAsync(launch(), async (t) => {
+test('capture preserves paired moving geometry and historical cursor evidence', async () => {
+	await withTerminal(launch(), async (t) => {
 		const before = await t.expect(field).toContainText('Ready');
 		const recording = await t.capture(
 			{ until: field.satisfies(textContains('Saved')) },
@@ -94,7 +94,7 @@ test('capture preserves paired moving geometry, first endpoint, and pure replay'
 });
 
 test('a description cannot make a false visual assertion pass', async () => {
-	await withTerminalAsync(launch(), async (t) => {
+	await withTerminal(launch(), async (t) => {
 		await t.expect(field).toContainText('Ready');
 		const recording = await t.capture(
 			{ until: field.satisfies(textContains('Ready')) },
@@ -116,14 +116,14 @@ test('custom matchers compose terminal evidence and preserve typed arguments', a
 			},
 		}),
 	);
-	await withTerminalAsync(launch(), async (t) => {
+	await withTerminal(launch(), async (t) => {
 		await expectRegion(t, field).toShow('Ready');
 		await t.expect(field).toContainText('Ready');
 	});
 });
 
 test('transition condition sees every commit even within one PTY output frame', async () => {
-	await withTerminalAsync(launch(), async (t) => {
+	await withTerminal(launch(), async (t) => {
 		await t.expect(field).toContainText('Ready');
 		const recording = await t.capture(
 			{
@@ -141,7 +141,7 @@ test('transition condition sees every commit even within one PTY output frame', 
 });
 
 test('capture aborts cooperative work, closes escaped handles, and leaves parent usable', async () => {
-	await withTerminalAsync(launch(), async (t) => {
+	await withTerminal(launch(), async (t) => {
 		await t.expect(field).toContainText('Ready');
 		const controller = new AbortController();
 		const reason = new Error('cancel recording');
@@ -165,7 +165,7 @@ test('capture aborts cooperative work, closes escaped handles, and leaves parent
 });
 
 test('condition completion does not abort action; callback failure remains primary', async () => {
-	await withTerminalAsync(launch(), async (t) => {
+	await withTerminal(launch(), async (t) => {
 		await t.expect(field).toContainText('Ready');
 		const failure = new Error('action failed');
 		await expect(
@@ -181,7 +181,7 @@ test('condition completion does not abort action; callback failure remains prima
 });
 
 test('capture overflow, timeout, and process exit fail distinctly', async () => {
-	await withTerminalAsync(launch(), async (t) => {
+	await withTerminal(launch(), async (t) => {
 		await t.expect(field).toContainText('Ready');
 		await expect(
 			t.capture(
@@ -202,8 +202,110 @@ test('capture overflow, timeout, and process exit fail distinctly', async () => 
 	});
 });
 
+test('capture stops at the first endpoint while its callback finishes later work', async () => {
+	await withTerminal(launch(), async (ui) => {
+		await ui.expect(field).toContainText('Ready');
+		let callbackFinished = false;
+		let child: typeof ui | undefined;
+		const recording = await ui.capture(
+			{ until: field.satisfies(textContains('Loading')) },
+			async (scope) => {
+				child = scope;
+				// One application write contains Loading followed by Saved. The
+				// recording stops at Loading even though the callback waits for Saved.
+				await scope.keyboard.type('m');
+				await scope.expect(field).toContainText('Saved');
+				expect(scope.signal.aborted).toBe(false);
+				callbackFinished = true;
+			},
+		);
+		expect(callbackFinished).toBe(true);
+		expect(child!.signal.aborted).toBe(true);
+		expect(
+			recording.observations
+				.filter((o) => o.kind === 'extension')
+				.map((o) => field.resolve(o)[0]!.text().trim()),
+		).toEqual(['Loading']);
+		expect(field.resolve(recording.observations.at(-1)!)[0]!.text()).toContain('Loading');
+		await expect(child!.keyboard.type('x')).rejects.toThrow();
+		await ui.expect(field).toContainText('Saved');
+	});
+});
+
+test('byte overflow aborts capture work without closing the parent terminal', async () => {
+	await withTerminal(launch(), async (ui) => {
+		await ui.expect(field).toContainText('Ready');
+		let child: typeof ui | undefined;
+		await expect(
+			ui.capture({ maxBytes: 1, until: field.satisfies(textContains('Saved')) }, async (scope) => {
+				child = scope;
+				await scope.keyboard.type('m');
+				await new Promise(() => {}); // Cancellation must not await an uncooperative callback.
+			}),
+		).rejects.toMatchObject({ code: 'GW_CAPTURE_LIMIT' });
+		expect(child!.signal.aborted).toBe(true);
+		await expect(child!.keyboard.type('x')).rejects.toThrow();
+		await ui.expect(field).toContainText('Saved');
+		await ui.keyboard.type('x');
+		expect((await ui.process.waitForExit()).exitCode).toBe(0);
+	});
+});
+
+test('canceling a nested capture leaves its outer capture running', async () => {
+	await withTerminal(launch(), async (ui) => {
+		await ui.expect(field).toContainText('Ready');
+		const controller = new AbortController();
+		const reason = new Error('cancel only the inner recording');
+		let inner: typeof ui | undefined;
+		const recording = await ui.capture(
+			{ until: field.satisfies(textContains('Saved')) },
+			async (outer) => {
+				await expect(
+					outer.capture(
+						{ signal: controller.signal, until: field.satisfies(textContains('Never')) },
+						async (scope) => {
+							inner = scope;
+							controller.abort(reason);
+							await new Promise(() => {});
+						},
+					),
+				).rejects.toBe(reason);
+				expect(inner!.signal.aborted).toBe(true);
+				expect(outer.signal.aborted).toBe(false);
+				await expect(inner!.keyboard.type('x')).rejects.toThrow();
+				await outer.keyboard.type('m');
+			},
+		);
+		expect(field.resolve(recording.observations.at(-1)!)[0]!.text()).toContain('Saved');
+		await ui.expect(field).toContainText('Saved');
+	});
+});
+
+test('the capture deadline still owns callback work after the endpoint', async () => {
+	await withTerminal(launch(), async (ui) => {
+		await ui.expect(field).toContainText('Ready');
+		let reachedEndpoint = false;
+		let child: typeof ui | undefined;
+		await expect(
+			ui.capture(
+				{ timeoutMs: 250, until: field.satisfies(textContains('Loading')) },
+				async (scope) => {
+					child = scope;
+					await scope.keyboard.type('m');
+					await scope.expect(field).toContainText('Saved');
+					reachedEndpoint = true;
+					await new Promise(() => {});
+				},
+			),
+		).rejects.toMatchObject({ code: 'GW_CAPTURE_TIMEOUT' });
+		expect(reachedEndpoint).toBe(true);
+		expect(child!.signal.aborted).toBe(true);
+		await ui.expect(field).toContainText('Saved');
+	});
+});
+
 test('an already drawn region can settle without a new application commit', async () => {
-	await withTerminalAsync(launch(), async (ui) => {
+	await withTerminal(launch(), async (ui) => {
 		await ui.expect(field).toContainText('Ready');
 		const capture = await ui.capture({ until: settled(field, 20) }, async () => {});
 		expect(capture.observations).toHaveLength(0);
@@ -212,7 +314,7 @@ test('an already drawn region can settle without a new application commit', asyn
 });
 
 test('a transition can compose with settlement without another commit', async () => {
-	await withTerminalAsync(launch(), async (ui) => {
+	await withTerminal(launch(), async (ui) => {
 		await ui.expect(field).toContainText('Ready');
 		const capture = await ui.capture(
 			{ until: sequence(field.satisfies(textContains('Saved')), settled(field, 20)) },
@@ -225,7 +327,7 @@ test('a transition can compose with settlement without another commit', async ()
 });
 
 test('runner rejection helpers can reenter a capture executor', async () => {
-	await withTerminalAsync(launch(), async (ui) => {
+	await withTerminal(launch(), async (ui) => {
 		await ui.expect(field).toContainText('Ready');
 		await ui.capture({ until: field.satisfies(textContains('Saved')) }, async (child) => {
 			await expect(
@@ -242,7 +344,7 @@ test('runner rejection helpers can reenter a capture executor', async () => {
 
 test('native Effection capture uses the same matcher and recording core', async () => {
 	await run(function* () {
-		yield* withTerminal(launch(), function* (ui) {
+		yield* withEffectionTerminal(launch(), function* (ui) {
 			yield* ui.expect(field).toContainText('Ready');
 			const capture = yield* ui.capture(
 				{ until: field.satisfies(textContains('Saved')) },
@@ -258,7 +360,7 @@ test('native Effection capture uses the same matcher and recording core', async 
 test('trace replay uses the live description pairing path', async () => {
 	const directory = await mkdtemp(join(tmpdir(), 'ghostwright-paired-'));
 	try {
-		await withTerminalAsync({ ...launch(), trace: { policy: 'on', directory } }, async (t) => {
+		await withTerminal({ ...launch(), trace: { policy: 'on', directory } }, async (t) => {
 			await t.expect(field).toContainText('Ready');
 			await t.keyboard.type('m');
 			await t.expect(field).toContainText('Saved');
@@ -277,7 +379,7 @@ test('trace replay uses the live description pairing path', async () => {
 });
 
 test('settlement completes without requiring new output', async () => {
-	await withTerminalAsync(launch(), async (t) => {
+	await withTerminal(launch(), async (t) => {
 		await t.expect(field).toContainText('Ready');
 		const result = await t.capture({ until: settled(field, 10) }, async (scope) => {
 			await scope.keyboard.type('f');

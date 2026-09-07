@@ -3,7 +3,7 @@ import {
 	expectTerminal,
 	LaunchError,
 	ReservedEnvironmentError,
-	withTerminalAsync,
+	withTerminal,
 } from '../src/index.ts';
 
 const node = process.execPath;
@@ -13,7 +13,7 @@ function evalArgs(source: string): string[] {
 }
 
 test('profile, TTY descriptors, geometry, styles, Unicode, and clipboard use Ghostty state', async () => {
-	await withTerminalAsync(
+	await withTerminal(
 		{
 			command: node,
 			args: evalArgs(`
@@ -56,7 +56,7 @@ test('profile, TTY descriptors, geometry, styles, Unicode, and clipboard use Gho
 });
 
 test('Ghostty effects answer DA, size, color-scheme, ENQ, and XTVERSION queries', async () => {
-	await withTerminalAsync(
+	await withTerminal(
 		{
 			command: node,
 			args: evalArgs(`
@@ -91,7 +91,7 @@ test('Ghostty effects answer DA, size, color-scheme, ENQ, and XTVERSION queries'
 });
 
 test('mode-aware keyboard, paste, focus, mouse, and large raw input are acknowledged', async () => {
-	await withTerminalAsync(
+	await withTerminal(
 		{
 			command: node,
 			args: evalArgs(`
@@ -134,17 +134,17 @@ test('mode-aware keyboard, paste, focus, mouse, and large raw input are acknowle
 
 test('reserved profile environment and exec failures are typed', async () => {
 	await expect(
-		withTerminalAsync({ command: node, env: { TERM: 'bad' }, trace: 'off' }, async () => undefined),
+		withTerminal({ command: node, env: { TERM: 'bad' }, trace: 'off' }, async () => undefined),
 	).rejects.toBeInstanceOf(ReservedEnvironmentError);
 	await expect(
-		withTerminalAsync({ command: '/definitely/missing', trace: 'off' }, async () => undefined),
+		withTerminal({ command: '/definitely/missing', trace: 'off' }, async () => undefined),
 	).rejects.toBeInstanceOf(LaunchError);
 });
 
 test('parallel sessions own isolated WASM and PTY state', async () => {
 	const values = await Promise.all(
 		Array.from({ length: 8 }, (_, index) =>
-			withTerminalAsync(
+			withTerminal(
 				{
 					command: node,
 					args: evalArgs(`process.stdout.write("session-${index}")`),

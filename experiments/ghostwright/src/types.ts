@@ -1,4 +1,5 @@
 import type { Operation } from 'effection';
+import type { RegionLocator } from './locators.ts';
 
 export interface Viewport {
 	columns: number;
@@ -71,6 +72,8 @@ export interface TerminalLaunchOptions {
 	name?: string;
 	/** Optional framework-specific extensions receiving ordered in-band OSC commits. */
 	extensions?: readonly TerminalExtensionDefinition[];
+	/** Adapter-owned selector syntax; protocol decoders remain pure. */
+	selector?: (source: string) => RegionLocator;
 }
 export interface Point {
 	column: number;
@@ -126,7 +129,6 @@ export interface MouseOptions {
 	shift?: boolean;
 	control?: boolean;
 	alt?: boolean;
-	super?: boolean;
 }
 export interface WheelOptions extends Point {
 	deltaRows: number;

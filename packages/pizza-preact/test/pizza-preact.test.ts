@@ -1,9 +1,12 @@
-import { test } from 'vitest';
-import { withTerminalAsync, type TerminalLaunchOptions } from 'ghostwright';
-import { clackTtyExtension, expectUI, locator } from '@ghostwright/clack-tty';
+import { expect } from 'vitest';
+import { test } from 'ghostwright/vitest';
+// oxlint-disable-next-line import/no-unassigned-import -- Install typed terminal and clack matchers in Vitest.
+import '@ghostwright/clack-tty/vitest';
+import { type TerminalLaunchOptions } from 'ghostwright';
+import { clackTtyExtension, locator } from '@ghostwright/clack-tty';
 
-// Launch the Preact app in a real terminal. Locators find the controls;
-// assertions check the text, borders, and cursor drawn on that terminal.
+// The runner fixture owns each terminal and retains artifacts on test failure.
+// The app is a real child process; assertions read terminal cells, not Preact state.
 const pizza = (): TerminalLaunchOptions => ({
 	command: process.execPath,
 	args: ['--import', 'tsx', 'src/index.tsx'],
@@ -23,67 +26,74 @@ const expiry = cardDetails.locator('input[label="expiry"]');
 const cvc = cardDetails.locator('input[label="cvc"]');
 const submitCard = cardDetails.locator('button[label="submit-card"]');
 
-test('return from card details without losing the delivery address', async () => {
-	await withTerminalAsync(pizza(), async (ui) => {
-		// Tell the shop who we are and where to deliver.
-		await ui.expect(delivery).toContainText('Pizza Delivery');
-		await expectUI(ui, name).toHaveInputFocus();
-		await ui.keyboard.type('Ryan');
-		await ui.expect(name).toContainText('Ryan');
+test('return from card details without losing the delivery address', async ({ launchTerminal }) => {
+	const { screen, keyboard, waitFor } = await launchTerminal(pizza());
 
-		await ui.keyboard.press('Tab');
-		await expectUI(ui, address).toHaveInputFocus();
-		await ui.keyboard.type('1 Main St');
-		await ui.expect(address).toContainText('1 Main St');
+	// Tell the shop who we are and where to deliver.
+	expect(await screen.findBy(delivery)).toContainText('Pizza Delivery');
+	await waitFor(() => expect(screen.getBy(name)).toHaveInputFocus());
+	await keyboard.type('Ryan');
+	await waitFor(() => expect(screen.getBy(name)).toContainText('Ryan'));
 
-		// Open the card form with the keyboard. Focus moves into the dialog.
-		await ui.keyboard.press('Tab');
-		await expectUI(ui, addCard).toHaveButtonFocus('Add card');
-		await ui.keyboard.press('Enter');
-		await ui.expect(cardDetails).toContainText('Card Details');
+	await keyboard.press('Tab');
+	await waitFor(() => expect(screen.getBy(address)).toHaveInputFocus());
+	await keyboard.type('1 Main St');
+	await waitFor(() => expect(screen.getBy(address)).toContainText('1 Main St'));
 
-		await expectUI(ui, cardNumber).toHaveInputFocus();
-		await ui.keyboard.type('4242');
-		await ui.expect(cardNumber).toContainText('4242');
+	// Open the card form with the keyboard. Focus moves into the dialog.
+	await keyboard.press('Tab');
+	await waitFor(() => expect(screen.getBy(addCard)).toHaveButtonFocus('Add card'));
+	await keyboard.press('Enter');
+	expect(await screen.findBy(cardDetails)).toContainText('Card Details');
 
-		await ui.keyboard.press('Tab');
-		await expectUI(ui, expiry).toHaveInputFocus();
-		await ui.keyboard.type('12/30');
-		await ui.expect(expiry).toContainText('12/30');
+	await waitFor(() => expect(screen.getBy(cardNumber)).toHaveInputFocus());
+	await keyboard.type('4242');
+	await waitFor(() => expect(screen.getBy(cardNumber)).toContainText('4242'));
 
-		await ui.keyboard.press('Tab');
-		await expectUI(ui, cvc).toHaveInputFocus();
-		await ui.keyboard.type('123');
-		await ui.expect(cvc).toContainText('123');
+	await keyboard.press('Tab');
+	await waitFor(() => expect(screen.getBy(expiry)).toHaveInputFocus());
+	await keyboard.type('12/30');
+	await waitFor(() => expect(screen.getBy(expiry)).toContainText('12/30'));
 
-		// Submit the form. We return to the opener, with our delivery details intact.
-		await ui.keyboard.press('Tab');
-		await expectUI(ui, submitCard).toHaveButtonFocus('Submit card');
-		await ui.keyboard.press('Enter');
-		await expectUI(ui, addCard).toHaveButtonFocus('Add card');
-		await ui.expect(name).toContainText('Ryan');
-		await ui.expect(address).toContainText('1 Main St');
+	await keyboard.press('Tab');
+	await waitFor(() => expect(screen.getBy(cvc)).toHaveInputFocus());
+	await keyboard.type('123');
+	await waitFor(() => expect(screen.getBy(cvc)).toContainText('123'));
 
-		await ui.keyboard.press('Tab');
-		await expectUI(ui, name).toHaveInputFocus();
+	// Return to the opener, with our delivery details intact.
+	await keyboard.press('Tab');
+	await waitFor(() => expect(screen.getBy(submitCard)).toHaveButtonFocus('Submit card'));
+	await keyboard.press('Enter');
+	await waitFor(() => {
+		expect(screen.getBy(addCard)).toHaveButtonFocus('Add card');
+		expect(screen.queryBy(cardDetails)).toBeNull();
+		expect(screen.getBy(name)).toContainText('Ryan');
+		expect(screen.getBy(address)).toContainText('1 Main St');
 	});
+
+	await keyboard.press('Tab');
+	await waitFor(() => expect(screen.getBy(name)).toHaveInputFocus());
 });
 
-test('correct a typo before moving to the address', async () => {
-	await withTerminalAsync(pizza(), async (ui) => {
-		await expectUI(ui, name).toHaveInputFocus();
-		await ui.keyboard.type('Ryn');
-		await ui.expect(name).toContainText('Ryn');
+test('correct a typo before moving to the address', async ({ launchTerminal }) => {
+	const { screen, keyboard, waitFor } = await launchTerminal(pizza());
+	await waitFor(() => expect(screen.getBy(name)).toHaveInputFocus());
+	await keyboard.type('Ryn');
+	await waitFor(() => expect(screen.getBy(name)).toContainText('Ryn'));
 
-		// Move before the final letter and insert the missing "a".
-		await ui.keyboard.press('ArrowLeft');
-		await ui.keyboard.type('a');
-		await ui.expect(name).toContainText('Ryan');
-		await ui.expect(name).toContainCursor({ visible: true });
+	// Move before the final letter and insert the missing "a".
+	await keyboard.press('ArrowLeft');
+	await keyboard.type('a');
+	await waitFor(() => {
+		const corrected = screen.getBy(name);
+		expect(corrected).toContainText('Ryan');
+		expect(corrected).toContainCursor({ visible: true });
+	});
 
-		// Tab changes focus, not the name we just corrected.
-		await ui.keyboard.press('Tab');
-		await expectUI(ui, address).toHaveInputFocus();
-		await ui.expect(name).toContainText('Ryan');
+	// Tab changes focus, not the name we just corrected.
+	await keyboard.press('Tab');
+	await waitFor(() => {
+		expect(screen.getBy(address)).toHaveInputFocus();
+		expect(screen.getBy(name)).toContainText('Ryan');
 	});
 });

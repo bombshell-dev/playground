@@ -24,7 +24,6 @@ import { FrameKind } from '../pty/protocol.ts';
 import { SidecarClient } from '../pty/client.ts';
 import { SessionTrace } from '../tracing/trace.ts';
 import { parseKey } from '../keys.ts';
-import { cellsMatchStyle } from '../styles.ts';
 import { DEFAULT_ASSERTION_TIMEOUT_MS } from '../types.ts';
 import type {
 	ActionReceipt,
@@ -48,7 +47,6 @@ import type {
 	RevisionCollection,
 	RevisionCollectionOptions,
 	RevisionRangeQuery,
-	ScreenCell,
 	ScreenReader,
 	ScreenRevision,
 	ScreenSnapshot,
@@ -61,6 +59,7 @@ import type {
 import { TerminalOutput } from './output.ts';
 import type { Observations } from '../observations.ts';
 import { GhosttyWasmTerminal } from './wasm.ts';
+import { findText } from './text.ts';
 type ControlCommand =
 	| { kind: FrameKind.RESIZE; value: Required<Viewport> }
 	| { kind: FrameKind.SIGNAL; value: { signal: string; target: 'child' | 'process-group' } };
@@ -532,6 +531,11 @@ export class TerminalSession implements AsyncTerminal {
 	): Promise<ActionReceipt> {
 		signal?.throwIfAborted();
 		this.#ensure('perform mouse action');
+		if ('super' in o && o.super)
+			throw new GhostwrightError({
+				code: 'GW_UNSUPPORTED_MODIFIER',
+				message: 'Terminal mouse reports cannot encode Super/Command',
+			});
 		this.#point(p);
 		const wasDown = this.#mouseDown;
 		if (action === 'down') this.#mouseDown = true;
@@ -559,6 +563,8 @@ export class TerminalSession implements AsyncTerminal {
 			},
 			// oxlint-disable-next-line bombshell-dev/max-params -- wraps mouse API
 			drag: async (a: Point, b: Point, o?: MouseOptions) => {
+				this.#point(a);
+				this.#point(b);
 				await this.#mouse('down', a, o, signal);
 				await this.#mouse('move', b, o, signal);
 				return this.#mouse('up', b, o, signal);
@@ -1030,69 +1036,7 @@ export class Locator implements AsyncLocator {
 		return new Locator(this.session, this.query, this.options, this.index, rect);
 	}
 	matches(): readonly LocatorMatch[] {
-		const s = this.session.screen.current(),
-			out: LocatorMatch[] = [];
-		for (const line of s.lines) {
-			if (
-				this.bounds &&
-				(line.row < this.bounds.row || line.row >= this.bounds.row + this.bounds.height)
-			)
-				continue;
-			const start = this.bounds?.column ?? 0,
-				end = this.bounds ? this.bounds.column + this.bounds.width : s.viewport.columns,
-				segments: Array<{ start: number; end: number; cell: ScreenCell }> = [];
-			let row = '';
-			for (const cell of line.cells.slice(start, end)) {
-				if (cell.continuation) continue;
-				const text = cell.style.invisible ? ' ' : cell.text || ' ',
-					offset = row.length;
-				row += text;
-				segments.push({ start: offset, end: row.length, cell });
-			}
-			const rangeFor = (from: number, to: number): Rect => {
-				const first = segments.find((segment) => from < segment.end) ?? segments.at(-1),
-					last = [...segments].toReversed().find((segment) => to > segment.start) ?? first,
-					column = first?.cell.column ?? start,
-					lastEnd = last ? last.cell.column + Math.max(1, last.cell.width) : column + 1;
-				return { column, row: line.row, width: Math.max(1, lastEnd - column), height: 1 };
-			};
-			// Cells backing a match, so callers can inspect styles without
-			// re-deriving geometry from the raw snapshot.
-			const cellsFor = (from: number, to: number): readonly ScreenCell[] =>
-				Object.freeze(
-					segments
-						.filter((segment) => from < segment.end && to > segment.start)
-						.map((segment) => segment.cell),
-				);
-			const accept = (cells: readonly ScreenCell[]): boolean =>
-				!this.options.style || cellsMatchStyle(cells, this.options.style);
-			if (this.options.exact) {
-				const trimmed = row.replace(/ +$/g, '');
-				if (trimmed === this.query) {
-					const cells = cellsFor(0, trimmed.length);
-					if (accept(cells))
-						out.push({
-							text: trimmed,
-							rowText: row,
-							range: rangeFor(0, trimmed.length),
-							cells,
-						});
-				}
-			} else {
-				let at = 0;
-				while (this.query.length && (at = row.indexOf(this.query, at)) >= 0) {
-					const cells = cellsFor(at, at + this.query.length);
-					if (accept(cells))
-						out.push({
-							text: this.query,
-							rowText: row,
-							range: rangeFor(at, at + this.query.length),
-							cells,
-						});
-					at += Math.max(1, this.query.length);
-				}
-			}
-		}
+		const out = findText(this.session.screen.current(), this.query, this.options, this.bounds);
 		const chosen = this.index === undefined ? out : out[this.index] ? [out[this.index]] : [];
 		return Object.freeze(chosen);
 	}

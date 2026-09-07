@@ -1,11 +1,11 @@
 import { expect, test } from 'bun:test';
-import { withTerminalAsync, regionLocator, textContains } from '../src/index.ts';
+import { withTerminal, regionLocator, textContains } from '../src/index.ts';
 import { SidecarClient } from '../src/pty/client.ts';
 import { resolveAssets, normalizeViewport, profileEnvironment } from '../src/profile.ts';
 
 test('a capture timeout cancels a blocked write without closing its parent session', async () => {
 	const viewport = regionLocator({ column: 0, row: 0, width: 80, height: 24 });
-	await withTerminalAsync(
+	await withTerminal(
 		{
 			command: process.execPath,
 			args: [

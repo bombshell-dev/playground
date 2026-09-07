@@ -1311,7 +1311,6 @@ export class GhosttyWasmTerminal {
 		if (options.shift) modifiers |= 1;
 		if (options.control) modifiers |= 2;
 		if (options.alt) modifiers |= 4;
-		if (options.super) modifiers |= 8;
 		this.#e.ghostty_mouse_event_set_mods(this.#mouseEvent, modifiers);
 		const positionLayout = this.#layouts.GhosttyMousePosition,
 			position = this.#alloc(positionLayout.size),

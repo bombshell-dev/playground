@@ -1,7 +1,7 @@
 import { expect, expectTypeOf, test } from 'vitest';
 import {
 	textContains,
-	withTerminalAsync,
+	withTerminal,
 	type Observation,
 	type RegionLocator,
 	type TerminalLaunchOptions,
@@ -137,7 +137,7 @@ const status = locator('text[label="status"]');
 
 test('DOM-scoped children follow parent replacement and retain coherent history', async () => {
 	const name = delivery.locator('box[label="fields"]').locator('input[label="name"]');
-	await withTerminalAsync(launch(), async (ui) => {
+	await withTerminal(launch(), async (ui) => {
 		await ui.expect(name).toContainText('Ryan');
 		const movement = await ui.capture(
 			{ until: name.satisfies(textContains('Saved')) },
@@ -172,7 +172,7 @@ test('DOM-scoped children follow parent replacement and retain coherent history'
 });
 
 test('scope uses ancestry, preserves node-level nth, and never clips to parent geometry', async () => {
-	await withTerminalAsync(launch(), async (ui) => {
+	await withTerminal(launch(), async (ui) => {
 		await ui.expect(status).toContainText('Ryan');
 		await expect(ui.expect(delivery.locator('input')).toContainText('Ryan')).rejects.toMatchObject({
 			code: 'GW_LOCATOR_STRICT',

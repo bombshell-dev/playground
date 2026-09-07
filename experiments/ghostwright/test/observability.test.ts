@@ -4,13 +4,13 @@ import {
 	HistoryChangedError,
 	TerminalAssertionError,
 	expectTerminal,
-	withTerminalAsync,
+	withTerminal,
 } from '../src/index.ts';
 
 const node = process.execPath;
 
 test('retained ranges use exclusive baselines and bounded live collection', async () => {
-	await withTerminalAsync(
+	await withTerminal(
 		{
 			command: node,
 			args: [
@@ -37,7 +37,7 @@ test('retained ranges use exclusive baselines and bounded live collection', asyn
 });
 
 test('history is immutable, paginated, searchable, and generation guarded', async () => {
-	await withTerminalAsync(
+	await withTerminal(
 		{
 			command: node,
 			args: ['-e', `for (let i = 0; i < 30; i++) console.log("HISTORY-" + i)`],
@@ -65,7 +65,7 @@ test('history is immutable, paginated, searchable, and generation guarded', asyn
 });
 
 test('history page boundaries retain soft-wrap continuation metadata', async () => {
-	await withTerminalAsync(
+	await withTerminal(
 		{
 			command: node,
 			args: [
@@ -106,7 +106,7 @@ test('raw Kitty graphics expose renderer-ready copied placement metadata', async
 		0, // transparent
 	]);
 	const payload = Buffer.from(pixels).toString('base64');
-	await withTerminalAsync(
+	await withTerminal(
 		{
 			command: node,
 			args: [
@@ -154,7 +154,7 @@ test('raw Kitty graphics expose renderer-ready copied placement metadata', async
 test('inspected unplaced Kitty images survive later snapshots without retaining pixels', async () => {
 	const pixels = new Uint8Array([255, 0, 0, 255]);
 	const payload = Buffer.from(pixels).toString('base64');
-	await withTerminalAsync(
+	await withTerminal(
 		{
 			command: node,
 			args: [
@@ -177,7 +177,7 @@ test('inspected unplaced Kitty images survive later snapshots without retaining 
 });
 
 test('revision collection reports timeout distinctly from process exit', async () => {
-	await withTerminalAsync(
+	await withTerminal(
 		{ command: node, args: ['-e', 'setTimeout(() => process.exit(0), 200)'], trace: 'off' },
 		async (terminal) => {
 			await expect(

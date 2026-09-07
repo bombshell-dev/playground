@@ -1,17 +1,13 @@
 import { expect, test } from 'bun:test';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-// oxlint-disable-next-line no-restricted-imports -- temporary fixture paths
-import { join } from 'node:path';
-import { withTerminalAsync, type AsyncExecution, type Viewport } from '../../src/index.ts';
 import { netrw } from './netrw.ts';
+import { withVim } from './fixture.ts';
 
 for (const viewport of [
 	{ columns: 80, rows: 24 },
 	{ columns: 100, rows: 36 },
 ]) {
 	test(`open a file from Vim's explorer at ${viewport.columns}×${viewport.rows}`, async () => {
-		await withVim(viewport, async (ui) => {
+		await withVim({ viewport }, async (ui) => {
 			const explorer = netrw(ui);
 			const readme = explorer.find('README.md');
 
@@ -35,7 +31,7 @@ for (const viewport of [
 }
 
 test('open an earlier file after moving to the end of the listing', async () => {
-	await withVim({ columns: 80, rows: 24 }, async (ui) => {
+	await withVim({ viewport: { columns: 80, rows: 24 } }, async (ui) => {
 		const explorer = netrw(ui);
 		await ui.expect(explorer.region).toContainCursor({ visible: true });
 		await ui.keyboard.type('G');
@@ -47,7 +43,7 @@ test('open an earlier file after moving to the end of the listing', async () => 
 });
 
 test('refuse to navigate when the cursor belongs to the neighboring editor', async () => {
-	await withVim({ columns: 80, rows: 24 }, async (ui) => {
+	await withVim({ viewport: { columns: 80, rows: 24 } }, async (ui) => {
 		const explorer = netrw(ui);
 		await ui.expect(explorer.region).toContainCursor({ visible: true });
 		await ui.keyboard.press({ key: 'w', control: true });
@@ -60,54 +56,3 @@ test('refuse to navigate when the cursor belongs to the neighboring editor', asy
 		await expect(explorer.find('README.md').open()).rejects.toMatchObject({ code: 'GW_VIM_FOCUS' });
 	});
 });
-
-/** A real, isolated Vim with its bundled netrw. No application instrumentation. */
-async function withVim(
-	viewport: Viewport,
-	body: (ui: AsyncExecution) => Promise<void>,
-): Promise<void> {
-	const directory = await mkdtemp(join(tmpdir(), 'ghostwright-netrw-'));
-	try {
-		await writeFile(
-			join(directory, 'README.md'),
-			'# Opened through the explorer\nThis text came from README.md.\n',
-		);
-		await writeFile(
-			join(directory, 'WELCOME.txt'),
-			'README.md\nThis is a decoy in the neighboring editor.\n',
-		);
-		await withTerminalAsync(
-			{
-				command: process.env.GHOSTWRIGHT_VIM ?? 'vim',
-				args: [
-					'-Nu',
-					'NONE',
-					'-i',
-					'NONE',
-					'-n',
-					'-R',
-					'--cmd',
-					'set nocompatible',
-					'--cmd',
-					'set runtimepath=$VIMRUNTIME packpath=$VIMRUNTIME',
-					'-c',
-					'let g:netrw_dirhistmax=0 | let g:netrw_liststyle=0 | let g:netrw_winsize=45',
-					'-c',
-					'runtime plugin/netrwPlugin.vim',
-					'-c',
-					'set laststatus=2',
-					'-c',
-					'Vexplore .',
-					'WELCOME.txt',
-				],
-				cwd: directory,
-				env: { HOME: directory, EXINIT: '', VIMINIT: '', LC_ALL: 'C' },
-				viewport,
-				trace: 'off',
-			},
-			body,
-		);
-	} finally {
-		await rm(directory, { recursive: true, force: true });
-	}
-}

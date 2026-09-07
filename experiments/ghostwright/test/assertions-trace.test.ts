@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 // oxlint-disable-next-line no-restricted-imports -- path module needed for path resolution
 import { join } from 'node:path';
@@ -9,13 +9,13 @@ import {
 	replayTrace,
 	StrictLocatorError,
 	TerminalAssertionError,
-	withTerminalAsync,
+	withTerminal,
 } from '../src/index.ts';
 
 const node = process.execPath;
 
 test('lazy locators preserve wide-cell geometry and strictness', async () => {
-	await withTerminalAsync(
+	await withTerminal(
 		{
 			command: node,
 			args: ['-e', `setTimeout(() => process.stdout.write("文字 unique duplicate duplicate"), 20)`],
@@ -37,7 +37,7 @@ test('lazy locators preserve wide-cell geometry and strictness', async () => {
 });
 
 test('visual stability uses the existing visual-change timestamp', async () => {
-	await withTerminalAsync(
+	await withTerminal(
 		{
 			command: node,
 			args: ['-e', `process.stdout.write("stable"); setTimeout(() => {}, 250)`],
@@ -54,7 +54,7 @@ test('visual stability uses the existing visual-change timestamp', async () => {
 });
 
 test('history eviction is explicit', async () => {
-	await withTerminalAsync(
+	await withTerminal(
 		{
 			command: node,
 			args: [
@@ -78,7 +78,7 @@ test('trace-on artifacts replay the same final terminal state', async () => {
 	const directory = await mkdtemp(join(tmpdir(), 'ghostwright-replay-test-'));
 	try {
 		let expected = '';
-		await withTerminalAsync(
+		await withTerminal(
 			{
 				command: node,
 				args: ['-e', `process.stdout.write("first\\rsecond")`],
@@ -101,7 +101,7 @@ test('trace-on artifacts replay the same final terminal state', async () => {
 test('resize repaints and replay use the new viewport before child output', async () => {
 	const directory = await mkdtemp(join(tmpdir(), 'ghostwright-resize-replay-'));
 	try {
-		const expected = await withTerminalAsync(
+		const expected = await withTerminal(
 			{
 				command: node,
 				args: [
@@ -142,10 +142,48 @@ test('resize repaints and replay use the new viewport before child output', asyn
 	}
 });
 
+test('replay rejects incomplete recordings instead of reconstructing a plausible screen', async () => {
+	const directory = await mkdtemp(join(tmpdir(), 'ghostwright-incomplete-replay-'));
+	// Keep the files if any assertion fails, including failures during offline replay.
+	await withTerminal(
+		{
+			command: node,
+			args: ['-e', 'process.stdout.write("complete terminal output")'],
+			trace: { policy: 'on', directory },
+		},
+		async (terminal) => {
+			await terminal.process.waitForExit();
+		},
+	);
+	const path = join(directory, (await readdir(directory))[0]!);
+	const eventsPath = join(path, 'trace.jsonl');
+	const outputPath = join(path, 'output.bin');
+	const events = await readFile(eventsPath, 'utf8');
+	const output = await readFile(outputPath);
+
+	await writeFile(eventsPath, events.split('\n').slice(1).join('\n'));
+	await expect(replayTrace(path)).rejects.toMatchObject({
+		code: 'GW_ASSET_INTEGRITY',
+		message: expect.stringContaining('Trace beginning was evicted'),
+	});
+	await writeFile(eventsPath, events);
+
+	await writeFile(outputPath, output.subarray(0, output.length - 1));
+	await expect(replayTrace(path)).rejects.toMatchObject({
+		code: 'GW_ASSET_INTEGRITY',
+		message: expect.stringContaining('Trace raw range is incomplete'),
+	});
+	await writeFile(outputPath, output);
+
+	const replay = await replayTrace(path);
+	expect(replay.finalSnapshot.lines[0]!.text).toContain('complete terminal output');
+	await rm(directory, { recursive: true, force: true });
+});
+
 test('marked input is redacted from trace bytes', async () => {
 	const directory = await mkdtemp(join(tmpdir(), 'ghostwright-redaction-test-'));
 	try {
-		await withTerminalAsync(
+		await withTerminal(
 			{
 				command: node,
 				args: [
@@ -177,7 +215,7 @@ test('retain-on-failure writes private complete artifacts and preserves the prim
 	try {
 		let failure: unknown;
 		try {
-			await withTerminalAsync(
+			await withTerminal(
 				{
 					command: node,
 					args: ['-e', `process.stdout.write("actual")`],
