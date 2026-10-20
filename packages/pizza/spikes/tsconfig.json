@@ -1,0 +1,19 @@
+{
+	"compilerOptions": {
+		"target": "ES2022",
+		"module": "ESNext",
+		"moduleResolution": "Bundler",
+		"lib": ["ESNext", "DOM"],
+		"types": ["node"],
+		"strict": true,
+		"skipLibCheck": true,
+		"noEmit": true,
+		"allowImportingTsExtensions": true,
+		"paths": {
+			"ghostwright": ["../../../experiments/ghostwright/src/index.ts"],
+			"ghostwright/vitest": ["../../../experiments/ghostwright/src/vitest.ts"],
+			"ghostwright/matchers": ["../../../experiments/ghostwright/src/runner-matchers.ts"]
+		}
+	},
+	"include": ["*.ts"]
+}

@@ -7,7 +7,9 @@
 	"type": "module",
 	"scripts": {
 		"start": "tsx src/pizza.ts",
-		"test": "vitest run"
+		"test": "vitest run",
+		"test:in-process": "vitest run --config spikes/vitest.config.ts",
+		"typecheck:in-process": "tsc -p spikes/tsconfig.json"
 	},
 	"dependencies": {
 		"@bomb.sh/tty": "^0.8.0",
