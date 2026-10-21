@@ -2,6 +2,7 @@
 import { resolve } from 'node:path';
 import {
 	CoordinateRangeError,
+	ExtensionLifecycleError,
 	DenoPermissionError,
 	GhostwrightError,
 	HistoryChangedError,
@@ -56,6 +57,7 @@ import type {
 	Viewport,
 	WheelOptions,
 } from '../types.ts';
+import { ExtensionLifecycle } from './lifecycle.ts';
 import { TerminalOutput } from './output.ts';
 import type { Observations } from '../observations.ts';
 import { GhosttyWasmTerminal } from './wasm.ts';
@@ -112,6 +114,7 @@ export class TerminalSession implements AsyncTerminal {
 	#viewport;
 	#fatalError?: Error;
 	#outputStream!: TerminalOutput;
+	#extensions!: ExtensionLifecycle;
 	#sourceFrameSequence = 0;
 	#exitResolve!: (s: ProcessStatus) => void;
 	#exitPromise: Promise<ProcessStatus>;
@@ -181,6 +184,7 @@ export class TerminalSession implements AsyncTerminal {
 			options.graphics?.storageLimitBytes ?? 64 * 1024 * 1024,
 		);
 		self.#snapshot = self.#engine.snapshot();
+		self.#extensions = new ExtensionLifecycle(() => self.#snapshot);
 		try {
 			self.#outputStream = new TerminalOutput(
 				options.extensions ?? [],
@@ -211,11 +215,26 @@ export class TerminalSession implements AsyncTerminal {
 			storageLimitBytes: self.#snapshot.graphics.storageLimitBytes,
 			profile: self.#snapshot.graphics.supported ? 'direct-raw-only' : 'disabled',
 		});
-		self.#host = await SidecarClient.start(assets.host, options.commandTimeoutMs ?? 5000);
+		try {
+			await self.#extensions.install(options.extensions ?? []);
+			self.#host = await SidecarClient.start(assets.host, options.commandTimeoutMs ?? 5000);
+		} catch (error) {
+			self.#engine.free();
+			try {
+				await self.#extensions.close();
+			} catch (cleanupError) {
+				throw new ExtensionLifecycleError('Terminal launch and extension cleanup failed', [
+					error,
+					cleanupError,
+				]);
+			}
+			throw error;
+		}
 		self.#host.on('output', (b, seq) => {
 			self.#outputPump = self.#outputPump
 				.then(() => self.#output(b, seq))
 				.catch((error) => {
+					self.#fatalError = error;
 					self.#status = { ...self.#status, state: 'failed' };
 					self.#trace.add('output-pump-error', {
 						message: error instanceof Error ? error.message : String(error),
@@ -261,18 +280,41 @@ export class TerminalSession implements AsyncTerminal {
 			});
 		} catch (cause) {
 			self.#host.forceKill();
+			await self.#outputPump;
+			self.#closed = true;
 			self.#engine.free();
-			throw new LaunchError(
+			const failure = new LaunchError(
 				`Unable to launch ${JSON.stringify(options.command)} in ${JSON.stringify(cwd)}`,
 				{ cause },
 			);
+			try {
+				await self.#extensions.close();
+			} catch (error) {
+				throw new ExtensionLifecycleError('Terminal launch and extension cleanup failed', [
+					failure,
+					error,
+				]);
+			}
+			throw failure;
 		}
 		if (self.#fatalError) {
+			self.#host.forceKill();
+			await self.#outputPump;
+			self.#closed = true;
 			self.#engine.free();
-			throw new LaunchError(
+			const failure = new LaunchError(
 				`Unable to launch ${JSON.stringify(options.command)} in ${JSON.stringify(cwd)}: ${self.#fatalError.message}`,
 				{ cause: self.#fatalError },
 			);
+			try {
+				await self.#extensions.close();
+			} catch (error) {
+				throw new ExtensionLifecycleError('Terminal launch and extension cleanup failed', [
+					failure,
+					error,
+				]);
+			}
+			throw failure;
 		}
 		self.#status = {
 			state: 'running',
@@ -365,6 +407,7 @@ export class TerminalSession implements AsyncTerminal {
 			sequence: this.#revision,
 			lastVisualChangeAt: visual ? next.timestamp : this.#snapshot.lastVisualChangeAt,
 		});
+		this.#extensions.frame(this.#snapshot);
 		const rev = Object.freeze({
 			sequence: this.#revision,
 			timestamp: next.timestamp,
@@ -418,6 +461,7 @@ export class TerminalSession implements AsyncTerminal {
 		const ack = await this.#command(() => {
 			signal?.throwIfAborted();
 			if (command.kind === FrameKind.RESIZE) {
+				this.#extensions.action({ kind: 'resize', ...command.value });
 				// Resize our terminal before notifying the child. Its repaint can
 				// arrive before the PTY acknowledgement reaches the caller.
 				this.#viewport = command.value;
@@ -463,6 +507,13 @@ export class TerminalSession implements AsyncTerminal {
 					if (signal?.aborted)
 						throw new WriteInterruptedError(0, 'Input cancelled before the next chunk', {
 							cause: signal.reason,
+						});
+					if (offset === 0)
+						this.#extensions.action({
+							kind: 'write',
+							bytes: data.length,
+							redacted: traceMode === 'redact',
+							...(traceMode === 'record' ? { base64: Buffer.from(data).toString('base64') } : {}),
 						});
 					return this.#host.write(chunk, signal);
 				});
@@ -692,6 +743,7 @@ export class TerminalSession implements AsyncTerminal {
 			this.#engine.free();
 			this.#trace.add('cleanup');
 			this.#notify();
+			await this.#extensions.close();
 		}
 	}
 	async waitForChange(test: () => boolean, timeout: number): Promise<void> {

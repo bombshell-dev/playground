@@ -6,12 +6,15 @@ import { createRoot } from '@clack/ui-preact';
 import { clackTtyExtension, locator } from '@ghostwright/clack-tty';
 import { useSemantic } from '@ghostwright/clack-tty/producer';
 import { createTerminal } from '../../../experiments/ghostwright/spikes/in-process.ts';
+import { recordTest } from '../../../experiments/ghostwright/spikes/recording-vitest.ts';
 import { PizzaDelivery } from '../src/app.tsx';
 
-test('fills the Preact pizza form and returns from its modal through injected terminal streams', async () => {
-	await using terminal = await createTerminal({ extensions: [clackTtyExtension()] });
+test('fills the Preact pizza form and returns from its modal through injected terminal streams', async (context) => {
+	const recording = recordTest(context);
+	await using terminal = await createTerminal({ extensions: [clackTtyExtension(), recording] });
 	await using ui = await createUI({ ...terminal.appIO, extensions: [useSemantic] });
 	using root = createRoot(ui.document.documentElement);
+	using _capture = recording;
 	root.render(<PizzaDelivery />);
 	terminal.run(ui.main);
 	const { screen, keyboard, waitFor } = terminal;

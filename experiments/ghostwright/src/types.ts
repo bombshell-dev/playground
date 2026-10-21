@@ -50,10 +50,25 @@ export interface ExtensionCommit<T> {
 	value: T;
 }
 
-/** Pure protocol decoder. Core owns ordering, publication, and retention. */
+/** Actions are observed at dispatch, before resulting output; they are not delivery receipts. */
+export type TerminalInteraction =
+	| { kind: 'press'; key: KeyName | KeyPress }
+	| { kind: 'type' | 'paste'; text: string }
+	| { kind: 'resize'; columns: number; rows: number }
+	| { kind: 'write'; bytes: number; base64?: string; redacted: boolean };
+
+export interface TerminalExtensionContext {
+	current(): ScreenSnapshot;
+	onFrame(listener: (screen: ScreenSnapshot) => void): () => void;
+	onAction(listener: (action: TerminalInteraction) => void): () => void;
+}
+
+/** Optional protocol decoding and session-local observation with awaited cleanup. */
 export interface TerminalExtensionDefinition<T = unknown> {
 	readonly id: string;
-	readonly osc: OscRegistration<ExtensionCommit<T>>;
+	readonly osc?: OscRegistration<ExtensionCommit<T>>;
+	/** Install synchronously before app output. Return cleanup awaited on close or failed setup. */
+	setup?(context: TerminalExtensionContext): void | (() => void | Promise<void>);
 }
 
 export interface TerminalLaunchOptions {

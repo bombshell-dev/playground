@@ -1,5 +1,8 @@
 # In-process terminal connection spike
 
+The opt-in [component recording spike](./RECORDING.md) captures local test
+interactions and Ghostty frames, then exports asciicast, GIF and MP4.
+
 `in-process.ts` connects injected application streams to Ghostwright's existing
 Ghostty WASM engine, output/OSC decoder, observations, screen queries, and wait
 executor. It does not launch a command or require a native PTY host. Each terminal
@@ -74,7 +77,7 @@ no longer needs assertions pretending its streams are OS TTY descriptors.
 
 The spike implements keyboard input, query replies, resizing, immutable screen
 queries, and waits. It does not yet provide the full session API: mouse actions,
-capture, action receipts, history limits, trace artifacts, and production queue
+the shared capture API, action receipts, history limits, production trace artifacts, and queue
 backpressure still need integration. Process and signal assertions belong to the
 PTY connection. Snapshot publication here is per ordinary output segment, which
 can be finer than the OS read boundaries of a PTY connection.

@@ -30,6 +30,8 @@
 		"dev:repos": "node scripts/dev-repos.mjs",
 		"test:dev-repos": "node --test scripts/check-dev-repos.mjs",
 		"dev:build-ui": "pnpm --dir .dev/workspace --filter @clack/ui --filter @clack/ui-preact run build",
+		"record:vim": "pnpm --dir .dev/workspace --filter ghostwright exec vitest run --config examples/vim-netrw/normal-skills.vitest.config.ts",
+		"record:components": "GHOSTWRIGHT_RECORD=gif,mp4 pnpm --dir .dev/workspace --filter @ghostwright/pizza-preact exec vitest run --config integration/vitest.config.ts",
 		"test:linked-ui": "pnpm --dir .dev/workspace --filter @ghostwright/pizza-preact exec vitest run --config integration/vitest.config.ts",
 		"test:pizza": "pnpm --dir .dev/workspace --filter @ghostwright/pizza --filter @ghostwright/pizza-preact test && pnpm --dir .dev/workspace --filter @ghostwright/pizza test:in-process && pnpm test:linked-ui",
 		"typecheck:pizza": "pnpm --dir .dev/workspace --filter @ghostwright/pizza-preact typecheck && tsc -p packages/pizza/spikes/tsconfig.json && tsc -p packages/pizza-preact/integration/tsconfig.json"

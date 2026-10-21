@@ -1,4 +1,6 @@
 import { Readable, Writable } from 'node:stream';
+import { ExtensionLifecycle } from '../src/terminal/lifecycle.ts';
+import type { TerminalInteraction } from '../src/types.ts';
 import { run } from 'effection';
 import { GhostwrightError, SessionClosedError } from '../src/errors.ts';
 import { parseKey } from '../src/keys.ts';
@@ -20,7 +22,9 @@ export async function createTerminal(options: InProcessOptions = {}): Promise<In
 	const viewport = normalizeViewport(options.viewport);
 	const engine = await GhosttyWasmTerminal.create(viewport);
 	try {
-		return new InProcessTerminal(engine, options);
+		const terminal = new InProcessTerminal(engine, options);
+		await terminal.installExtensions();
+		return terminal;
 	} catch (error) {
 		engine.free();
 		throw error;
@@ -68,6 +72,7 @@ class InProcessTerminal implements AsyncDisposable {
 	readonly screen;
 	readonly keyboard;
 	readonly #engine: GhosttyWasmTerminal;
+	readonly #extensions: ExtensionLifecycle;
 	readonly #output: TerminalOutput;
 	readonly #controller = new AbortController();
 	readonly #options: InProcessOptions;
@@ -82,6 +87,7 @@ class InProcessTerminal implements AsyncDisposable {
 		this.#engine = engine;
 		this.#options = options;
 		this.#snapshot = engine.snapshot();
+		this.#extensions = new ExtensionLifecycle(() => this.#snapshot);
 		this.#output = new TerminalOutput(
 			options.extensions ?? [],
 			() => this.#snapshot,
@@ -141,21 +147,35 @@ class InProcessTerminal implements AsyncDisposable {
 		this.keyboard = {
 			press: async (key: KeyName | KeyPress) => {
 				this.#ensureOpen();
-				await this.#send(engine.encodeKey(parseKey(key)));
+				await this.#send(engine.encodeKey(parseKey(key)), { kind: 'press', key });
 			},
 			type: async (text: string) => {
 				this.#ensureOpen();
-				await this.#send(Buffer.concat(Array.from(text, (key) => engine.encodeKey(key))));
+				await this.#send(Buffer.concat(Array.from(text, (key) => engine.encodeKey(key))), {
+					kind: 'type',
+					text,
+				});
 			},
 			paste: async (text: string) => {
 				this.#ensureOpen();
-				await this.#send(engine.encodePaste(text));
+				await this.#send(engine.encodePaste(text), { kind: 'paste', text });
 			},
 		};
 	}
 
+	async installExtensions(): Promise<void> {
+		try {
+			await this.#extensions.install(this.#options.extensions ?? []);
+		} catch (error) {
+			this.stdin.destroy();
+			this.stdout.destroy();
+			throw error;
+		}
+	}
+
 	#observe(): ScreenSnapshot {
 		this.#snapshot = Object.freeze({ ...this.#engine.snapshot(), sequence: ++this.#revision });
+		this.#extensions.frame(this.#snapshot);
 		return this.#snapshot;
 	}
 	#ensureOpen(): void {
@@ -165,10 +185,11 @@ class InProcessTerminal implements AsyncDisposable {
 		this.#failure ??= error;
 		this.#controller.abort(error);
 	}
-	#send(bytes: Uint8Array): Promise<void> {
+	#send(bytes: Uint8Array, action?: TerminalInteraction): Promise<void> {
 		const copy = Buffer.from(bytes);
 		const pending = this.#commands.then(() => {
 			this.#ensureOpen();
+			if (action) this.#extensions.action(action);
 			this.stdin.push(copy);
 		});
 		this.#commands = pending.catch(() => {});
@@ -207,6 +228,7 @@ class InProcessTerminal implements AsyncDisposable {
 	async resize(viewport: Viewport): Promise<void> {
 		this.#ensureOpen();
 		const size = normalizeViewport(viewport);
+		this.#extensions.action({ kind: 'resize', ...size });
 		this.#engine.resize(size);
 		this.#output.observations.screen(this.#observe());
 		Object.assign(this.stdout, size);
@@ -241,6 +263,7 @@ class InProcessTerminal implements AsyncDisposable {
 			this.stdin.destroy();
 			this.stdout.destroy();
 			this.#engine.free();
+			await this.#extensions.close();
 		}
 	}
 }

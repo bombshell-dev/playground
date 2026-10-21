@@ -81,3 +81,23 @@ It uses the same region inspection, strict matching, assertions, and scope-owned
 The live tests cover two viewport sizes, both navigation directions, the neighboring filename decoy, refusal to navigate from the wrong window, mouse-driven split resizing, in-memory editing and undo, and capture/replay evidence equivalence. Focused recognition tests use grids decoded by real Ghostty to check banner scoping, duplicate matches, missing boundaries, and ambiguity.
 
 The drag journey uses `mouse.drag(divider, { by: { columns: 8, rows: 0 } })`, frozen screen queries, and explicit `waitFor` assertions. The divider is a derived locator. Mouse resolution happens once at the start of the gesture. There is no Vim instrumentation and no action retry.
+
+## Record a normal-mode editing journey
+
+From playground with the composed development workspace installed:
+
+```sh
+pnpm record:vim
+```
+
+`normal-skills.vitest.ts` launches real Vim, opens netrw with `:Vexplore .`,
+opens `refactor.ts` through the screen-derived explorer adapter, and exercises
+`ci"`, `.`, `gUiw`, `yyp`, `ciw`, Ctrl-A, undo, and redo. Every edit has a visible
+screen assertion. The isolated temporary file is saved, Vim exits, and the fixture
+is removed.
+
+The existing spike recording extension exports JSON, asciicast, GIF, and MP4 to
+`.ghostwright/recordings/vim-normal-skills.*`. Set `GHOSTWRIGHT_RECORD_DIR` to
+choose another destination. Requires agg and FFmpeg on PATH, plus the usual PTY
+and Ghostty artifacts. Playback spaces actions by 850 ms without sleeping in
+the test. Recording stops on the saved buffer before quitting Vim.

@@ -25,11 +25,18 @@ export class TerminalOutput {
 		this.diagnostic = diagnostic;
 		const ids = new Set(extensions.map((extension) => extension.id));
 		const registrations = new Set(
-			extensions.map((extension) => `${extension.osc.number};${extension.osc.namespace}`),
+			extensions.flatMap((extension) =>
+				extension.osc ? [`${extension.osc.number};${extension.osc.namespace}`] : [],
+			),
 		);
-		if (ids.size !== extensions.length || registrations.size !== extensions.length)
+		if (
+			ids.size !== extensions.length ||
+			registrations.size !== extensions.filter((extension) => extension.osc).length
+		)
 			throw new ExtensionDuplicateError('Duplicate extension id or OSC registration');
-		this.#osc = new RegisteredOscStream(extensions.map((extension) => extension.osc));
+		this.#osc = new RegisteredOscStream(
+			extensions.flatMap((extension) => (extension.osc ? [extension.osc] : [])),
+		);
 		this.observations = new Observations(current());
 	}
 	push(bytes: Uint8Array): void {
@@ -42,7 +49,7 @@ export class TerminalOutput {
 			const extension = this.extensions.find((candidate) => candidate.osc === registration)!;
 			try {
 				if (item.kind === 'error') throw item.error;
-				const commit = extension.osc.decode(item.event.message);
+				const commit = extension.osc!.decode(item.event.message);
 				const previous = this.#frames.get(extension.id) ?? 0;
 				if (!Number.isSafeInteger(commit.protocolFrame) || commit.protocolFrame !== previous + 1)
 					throw new GhostwrightError({

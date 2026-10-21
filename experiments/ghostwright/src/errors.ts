@@ -11,6 +11,13 @@ export class GhostwrightError extends Error {
 		this.sessionName = params.sessionName;
 	}
 }
+/** Retains the primary lifecycle failure and any additional cleanup failures. */
+export class ExtensionLifecycleError extends GhostwrightError {
+	constructor(message: string, errors: readonly unknown[]) {
+		super({ code: 'GW_EXTENSION_LIFECYCLE', message, cause: errors[0] });
+		this.suppressed = errors.slice(1);
+	}
+}
 function errorType(
 	name: string,
 	code: string,
