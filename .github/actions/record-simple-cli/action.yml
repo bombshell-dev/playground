@@ -1,5 +1,5 @@
-name: Record built Ghostwright CLI
-description: Install the built tarball in an isolated consumer, test it, and upload its recording.
+name: Record built Ghostwright CLI and Vim
+description: Install the built tarball in an isolated consumer, test CLI and Vim journeys, and upload their recordings.
 inputs:
   package:
     description: Absolute path to the built Ghostwright tarball
@@ -27,6 +27,7 @@ runs:
         consumer="$RUNNER_TEMP/ghostwright-consumer"
         mkdir -p "$consumer" "$RUNNER_TEMP/ghostwright-recordings"
         cp "$GITHUB_WORKSPACE/experiments/ghostwright/ci/simple-cli/"* "$consumer/"
+        cp "$GITHUB_WORKSPACE/experiments/ghostwright/examples/vim-netrw/"{journey.mjs,netrw.ts} "$consumer/"
         npm ci --prefix "$consumer" --ignore-scripts
         npm install --prefix "$consumer" --ignore-scripts --no-save --package-lock=false "$PACKAGE"
     - name: Test the packaged CLI and record
@@ -36,13 +37,13 @@ runs:
       env:
         GHOSTWRIGHT_RECORD_DIR: ${{ runner.temp }}/ghostwright-recordings
         GHOSTWRIGHT_SOURCE_SHA: ${{ inputs.source-sha }}
-      run: node --test "$RUNNER_TEMP/ghostwright-consumer/test.mjs"
+      run: node --test "$RUNNER_TEMP/ghostwright-consumer/test.mjs" "$RUNNER_TEMP/ghostwright-consumer/vim.test.mjs"
     - name: Upload recording and diagnostics
       id: upload
       if: ${{ always() }}
       uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
-        name: ghostwright-simple-cli-${{ github.run_id }}-${{ github.run_attempt }}
+        name: ghostwright-cli-vim-${{ github.run_id }}-${{ github.run_attempt }}
         path: ${{ runner.temp }}/ghostwright-recordings/
         if-no-files-found: warn
         retention-days: 14
@@ -55,7 +56,7 @@ runs:
         SOURCE_SHA: ${{ inputs.source-sha }}
       run: |
         {
-          printf '### Ghostwright: built-package CLI recording\n\n'
+          printf '### Ghostwright: built-package CLI and Vim recordings\n\n'
           printf 'Source: `%s`\n\nTest: **%s**\n\n' "$SOURCE_SHA" "$TEST_OUTCOME"
           if [ -n "$ARTIFACT_URL" ]; then
             printf '[Download MP4, GIF, asciicast and trace](%s) (14-day retention)\n' "$ARTIFACT_URL"

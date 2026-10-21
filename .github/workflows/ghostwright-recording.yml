@@ -38,7 +38,7 @@ jobs:
           set -euo pipefail
           npm install -g pnpm@10.24.0
           sudo apt-get update -qq
-          sudo apt-get install -y musl-tools ncurses-bin ffmpeg fonts-dejavu-core
+          sudo apt-get install -y musl-tools ncurses-bin ffmpeg fonts-dejavu-core vim
           rustup toolchain install 1.90.0 --profile minimal --target x86_64-unknown-linux-musl
           echo 'RUSTUP_TOOLCHAIN=1.90.0' >> "$GITHUB_ENV"
           mkdir -p "$RUNNER_TEMP/ghostwright-tools"
@@ -75,7 +75,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       pull-requests: write
-      contents: read
+      contents: write
       actions: read
     steps:
       # Media is treated as data. No checkout or execution of PR code in this job.
@@ -85,63 +85,70 @@ jobs:
         continue-on-error: true
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: ghostwright-simple-cli-${{ github.run_id }}-${{ github.run_attempt }}
+          name: ghostwright-cli-vim-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/recording-media
-      - name: Upload MP4 as a GitHub attachment
+      - name: Publish direct MP4 links
         id: video
         if: ${{ steps.media.outcome == 'success' }}
         continue-on-error: true
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
-        env:
-          ATTACHMENT_TOKEN_CONFIGURED: ${{ secrets.GHOSTWRIGHT_ATTACHMENT_TOKEN != '' }}
         with:
-          # Uploads require a user token; GITHUB_TOKEN is an unsupported installation token.
-          github-token: ${{ secrets.GHOSTWRIGHT_ATTACHMENT_TOKEN || github.token }}
           script: |
-            if (process.env.ATTACHMENT_TOKEN_CONFIGURED !== 'true') {
-              core.setFailed('Configure GHOSTWRIGHT_ATTACHMENT_TOKEN: GitHub attachments require a user token with repository write access; GITHUB_TOKEN cannot upload them.');
-              return;
-            }
             const fs = require('node:fs/promises');
             const path = require('node:path');
             const { owner, repo } = context.repo;
             const number = context.payload.pull_request.number;
             const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
             if (pr.head.sha !== context.payload.pull_request.head.sha) return;
-            const file = path.join(process.env.RUNNER_TEMP, 'recording-media', 'simple-cli.mp4');
-            let stat;
-            try { stat = await fs.lstat(file); }
-            catch (error) {
-              if (error.code !== 'ENOENT') throw error;
-              core.info('No MP4 was produced; diagnostics remain in the Actions artifact.');
-              return;
+            const media = [];
+            for (const stem of ['simple-cli', 'vim-normal-skills']) {
+              const file = path.join(process.env.RUNNER_TEMP, 'recording-media', `${stem}.mp4`);
+              let stat;
+              try { stat = await fs.lstat(file); }
+              catch (error) {
+                if (error.code !== 'ENOENT') throw error;
+                core.info(`No ${stem} MP4 was produced; see the Actions artifact.`);
+                continue;
+              }
+              if (!stat.isFile() || stat.size === 0 || stat.size > 25 * 1024 * 1024) {
+                throw new Error(`Expected ${stem} MP4 to be a nonempty file of at most 25 MiB`);
+              }
+              media.push({ stem, file, size: stat.size });
             }
-            if (!stat.isFile() || stat.size === 0 || stat.size > 10 * 1024 * 1024) {
-              throw new Error('Expected a nonempty MP4 file of at most 10 MiB');
+            if (media.length === 0) return;
+            const tag = `ghostwright-recordings-pr-${number}`;
+            let release;
+            try {
+              ({ data: release } = await github.rest.repos.getReleaseByTag({ owner, repo, tag }));
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              ({ data: release } = await github.rest.repos.createRelease({
+                owner, repo, tag_name: tag, target_commitish: pr.head.sha,
+                name: `Ghostwright recordings — PR #${number}`,
+                body: `CI recording media for PR #${number}. Assets are named by run and attempt. This prerelease is not a package release. Media remains until this release is deleted.`,
+                prerelease: true, make_latest: 'false',
+              }));
             }
-            // Same token-authenticated media endpoint used by gh --attach.
-            const query = new URLSearchParams({
-              repository_id: String(context.payload.repository.id),
-              name: `simple-cli-${context.runId}-${process.env.GITHUB_RUN_ATTEMPT}.mp4`,
-              content_type: 'video/mp4',
+            const assets = await github.paginate(github.rest.repos.listReleaseAssets, {
+              owner, repo, release_id: release.id,
             });
-            const { data: asset } = await github.request(
-              `POST https://uploads.github.com/user-attachments/assets?${query}`,
-              {
-                data: await fs.readFile(file),
-                headers: { 'content-type': 'application/octet-stream', 'content-length': stat.size },
-              },
-            );
-            const url = new URL(asset.url);
-            if (url.origin !== 'https://github.com' || !/^\/user-attachments\/assets\/[a-f0-9-]+$/.test(url.pathname)) {
-              throw new Error('Attachment upload returned an unexpected URL');
+            for (const { stem, file, size } of media) {
+              const name = `${stem}-${context.runId}-${process.env.GITHUB_RUN_ATTEMPT}.mp4`;
+              let asset = assets.find(asset => asset.name === name);
+              if (!asset) {
+                ({ data: asset } = await github.rest.repos.uploadReleaseAsset({
+                  owner, repo, release_id: release.id, name,
+                  data: await fs.readFile(file),
+                  headers: { 'content-type': 'video/mp4', 'content-length': size },
+                }));
+              }
+              core.setOutput(stem, asset.browser_download_url);
             }
-            core.setOutput('url', url.href);
       - name: Update recording comment
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         env:
-          MP4_URL: ${{ steps.video.outputs.url }}
-          ATTACHMENT_TOKEN_CONFIGURED: ${{ secrets.GHOSTWRIGHT_ATTACHMENT_TOKEN != '' }}
+          MP4_URL: ${{ steps.video.outputs.simple-cli }}
+          VIM_URL: ${{ steps.video.outputs.vim-normal-skills }}
           RECORDING_URL: ${{ needs.record.outputs.artifact-url }}
           TEST_OUTCOME: ${{ needs.record.outputs.test-outcome }}
           JOB_RESULT: ${{ needs.record.result }}
@@ -160,18 +167,19 @@ jobs:
             const run = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
             const body = [
               marker,
-              '### Ghostwright CLI recording',
+              '### Ghostwright CLI and Vim recordings',
               '',
-              `${success ? '✅' : '❌'} **Build + packaged CLI test: ${process.env.JOB_RESULT}**`,
+              `${success ? '✅' : '❌'} **Build + packaged CLI/Vim tests: ${process.env.JOB_RESULT}**`,
               `PR head: \`${pr.head.sha}\``,
               `Built revision (PR merge commit): \`${process.env.SOURCE_SHA || 'setup failed'}\``,
               `Test/encoding: **${process.env.TEST_OUTCOME || 'not run'}**`,
               '',
               process.env.MP4_URL
-                ? process.env.MP4_URL
-                : process.env.ATTACHMENT_TOKEN_CONFIGURED !== 'true'
-                  ? 'Inline video needs the `GHOSTWRIGHT_ATTACHMENT_TOKEN` repository secret. The recording is available in the artifact below.'
-                  : 'Inline MP4 upload failed; check the artifact and publishing logs.',
+                ? `[Download CLI MP4](${process.env.MP4_URL})`
+                : 'CLI MP4 unavailable; check the artifact and publishing logs.',
+              process.env.VIM_URL
+                ? `[Download Vim MP4](${process.env.VIM_URL})`
+                : 'Vim MP4 unavailable; check the artifact and publishing logs.',
               '',
               process.env.RECORDING_URL
                 ? `[Download all recording files](${process.env.RECORDING_URL}) — MP4, GIF, asciicast and JSON trace. Available for 14 days.`
@@ -179,7 +187,7 @@ jobs:
               '',
               `[View Actions run](${run})`,
               '',
-              'This test installs the Ghostwright tarball built by this run and drives a real CLI through a PTY. No UI/TTY sibling checkouts are used.',
+              'These tests install the Ghostwright tarball built by this run and drive a real CLI and Vim/netrw through PTYs. No UI/TTY sibling checkouts are used.',
             ].join('\n');
             const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: number });
             const existing = comments.find(comment => comment.user?.login === 'github-actions[bot]' && comment.body?.includes(marker));
