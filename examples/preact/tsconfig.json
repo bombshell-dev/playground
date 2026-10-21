@@ -1,0 +1,12 @@
+{
+	"extends": "@bomb.sh/tools/tsconfig.json",
+	"compilerOptions": {
+		"composite": false,
+		"types": ["node"],
+		"lib": ["ESNext"],
+		"skipLibCheck": false,
+		"jsx": "react-jsx",
+		"jsxImportSource": "@examples/dom-preact"
+	},
+	"include": ["src/**/*.ts", "test/**/*.ts", "test/**/*.tsx"]
+}
