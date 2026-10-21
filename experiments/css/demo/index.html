@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Bombshell CSS</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Bombshell CSS</h1>
+      <p>
+        lightningcss front-end → typed IR → parcel_selectors runtime, running
+        as a freestanding wasm module.
+      </p>
+    </header>
+    <main>
+      <section class="editor">
+        <label for="source">stylesheet</label>
+        <textarea id="source" spellcheck="false">:root {
+  --brand: oklch(70% .2 40);
+  color: var(--brand);
+}
+
+.panel {
+  container-type: inline-size;
+  container-name: panel;
+}
+
+.card {
+  padding: 4px;
+  color: light-dark(white, black);
+
+  & > .title {
+    font-weight: bold;
+  }
+
+  &:focus {
+    border-color: var(--brand);
+  }
+}
+
+@media (min-width: 24em) {
+  @container panel (inline-size > 20em) {
+    .card {
+      border-color: var(--brand);
+    }
+  }
+}</textarea>
+        <label for="viewport-width">viewport width (px)</label>
+        <input id="viewport-width" type="number" value="400" min="0" step="16" />
+        <output id="status" for="source">…</output>
+      </section>
+      <section class="result">
+        <label for="output">computed styles</label>
+        <pre id="output" tabindex="0"></pre>
+      </section>
+    </main>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

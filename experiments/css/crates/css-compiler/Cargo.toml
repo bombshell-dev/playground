@@ -1,0 +1,16 @@
+[package]
+name = "bombshell-css-compiler"
+version = "0.1.0"
+description = "Lexbor-backed CSS compiler emitting the Bombshell stylesheet IR"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+build = "build.rs"
+
+[dependencies]
+bombshell-css-core = { workspace = true, features = ["selectors"] }
+cssparser = { workspace = true }
+
+[build-dependencies]
+cc = { workspace = true }

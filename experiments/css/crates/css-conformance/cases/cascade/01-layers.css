@@ -1,0 +1,5 @@
+/* Cascade 5: layer declaration order, nested layers, unlayered beats layered. */
+@layer a, b.c;
+@layer a { .x { color: red } }
+@layer b.c { .x { color: green } }
+.x { color: blue }

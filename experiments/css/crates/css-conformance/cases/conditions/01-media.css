@@ -1,0 +1,6 @@
+/* Media Queries Level 4: range syntax, boolean and discrete features, OR lists. */
+@media (400px <= width <= 800px) { .a { color: red } }
+@media (prefers-color-scheme: dark) { .a { color: green } }
+@media (prefers-reduced-motion: reduce) { .a { color: blue } }
+@media screen and (not (hover)) { .a { color: orange } }
+@media (min-width: 400px), (max-height: 10em) { .a { color: purple } }

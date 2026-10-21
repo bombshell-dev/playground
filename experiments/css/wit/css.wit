@@ -1,0 +1,125 @@
+package bombshell:css@0.3.0;
+
+/// Shared record types crossing the CSS boundary.
+interface types {
+  /// Cascade origin of a stylesheet.
+  enum origin {
+    user-agent,
+    user,
+    author,
+  }
+
+  enum severity {
+    error,
+    warning,
+  }
+
+  record diagnostic {
+    severity: severity,
+    /// Machine-readable identifier, e.g. `parse`, `lightningcss`.
+    code: string,
+    message: string,
+  }
+
+  enum color-scheme {
+    light,
+    dark,
+  }
+
+  /// Interactive state flags on a node.
+  flags node-state {
+    focus,
+    hover,
+    active,
+  }
+
+  /// Attribute name/value pair.
+  type attribute = tuple<string, string>;
+
+  /// One element of the host tree. Trees are shipped as a flat,
+  /// document-ordered `list<node>` plus a parallel `list<u32>` of parent
+  /// indices; `0xffffffff` (u32::MAX) marks a root with no parent. Sibling
+  /// relationships are derived from index contiguity.
+  record node {
+    tag: string,
+    id: option<string>,
+    classes: list<string>,
+    attributes: list<attribute>,
+    state: node-state,
+    /// Layout width in CSS px, if known. Satisfies container/media queries.
+    width: option<f32>,
+    /// Layout height in CSS px, if known.
+    height: option<f32>,
+  }
+
+  /// Rendering environment consulted by `@media` evaluation. Unknown
+  /// dimensions are `None`; queries referencing unknown dimensions never
+  /// match.
+  record environment {
+    viewport-width: option<f32>,
+    viewport-height: option<f32>,
+    color-scheme: color-scheme,
+    /// `true` when the user prefers reduced motion.
+    reduced-motion: bool,
+    /// Device pixel ratio (1.0 default).
+    resolution: f32,
+  }
+
+  /// Computed declaration name/value pair.
+  type computed-property = tuple<string, string>;
+}
+
+/// The CSS compiler/runtime boundary.
+interface stylesheet {
+  use types.{diagnostic, origin, node, environment, computed-property};
+
+  /// Compiled stylesheet IR plus diagnostics. With error recovery the IR is
+  /// present and diagnostics may carry warnings; on fatal parse errors the
+  /// IR is absent.
+  record compiled-sheet {
+    ir: option<list<u8>>,
+    diagnostics: list<diagnostic>,
+  }
+
+  /// Compile CSS into versioned IR bytes. The IR is opaque to the host;
+  /// pass it to `prepare` to style against it.
+  compile: func(css: string, origin: origin) -> compiled-sheet;
+
+  /// Decode and parse a compiled stylesheet once. Returns a handle to use
+  /// with `compute`; `None` when the IR is malformed or carries an
+  /// unsupported version. The handle stays valid until `release`; passing a
+  /// released or unknown handle to `compute` yields an empty result.
+  prepare: func(ir: list<u8>) -> option<u32>;
+
+  /// Resolve the computed style for the node at `target`. The host supplies
+  /// the full flat tree snapshot (nodes in document order plus parent
+  /// indices) and the environment. Ancestors are cascaded automatically for
+  /// inheritance, custom properties, and container lookups. Designed for
+  /// per-frame use: the parsed stylesheet is reused across calls.
+  compute: func(
+    sheet: u32,
+    nodes: list<node>,
+    parents: list<u32>,
+    target: u32,
+    env: environment,
+  ) -> list<computed-property>;
+
+  /// Resolve computed styles for every node of the tree in one pass: nodes
+  /// are processed in document order, each node's cascade runs exactly once,
+  /// and descendants inherit computed values. Returns one entry per node,
+  /// index-aligned with `nodes`. This is the per-frame entry point.
+  compute-tree: func(
+    sheet: u32,
+    nodes: list<node>,
+    parents: list<u32>,
+    env: environment,
+  ) -> list<list<computed-property>>;
+
+  /// Drop a prepared stylesheet. `sheet` may then be reused by a later
+  /// `prepare`.
+  release: func(sheet: u32);
+}
+
+world css {
+  export stylesheet;
+}

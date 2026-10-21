@@ -1,0 +1,10 @@
+/* CSS Nesting: multi-level expansion with mid-compound `&` and sibling context. */
+.a {
+  .b {
+    &.c {
+      :not(&) {
+        outline: 1px;
+      }
+    }
+  }
+}

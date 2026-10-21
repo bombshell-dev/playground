@@ -1,0 +1,4 @@
+/* Descendant, child, next-sibling, later-sibling, and mixed chains. */
+.a .b .c { color: red }
+.a > .b + .c ~ .d { color: green }
+*.item { color: blue }

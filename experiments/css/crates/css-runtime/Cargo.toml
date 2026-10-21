@@ -1,0 +1,17 @@
+[package]
+name = "bombshell-css-runtime"
+version = "0.1.0"
+description = "Selector matching and cascade runtime for the Bombshell CSS pipeline"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+bombshell-css-core = { workspace = true }
+parcel_selectors = { workspace = true }
+rustc-hash = { workspace = true }
+cssparser = { workspace = true }
+
+[dev-dependencies]
+bombshell-css-compiler = { workspace = true }

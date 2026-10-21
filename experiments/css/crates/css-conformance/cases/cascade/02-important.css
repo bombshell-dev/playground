@@ -1,0 +1,3 @@
+/* Importance and origin interactions (evaluated across origins by the runtime). */
+.x { color: red !important }
+.x { color: green }
