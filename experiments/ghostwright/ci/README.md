@@ -28,7 +28,19 @@ The publisher calls the same token-authenticated media endpoint used by
 with repository ID, filename and media type as query parameters and raw MP4 bytes
 as the body. This avoids depending on the runner's installed CLI version. The
 [gh-attach implementation](https://github.com/sudosubin/gh-attach/blob/e1d63f6c5fbe70a46fcf085035e39e8f422c2b4e/internal/github/attachments/token_uploader.go)
-also demonstrates this endpoint. No browser cookies or separate PAT are configured.
+also demonstrates this endpoint. No browser cookies are needed. GitHub's upload endpoint does **not** accept the
+Actions `GITHUB_TOKEN` (an installation token): the live CI attempt returned 404.
+The [GitHub CLI token allowlist](https://github.com/cli/cli/blob/trunk/internal/attachments/client.go)
+accepts OAuth, classic/fine-grained PATs and some user-to-server tokens instead.
+
+Configure a repository Actions secret named `GHOSTWRIGHT_ATTACHMENT_TOKEN` with
+a user token whose owner has write access to playground. Prefer a fine-grained
+PAT restricted to this repository, with Contents: read/write and Pull requests:
+read (the upload step also verifies the current PR head). This secret is used
+only by the upload step in the same-repository report job, never the test job.
+The comment step retains `GITHUB_TOKEN`, so comments remain authored by the bot.
+Without the secret, the report fails with an explicit setup message while keeping
+the test recording available as an artifact.
 
 The separate report job checks out no code, downloads the current run's recording
 artifact as data, publishes only the fixed MP4 filename (limited to 10 MiB for
@@ -37,9 +49,8 @@ executes downloaded files. Missing MP4s retain diagnostics; publishing failures
 still update the comment and then fail the report job. Only same-repository PRs
 receive comments in this prototype; forks and manual runs retain their Actions
 summaries/artifacts. The report job verifies the PR head still matches the event
-before writing. It uses pull-requests:write, actions:read and contents:write
-(attachment uploads require push access), while the build/test job only has
-contents:read. This is a same-repository prototype, not the planned
+before writing. Its default token uses pull-requests:write, actions:read and contents:read,
+while the build/test job only has contents:read. This is a same-repository prototype, not the planned
 trusted-default-branch publisher for arbitrary fork PRs.
 
 Tool versions and download checksums are pinned in the workflow where practical.

@@ -75,7 +75,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       pull-requests: write
-      contents: write
+      contents: read
       actions: read
     steps:
       # Media is treated as data. No checkout or execution of PR code in this job.
@@ -92,8 +92,16 @@ jobs:
         if: ${{ steps.media.outcome == 'success' }}
         continue-on-error: true
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          ATTACHMENT_TOKEN_CONFIGURED: ${{ secrets.GHOSTWRIGHT_ATTACHMENT_TOKEN != '' }}
         with:
+          # Uploads require a user token; GITHUB_TOKEN is an unsupported installation token.
+          github-token: ${{ secrets.GHOSTWRIGHT_ATTACHMENT_TOKEN || github.token }}
           script: |
+            if (process.env.ATTACHMENT_TOKEN_CONFIGURED !== 'true') {
+              core.setFailed('Configure GHOSTWRIGHT_ATTACHMENT_TOKEN: GitHub attachments require a user token with repository write access; GITHUB_TOKEN cannot upload them.');
+              return;
+            }
             const fs = require('node:fs/promises');
             const path = require('node:path');
             const { owner, repo } = context.repo;
@@ -133,6 +141,7 @@ jobs:
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         env:
           MP4_URL: ${{ steps.video.outputs.url }}
+          ATTACHMENT_TOKEN_CONFIGURED: ${{ secrets.GHOSTWRIGHT_ATTACHMENT_TOKEN != '' }}
           RECORDING_URL: ${{ needs.record.outputs.artifact-url }}
           TEST_OUTCOME: ${{ needs.record.outputs.test-outcome }}
           JOB_RESULT: ${{ needs.record.result }}
@@ -160,7 +169,9 @@ jobs:
               '',
               process.env.MP4_URL
                 ? process.env.MP4_URL
-                : 'Inline MP4 unavailable; check the artifact and publishing logs.',
+                : process.env.ATTACHMENT_TOKEN_CONFIGURED !== 'true'
+                  ? 'Inline video needs the `GHOSTWRIGHT_ATTACHMENT_TOKEN` repository secret. The recording is available in the artifact below.'
+                  : 'Inline MP4 upload failed; check the artifact and publishing logs.',
               '',
               process.env.RECORDING_URL
                 ? `[Download all recording files](${process.env.RECORDING_URL}) — MP4, GIF, asciicast and JSON trace. Available for 14 days.`
