@@ -7,7 +7,7 @@ import {
 	type RegionInspection,
 	type RegionLocator,
 	type ScreenSnapshot,
-} from '../../src/index.ts';
+} from 'ghostwright';
 
 const heading = '" Netrw Directory Listing';
 const bannerRule = /^" ={3,}\s*$/;

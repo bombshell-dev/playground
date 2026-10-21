@@ -7,14 +7,7 @@
 		"jsx": "react-jsx",
 		"jsxImportSource": "@clack/ui-preact",
 		"noEmit": true,
-		"types": [
-			"node"
-		]
+		"types": ["node"]
 	},
-	"include": [
-		"src/**/*.ts",
-		"src/**/*.tsx",
-		"test/**/*.ts",
-		"vitest.config.ts"
-	]
+	"include": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts", "vitest.config.ts"]
 }

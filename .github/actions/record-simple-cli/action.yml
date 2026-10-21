@@ -1,0 +1,68 @@
+name: Record built Ghostwright CLI and Vim
+description: Install the built tarball in an isolated consumer, test CLI and Vim journeys, and upload their recordings.
+inputs:
+  package:
+    description: Absolute path to the built Ghostwright tarball
+    required: true
+  source-sha:
+    description: Commit used to build Ghostwright
+    required: true
+outputs:
+  artifact-url:
+    description: Download URL for this run's recording
+    value: ${{ steps.upload.outputs.artifact-url }}
+  test-outcome:
+    description: Node test step outcome
+    value: ${{ steps.test.outcome }}
+runs:
+  using: composite
+  steps:
+    - name: Prepare isolated consumer
+      id: prepare
+      shell: bash
+      env:
+        PACKAGE: ${{ inputs.package }}
+      run: |
+        set -euo pipefail
+        consumer="$RUNNER_TEMP/ghostwright-consumer"
+        mkdir -p "$consumer" "$RUNNER_TEMP/ghostwright-recordings"
+        cp "$GITHUB_WORKSPACE/experiments/ghostwright/ci/simple-cli/"* "$consumer/"
+        cp "$GITHUB_WORKSPACE/experiments/ghostwright/examples/vim-netrw/"{journey.mjs,netrw.ts} "$consumer/"
+        npm ci --prefix "$consumer" --ignore-scripts
+        npm install --prefix "$consumer" --ignore-scripts --no-save --package-lock=false "$PACKAGE"
+    - name: Test the packaged CLI and record
+      id: test
+      continue-on-error: true
+      shell: bash
+      env:
+        GHOSTWRIGHT_RECORD_DIR: ${{ runner.temp }}/ghostwright-recordings
+        GHOSTWRIGHT_SOURCE_SHA: ${{ inputs.source-sha }}
+      run: node --test "$RUNNER_TEMP/ghostwright-consumer/test.mjs" "$RUNNER_TEMP/ghostwright-consumer/vim.test.mjs"
+    - name: Upload recording and diagnostics
+      id: upload
+      if: ${{ always() }}
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      with:
+        name: ghostwright-cli-vim-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/ghostwright-recordings/
+        if-no-files-found: warn
+        retention-days: 14
+    - name: Summarize and preserve the test outcome
+      if: ${{ always() }}
+      shell: bash
+      env:
+        TEST_OUTCOME: ${{ steps.test.outcome }}
+        ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+        SOURCE_SHA: ${{ inputs.source-sha }}
+      run: |
+        {
+          printf '### Ghostwright: built-package CLI and Vim recordings\n\n'
+          printf 'Source: `%s`\n\nTest: **%s**\n\n' "$SOURCE_SHA" "$TEST_OUTCOME"
+          if [ -n "$ARTIFACT_URL" ]; then
+            printf '[Download MP4, GIF, asciicast and trace](%s) (14-day retention)\n' "$ARTIFACT_URL"
+          else
+            printf 'No recording artifact was produced. See the job logs.\n'
+          fi
+        } >> "$GITHUB_STEP_SUMMARY"
+        test "$TEST_OUTCOME" = success
+        test -n "$ARTIFACT_URL"

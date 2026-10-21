@@ -44,21 +44,21 @@ MP4 currently uses GIF as its intermediate, so MP4 mode saves both.
 import { recordTest } from './path/to/spikes/recording-vitest.ts';
 
 test('increments a counter', async (context) => {
-  const recording = recordTest(context);
-  await using terminal = await createTerminal({
-    extensions: [clackTtyExtension(), recording],
-  });
-  await using ui = await createUI({
-    ...terminal.appIO,
-    extensions: [useSemantic],
-  });
-  using root = createRoot(ui.document.documentElement);
-  using _capture = recording;
+	const recording = recordTest(context);
+	await using terminal = await createTerminal({
+		extensions: [clackTtyExtension(), recording],
+	});
+	await using ui = await createUI({
+		...terminal.appIO,
+		extensions: [useSemantic],
+	});
+	using root = createRoot(ui.document.documentElement);
+	using _capture = recording;
 
-  root.render(<Counter />);
-  terminal.run(ui.main);
+	root.render(<Counter />);
+	terminal.run(ui.main);
 
-  // Existing keyboard, locator and terminal-evidence assertions go here.
+	// Existing keyboard, locator and terminal-evidence assertions go here.
 });
 ```
 
@@ -74,11 +74,11 @@ The runner-independent API uses the same extension:
 
 ```ts
 const recording = recordingExtension({
-  output: '/tmp/counter',
-  formats: ['gif', 'mp4'],
+	output: '/tmp/counter',
+	formats: ['gif', 'mp4'],
 });
 await using terminal = await createTerminal({
-  extensions: [clackTtyExtension(), recording],
+	extensions: [clackTtyExtension(), recording],
 });
 await using ui = await createUI({ ...terminal.appIO, extensions: [useSemantic] });
 using _capture = recording;
