@@ -8,7 +8,7 @@ Read-only reference: [bombshell-dev/ui at `606675f16131c6ae7c4553a67ab477bdf661f
 
 Inspected files: `packages/ui/src/dom.ts`, `dom.test.ts`, `ui.ts`, `packages/ui-preact/src/root.ts`, `root.test.tsx`, `elements.ts`, `jsx-runtime.ts`, and `jsx-dev-runtime.ts`.
 
-The core DOM/event regression tests preserve useful baseline behavior while covering the standards differences below. The upstream license is MIT, copyright (c) 2025-Present Bombshell contributors; its permission notice is retained in this package's LICENSE.
+The Preact root and JSX facade, and the Preact regression cases in `examples/preact`, adapt that baseline. They retain source attribution. The upstream license is MIT, copyright (c) 2025-Present Bombshell contributors; its permission notice is retained in this package's LICENSE.
 
 The existing terminal renderer and its dependencies remain consumer concerns. `ui.ts` demonstrates why connected-document invalidation is separate from output scheduling: its consumer requests frames, coalesces them, and awaits writes independently of tree mutation.
 

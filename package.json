@@ -25,7 +25,7 @@
 		"format": "bsh format",
 		"format:check": "bsh format --check",
 		"lint": "bsh lint .",
-		"test": "pnpm --filter @bomb.sh/dom build && bsh test --exclude 'experiments/ghostwright/**' --exclude '**/node_modules/**' --exclude '**/dist/**'"
+		"test": "pnpm --filter @bomb.sh/dom build && bsh test --exclude 'experiments/ghostwright/**' --exclude '**/node_modules/**' --exclude '**/dist/**' --exclude 'examples/{preact,react,solid,lit,svelte,crank,dom-realm}/**' && pnpm --filter '@examples/dom-*' --if-present test"
 	},
 	"devDependencies": {
 		"@bomb.sh/args": "catalog:",
