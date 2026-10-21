@@ -16,25 +16,31 @@ MP4, intermediate GIF, asciicast, JSON frames and source metadata are uploaded
 with 14-day retention, even after a test/encoder failure. A failed test still
 fails the check. Setup failures before capture can produce no recording. The
 Actions job summary and PR comment link to the artifact download. The bot also
-links directly to the MP4, published as a `video/mp4` asset on a dedicated
-`ghostwright-recordings-pr-<number>` prerelease. Each run/attempt gets a unique
-filename. Release media remains until the release is deleted; the 14-day limit
-applies only to Actions artifacts. The prerelease never becomes the latest release.
+uploads the MP4 to GitHub attachment storage and places the returned URL in its
+own paragraph, which GitHub renders as a native inline video player. Attachments
+are separate from Actions artifacts and do not share their 14-day retention.
+No release or tag is created for new recordings.
 
-A direct release asset URL avoids downloading/unzipping the whole artifact.
-GitHub's native inline comment player requires a GitHub video attachment;
-release asset links are not native comment attachments. The supported release
-API works with the workflow token and requires no browser session credentials.
+GitHub documents this behavior in
+[Attaching files with GitHub CLI](https://docs.github.com/en/github-cli/github-cli/attaching-files-with-github-cli).
+The publisher calls the same token-authenticated media endpoint used by
+`gh pr comment --attach`: `POST https://uploads.github.com/user-attachments/assets`,
+with repository ID, filename and media type as query parameters and raw MP4 bytes
+as the body. This avoids depending on the runner's installed CLI version. The
+[gh-attach implementation](https://github.com/sudosubin/gh-attach/blob/e1d63f6c5fbe70a46fcf085035e39e8f422c2b4e/internal/github/attachments/token_uploader.go)
+also demonstrates this endpoint. No browser cookies or separate PAT are configured.
 
-The separate report job checks out no code, downloads the current run's recording artifact as data,
-publishes only the fixed MP4 filename (limited to 25 MiB), and updates one bot
-comment. It never executes downloaded files. Missing MP4s retain diagnostics;
-publishing failures still update the comment and then fail the report job. Only same-repository PRs receive comments in this
-prototype; forks and manual runs retain their Actions summaries/artifacts. The
-report job verifies the PR head still matches the event before writing. It uses
-pull-requests:write, actions:read and contents:write (for release uploads), while the build/test job only has contents:read. This is a
-same-repository prototype, not the planned trusted-default-branch publisher for
-arbitrary fork PRs.
+The separate report job checks out no code, downloads the current run's recording
+artifact as data, publishes only the fixed MP4 filename (limited to 10 MiB for
+compatibility with GitHub's free-plan limit), and updates one bot comment. It never
+executes downloaded files. Missing MP4s retain diagnostics; publishing failures
+still update the comment and then fail the report job. Only same-repository PRs
+receive comments in this prototype; forks and manual runs retain their Actions
+summaries/artifacts. The report job verifies the PR head still matches the event
+before writing. It uses pull-requests:write, actions:read and contents:write
+(attachment uploads require push access), while the build/test job only has
+contents:read. This is a same-repository prototype, not the planned
+trusted-default-branch publisher for arbitrary fork PRs.
 
 Tool versions and download checksums are pinned in the workflow where practical.
 FFmpeg, ncurses and fonts come from Ubuntu 24.04's package repositories. Native

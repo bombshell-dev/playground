@@ -87,7 +87,7 @@ jobs:
         with:
           name: ghostwright-simple-cli-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/recording-media
-      - name: Publish direct MP4 link
+      - name: Upload MP4 as a GitHub attachment
         id: video
         if: ${{ steps.media.outcome == 'success' }}
         continue-on-error: true
@@ -108,35 +108,27 @@ jobs:
               core.info('No MP4 was produced; diagnostics remain in the Actions artifact.');
               return;
             }
-            if (!stat.isFile() || stat.size === 0 || stat.size > 25 * 1024 * 1024) {
-              throw new Error('Expected a nonempty MP4 file of at most 25 MiB');
+            if (!stat.isFile() || stat.size === 0 || stat.size > 10 * 1024 * 1024) {
+              throw new Error('Expected a nonempty MP4 file of at most 10 MiB');
             }
-            const tag = `ghostwright-recordings-pr-${number}`;
-            let release;
-            try {
-              ({ data: release } = await github.rest.repos.getReleaseByTag({ owner, repo, tag }));
-            } catch (error) {
-              if (error.status !== 404) throw error;
-              ({ data: release } = await github.rest.repos.createRelease({
-                owner, repo, tag_name: tag, target_commitish: pr.head.sha,
-                name: `Ghostwright recordings — PR #${number}`,
-                body: `CI recording media for PR #${number}. Assets are named by run and attempt. This prerelease is not a package release. Media remains until this release is deleted.`,
-                prerelease: true, make_latest: 'false',
-              }));
-            }
-            const name = `simple-cli-${context.runId}-${process.env.GITHUB_RUN_ATTEMPT}.mp4`;
-            const assets = await github.paginate(github.rest.repos.listReleaseAssets, {
-              owner, repo, release_id: release.id,
+            // Same token-authenticated media endpoint used by gh --attach.
+            const query = new URLSearchParams({
+              repository_id: String(context.payload.repository.id),
+              name: `simple-cli-${context.runId}-${process.env.GITHUB_RUN_ATTEMPT}.mp4`,
+              content_type: 'video/mp4',
             });
-            let asset = assets.find(asset => asset.name === name);
-            if (!asset) {
-              ({ data: asset } = await github.rest.repos.uploadReleaseAsset({
-                owner, repo, release_id: release.id, name,
+            const { data: asset } = await github.request(
+              `POST https://uploads.github.com/user-attachments/assets?${query}`,
+              {
                 data: await fs.readFile(file),
-                headers: { 'content-type': 'video/mp4', 'content-length': stat.size },
-              }));
+                headers: { 'content-type': 'application/octet-stream', 'content-length': stat.size },
+              },
+            );
+            const url = new URL(asset.url);
+            if (url.origin !== 'https://github.com' || !/^\/user-attachments\/assets\/[a-f0-9-]+$/.test(url.pathname)) {
+              throw new Error('Attachment upload returned an unexpected URL');
             }
-            core.setOutput('url', asset.browser_download_url);
+            core.setOutput('url', url.href);
       - name: Update recording comment
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         env:
@@ -167,8 +159,8 @@ jobs:
               `Test/encoding: **${process.env.TEST_OUTCOME || 'not run'}**`,
               '',
               process.env.MP4_URL
-                ? `[Download MP4](${process.env.MP4_URL})`
-                : 'Direct MP4 unavailable; check the artifact and publishing logs.',
+                ? process.env.MP4_URL
+                : 'Inline MP4 unavailable; check the artifact and publishing logs.',
               '',
               process.env.RECORDING_URL
                 ? `[Download all recording files](${process.env.RECORDING_URL}) — MP4, GIF, asciicast and JSON trace. Available for 14 days.`
