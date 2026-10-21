@@ -12,7 +12,7 @@ pnpm playground # returns an example selector
 
 ## Projects
 
-[`@bomb.sh/dom`](packages/dom/README.md) is a headless interactive DOM.
+[`@bomb.sh/dom`](packages/dom/README.md) is a headless interactive DOM. Its framework integrations and demos live in `examples/preact`, `examples/react`, `examples/solid`, `examples/lit`, `examples/svelte`, and `examples/crank`.
 
 ## Support
 

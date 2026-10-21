@@ -105,6 +105,21 @@ Each environment has an explicit `document.HTMLElement` base and registry. Auton
 
 `parse5` is the only production dependency. The separate `@bomb.sh/dom/parsing` entry uses its HTML tokenizer/tree builder, then creates nodes in this implementation. The core entry does not load it. No LinkeDOM runtime, second DOM hierarchy, framework, browser process, or worker is required.
 
+## Framework examples
+
+Integration code, framework dependencies, JSX settings, demos, and acceptance tests live in separate workspace packages:
+
+| Example                                      | Boundary                                                                        |
+| -------------------------------------------- | ------------------------------------------------------------------------------- |
+| [Preact 11](../../examples/preact/README.md) | Actual `render`/portals using container ownership; local typed JSX facade.      |
+| [React](../../examples/react/README.md)      | Official custom reconciler and native host events.                              |
+| [Solid](../../examples/solid/README.md)      | Official generic universal renderer.                                            |
+| [Lit](../../examples/lit/README.md)          | Browser Lit runtime in a persistent document-specific Node VM context.          |
+| [Svelte](../../examples/svelte/README.md)    | Real client compiler/runtime in a persistent document-specific Node VM context. |
+| [Crank](../../examples/crank/README.md)      | Generic renderer with the package's real node types.                            |
+
+The [realm example](../../examples/dom-realm/README.md) explains Lit/Svelte bootstrap. It keeps asynchronous work bound to its original document without swapping process globals. VM execution and fixture bundling are example facilities, outside the DOM package. See [framework boundaries](docs/frameworks.md) for limitations.
+
 ## Development
 
 From the playground root:
@@ -114,8 +129,11 @@ pnpm install
 pnpm --filter @bomb.sh/dom build
 pnpm --filter @bomb.sh/dom typecheck
 pnpm --filter @bomb.sh/dom exec vitest run
+pnpm --filter '@examples/dom-*' typecheck
+pnpm --filter '@examples/dom-*' --if-present test
 pnpm --filter @bomb.sh/dom format:check
 pnpm --filter @bomb.sh/dom lint
+pnpm --filter @examples/dom-preact demo
 ```
 
 The package emits ESM JavaScript, declaration files, and maps through the playground's TypeScript compiler. Core checking uses strict TypeScript without the browser DOM library. JSX and upstream browser declaration requirements stay local to examples. No publishing is performed by these commands.

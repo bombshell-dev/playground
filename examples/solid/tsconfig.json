@@ -1,0 +1,10 @@
+{
+	"extends": "@bomb.sh/tools/tsconfig.json",
+	"compilerOptions": {
+		"composite": false,
+		"types": ["node"],
+		"lib": ["ESNext", "DOM"],
+		"skipLibCheck": false
+	},
+	"include": ["src/**/*.ts", "test/**/*.ts"]
+}

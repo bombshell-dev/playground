@@ -1,0 +1,25 @@
+{
+	"name": "@examples/dom-lit",
+	"private": true,
+	"license": "MIT",
+	"type": "module",
+	"scripts": {
+		"demo": "node --experimental-transform-types src/demo.ts",
+		"typecheck": "tsgo --noEmit -p tsconfig.json",
+		"test": "vitest run",
+		"format": "bsh format",
+		"format:check": "bsh format --check",
+		"lint": "bsh lint"
+	},
+	"dependencies": {
+		"@bomb.sh/dom": "workspace:*",
+		"@examples/dom-realm": "workspace:*",
+		"lit": "3.3.3"
+	},
+	"devDependencies": {
+		"@bomb.sh/tools": "^0.6.1",
+		"@types/node": "^22",
+		"@typescript/native-preview": "7.0.0-dev.20260623.1",
+		"vitest": "^4.1.2"
+	}
+}
