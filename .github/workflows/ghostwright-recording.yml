@@ -1,0 +1,119 @@
+name: Ghostwright recording prototype
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ghostwright-recording-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  record:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      artifact-url: ${{ steps.record.outputs.artifact-url }}
+      test-outcome: ${{ steps.record.outputs.test-outcome }}
+      source-sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Record the build revision
+        id: source
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.22.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.10
+      - name: Install build and recording tools
+        run: |
+          set -euo pipefail
+          npm install -g pnpm@10.24.0
+          sudo apt-get update -qq
+          sudo apt-get install -y musl-tools ncurses-bin ffmpeg fonts-dejavu-core
+          rustup toolchain install 1.90.0 --profile minimal --target x86_64-unknown-linux-musl
+          echo 'RUSTUP_TOOLCHAIN=1.90.0' >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/ghostwright-tools"
+          cd "$RUNNER_TEMP/ghostwright-tools"
+          curl --fail --location --retry 3 https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz -o zig.tar.xz
+          echo '02aa270f183da276e5b5920b1dac44a63f1a49e55050ebde3aecc9eb82f93239  zig.tar.xz' | sha256sum -c -
+          tar -xf zig.tar.xz
+          echo "$RUNNER_TEMP/ghostwright-tools/zig-x86_64-linux-0.15.2" >> "$GITHUB_PATH"
+          curl --fail --location --retry 3 https://github.com/asciinema/agg/releases/download/v1.9.0/agg-x86_64-unknown-linux-musl -o agg
+          echo 'ddcbf6ca044c8ac3a434dcb9ee89fb9e3be87209982b7c2adb55f782e8f0f390  agg' | sha256sum -c -
+          chmod +x agg
+          echo "$RUNNER_TEMP/ghostwright-tools" >> "$GITHUB_PATH"
+      - name: Install Ghostwright dependencies only
+        run: pnpm --filter ghostwright... install --frozen-lockfile --ignore-scripts
+      - name: Build and verify native artifacts
+        working-directory: experiments/ghostwright
+        run: bun run setup
+      - name: Build and pack Ghostwright at this revision
+        working-directory: experiments/ghostwright
+        run: |
+          pnpm build
+          npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP"
+      - name: Exercise the built package
+        id: record
+        uses: ./.github/actions/record-simple-cli
+        with:
+          package: ${{ runner.temp }}/ghostwright-0.1.0.tgz
+          source-sha: ${{ steps.source.outputs.sha }}
+
+  report:
+    needs: record
+    # This prototype posts only for same-repository PRs. Forks retain job artifacts.
+    if: ${{ always() && !cancelled() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-24.04
+    permissions:
+      pull-requests: write
+    steps:
+      # No checkout, no downloaded PR artifacts, and no PR code runs in this job.
+      - name: Update recording comment
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          RECORDING_URL: ${{ needs.record.outputs.artifact-url }}
+          TEST_OUTCOME: ${{ needs.record.outputs.test-outcome }}
+          JOB_RESULT: ${{ needs.record.result }}
+          SOURCE_SHA: ${{ needs.record.outputs.source-sha }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const number = context.payload.pull_request.number;
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+            if (pr.head.sha !== context.payload.pull_request.head.sha) {
+              core.info('A newer commit superseded this recording; leaving its comment alone.');
+              return;
+            }
+            const marker = '<!-- ghostwright-recording-prototype:v1 -->';
+            const success = process.env.JOB_RESULT === 'success';
+            const run = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            const body = [
+              marker,
+              '### Ghostwright CLI recording',
+              '',
+              `${success ? '✅' : '❌'} **Build + packaged CLI test: ${process.env.JOB_RESULT}**`,
+              `PR head: \`${pr.head.sha}\``,
+              `Built revision (PR merge commit): \`${process.env.SOURCE_SHA || 'setup failed'}\``,
+              `Test/encoding: **${process.env.TEST_OUTCOME || 'not run'}**`,
+              '',
+              process.env.RECORDING_URL
+                ? `[Download the recording](${process.env.RECORDING_URL}) — MP4, GIF, asciicast and JSON trace. Available for 14 days.`
+                : 'No recording was produced. See the build/test logs.',
+              '',
+              `[View Actions run](${run})`,
+              '',
+              'This test installs the Ghostwright tarball built by this run and drives a real CLI through a PTY. No UI/TTY sibling checkouts are used.',
+            ].join('\n');
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: number });
+            const existing = comments.find(comment => comment.user?.login === 'github-actions[bot]' && comment.body?.includes(marker));
+            if (existing) await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            else await github.rest.issues.createComment({ owner, repo, issue_number: number, body });

@@ -24,6 +24,10 @@
 			"types": "./dist/types/index.d.ts",
 			"import": "./dist/index.js"
 		},
+		"./recording": {
+			"types": "./dist/types/recording.d.ts",
+			"import": "./dist/recording.js"
+		},
 		"./async": {
 			"types": "./dist/types/async.d.ts",
 			"import": "./dist/async.js"
@@ -51,7 +55,7 @@
 	},
 	"scripts": {
 		"setup": "bun run build:artifacts && bun run verify:artifacts",
-		"build": "rm -rf dist && bun build src/index.ts src/async.ts src/pty/protocol.ts src/effection/index.ts src/runner-matchers.ts src/vitest.ts src/jest.ts --outdir dist --target node --format esm --packages external --splitting --sourcemap=external && tsc -p tsconfig.build.json && bun scripts/fix-declarations.ts",
+		"build": "rm -rf dist && bun build src/index.ts src/recording.ts src/async.ts src/pty/protocol.ts src/effection/index.ts src/runner-matchers.ts src/vitest.ts src/jest.ts --outdir dist --target node --format esm --packages external --splitting --sourcemap=external && tsc -p tsconfig.build.json && bun scripts/fix-declarations.ts",
 		"fetch:ghostty": "bun scripts/fetch-ghostty.ts",
 		"build:ghostty-vt": "bun scripts/build-ghostty-vt.ts",
 		"build:host:rust": "bun scripts/build-host-rust.ts",
@@ -68,7 +72,7 @@
 		"test:examples": "bun test examples"
 	},
 	"dependencies": {
-		"effection": "^4.0.2"
+		"effection": "^4.2.0"
 	},
 	"devDependencies": {
 		"@jest/globals": "^30.2.0",

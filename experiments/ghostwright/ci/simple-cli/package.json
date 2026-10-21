@@ -1,0 +1,6 @@
+{
+  "name": "ghostwright-ci-consumer",
+  "private": true,
+  "type": "module",
+  "dependencies": { "effection": "4.2.0" }
+}
