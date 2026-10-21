@@ -25,7 +25,7 @@
 		"format": "bsh format",
 		"format:check": "bsh format --check",
 		"lint": "bsh lint .",
-		"test": "bsh test --exclude 'experiments/ghostwright/**'"
+		"test": "pnpm --filter @bomb.sh/dom build && bsh test --exclude 'experiments/ghostwright/**' --exclude '**/node_modules/**' --exclude '**/dist/**'"
 	},
 	"devDependencies": {
 		"@bomb.sh/args": "catalog:",

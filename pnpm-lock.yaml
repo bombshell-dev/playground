@@ -66,6 +66,25 @@ importers:
         specifier: ^4.0.2
         version: 4.0.3
 
+  packages/dom:
+    dependencies:
+      parse5:
+        specifier: ^8.0.0
+        version: 8.0.1
+    devDependencies:
+      '@bomb.sh/tools':
+        specifier: ^0.6.1
+        version: 0.6.1(@types/node@22.20.1)(oxc-resolver@11.21.3)(unrun@0.2.39)(vite@8.1.0(@types/node@22.20.1)(jiti@2.7.0)(yaml@2.9.0))
+      '@types/node':
+        specifier: ^22
+        version: 22.20.1
+      '@typescript/native-preview':
+        specifier: 7.0.0-dev.20260623.1
+        version: 7.0.0-dev.20260623.1
+      vitest:
+        specifier: ^4.1.2
+        version: 4.1.9(@types/node@22.20.1)(vite@8.1.0(@types/node@22.20.1)(jiti@2.7.0)(yaml@2.9.0))
+
   vendor/ui:
     dependencies:
       '@bomb.sh/tty':
@@ -1059,6 +1078,10 @@ packages:
     resolution: {integrity: sha512-YGRs8knHhKHVShLkFET/rWAU8kmHbOV5LwN938RHI0pljAJ1Gf6SzXsSmRaEzcXTtOOmVqJ5+WtQPL5uigY50Q==}
     engines: {node: '>=14'}
 
+  entities@8.1.0:
+    resolution: {integrity: sha512-kxL7msIffSuh9aaFAMD7rxAIuTRMAHMeBtgHW2yUdWw732ZNh4MehkF2gdjvtdmikkaIP9bFDDJOPlsvm7avrA==}
+    engines: {node: '>=20.19.0'}
+
   es-module-lexer@2.1.0:
     resolution: {integrity: sha512-n27zTYMjYu1aj4MjCWzSP7G9r75utsaoc8m61weK+W8JMBGGQybd43GstCXZ3WNmSFtGT9wi59qQTW6mhTR5LQ==}
 
@@ -1236,6 +1259,9 @@ packages:
 
   package-manager-detector@1.6.0:
     resolution: {integrity: sha512-61A5ThoTiDG/C8s8UMZwSorAGwMJ0ERVGj2OjoW5pAalsNOg15+iQiPzrLJ4jhZ1HJzmC2PIHT2oEiH3R5fzNA==}
+
+  parse5@8.0.1:
+    resolution: {integrity: sha512-z1e/HMG90obSGeidlli3hj7cbocou0/wa5HacvI3ASx34PecNjNQeaHNo5WIZpWofN9kgkqV1q5YvXe3F0FoPw==}
 
   pathe@2.0.3:
     resolution: {integrity: sha512-WUjGcAqP1gQacoQe+OBJsFA7Ld4DyXuUIjZ5cc75cLHvJ7dtNsTugphxIADwspS+AraAUePCKrSVtPLFj/F88w==}
@@ -2254,6 +2280,8 @@ snapshots:
 
   empathic@2.0.1: {}
 
+  entities@8.1.0: {}
+
   es-module-lexer@2.1.0: {}
 
   estree-walker@3.0.3:
@@ -2470,6 +2498,10 @@ snapshots:
       '@oxlint/binding-win32-x64-msvc': 1.74.0
 
   package-manager-detector@1.6.0: {}
+
+  parse5@8.0.1:
+    dependencies:
+      entities: 8.1.0
 
   pathe@2.0.3: {}
 

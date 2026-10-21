@@ -1,0 +1,40 @@
+{
+	"name": "@bomb.sh/dom",
+	"version": "0.0.0",
+	"description": "A headless, interactive in-memory DOM",
+	"license": "MIT",
+	"files": [
+		"dist",
+		"README.md",
+		"docs",
+		"LICENSE"
+	],
+	"type": "module",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		},
+		"./parsing": {
+			"types": "./dist/parsing.d.ts",
+			"import": "./dist/parsing.js"
+		}
+	},
+	"scripts": {
+		"build": "tsgo -p tsconfig.build.json",
+		"typecheck": "tsgo -p tsconfig.json",
+		"test": "vitest run",
+		"format": "bsh format src test docs README.md package.json tsconfig.json tsconfig.build.json",
+		"format:check": "bsh format --check src test docs README.md package.json tsconfig.json tsconfig.build.json",
+		"lint": "bsh lint"
+	},
+	"dependencies": {
+		"parse5": "^8.0.0"
+	},
+	"devDependencies": {
+		"@bomb.sh/tools": "^0.6.1",
+		"@types/node": "^22",
+		"@typescript/native-preview": "7.0.0-dev.20260623.1",
+		"vitest": "^4.1.2"
+	}
+}

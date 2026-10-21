@@ -10,6 +10,10 @@ pnpm install
 pnpm playground # returns an example selector
 ```
 
+## Projects
+
+[`@bomb.sh/dom`](packages/dom/README.md) is a headless interactive DOM.
+
 ## Support
 
 Having trouble? Get help in the official [Bombshell Discord][discord].
