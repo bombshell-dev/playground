@@ -15,14 +15,24 @@ and records the session with the packaged plugin.
 MP4, intermediate GIF, asciicast, JSON frames and source metadata are uploaded
 with 14-day retention, even after a test/encoder failure. A failed test still
 fails the check. Setup failures before capture can produce no recording. The
-Actions job summary and PR comment link to the artifact download; GitHub artifact
-links are downloads, not inline video attachments.
+Actions job summary and PR comment link to the artifact download. The bot also
+links directly to the MP4, published as a `video/mp4` asset on a dedicated
+`ghostwright-recordings-pr-<number>` prerelease. Each run/attempt gets a unique
+filename. Release media remains until the release is deleted; the 14-day limit
+applies only to Actions artifacts. The prerelease never becomes the latest release.
 
-The separate report job checks out no code, consumes only job result/URL outputs,
-and updates one bot comment. Only same-repository PRs receive comments in this
+A direct release asset URL avoids downloading/unzipping the whole artifact.
+GitHub's native inline comment player requires a GitHub video attachment;
+release asset links are not native comment attachments. The supported release
+API works with the workflow token and requires no browser session credentials.
+
+The separate report job checks out no code, downloads the current run's recording artifact as data,
+publishes only the fixed MP4 filename (limited to 25 MiB), and updates one bot
+comment. It never executes downloaded files. Missing MP4s retain diagnostics;
+publishing failures still update the comment and then fail the report job. Only same-repository PRs receive comments in this
 prototype; forks and manual runs retain their Actions summaries/artifacts. The
 report job verifies the PR head still matches the event before writing. It uses
-pull-requests:write while the build/test job only has contents:read. This is a
+pull-requests:write, actions:read and contents:write (for release uploads), while the build/test job only has contents:read. This is a
 same-repository prototype, not the planned trusted-default-branch publisher for
 arbitrary fork PRs.
 
