@@ -15,7 +15,7 @@
 		"@clack/ui": "workspace:*",
 		"@clack/ui-preact": "workspace:*",
 		"@ghostwright/clack-tty": "workspace:*",
-		"preact": "11.0.0-beta.2"
+		"preact": "11.0.1"
 	},
 	"devDependencies": {
 		"@types/node": "^22.20.0",

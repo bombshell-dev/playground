@@ -122,10 +122,13 @@
 	},
 	"artifacts": {
 		"artifacts/ghostty-vt.wasm": {
-			"sha256": "9cc284061558b47237e478107dbbe8eabd1f6139038f61b1e403bb97e74ced1f"
+			"sha256": "c5064a115da5a4e72f1c589adb74e4e2588b0b3c5a6d0409445b8d179b2b8fbb"
 		},
 		"artifacts/pty-host-darwin-arm64": {
 			"sha256": "e17474ad808b84548e3d354da573cc7d6d1f434b27b51fac367e5ba3624f758d"
+		},
+		"artifacts/pty-host-linux-x64": {
+			"sha256": "423efb428842bb2c3d4936dcfba36067cca2147a01815eb0419fcc3a52bd7f25"
 		},
 		"artifacts/terminfo/67/ghostty": {
 			"sha256": "8ac69a6a57378edd05bcca8769ff49ce3d01e9496ff134781af5b9ee1d934b7b"

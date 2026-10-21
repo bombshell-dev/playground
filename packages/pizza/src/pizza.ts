@@ -3,6 +3,6 @@ import { stdin, stdout } from 'node:process';
 import { createUI } from '@clack/ui';
 import { mountPizza } from './app.ts';
 
-const ui = await createUI({ input: stdin, output: stdout });
-mountPizza(ui.host);
+await using ui = await createUI({ input: stdin, output: stdout });
+await mountPizza(ui.document);
 await ui.main();

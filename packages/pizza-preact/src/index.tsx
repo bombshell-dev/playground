@@ -4,6 +4,6 @@ import { createRoot } from '@clack/ui-preact';
 import { PizzaDelivery } from './app.tsx';
 
 await using ui = await createUI({ input: stdin, output: stdout });
-const root = createRoot(ui.host.element);
+using root = createRoot(ui.document.documentElement);
 root.render(<PizzaDelivery />);
 await ui.main();

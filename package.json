@@ -26,7 +26,13 @@
 		"format:check": "bsh format --check",
 		"lint": "bsh lint .",
 		"typecheck": "pnpm --filter ghostwright build && tsc --noEmit && pnpm -r --if-present run typecheck",
-		"test": "vitest run --exclude '**/node_modules/**' --exclude 'experiments/ghostwright/**' --exclude 'packages/**'"
+		"test": "vitest run --exclude '**/node_modules/**' --exclude 'experiments/ghostwright/**' --exclude 'packages/**'",
+		"dev:repos": "node scripts/dev-repos.mjs",
+		"test:dev-repos": "node --test scripts/check-dev-repos.mjs",
+		"dev:build-ui": "pnpm --dir .dev/workspace --filter @clack/ui --filter @clack/ui-preact run build",
+		"test:linked-ui": "pnpm --dir .dev/workspace --filter @ghostwright/pizza-preact exec vitest run --config integration/vitest.config.ts",
+		"test:pizza": "pnpm --dir .dev/workspace --filter @ghostwright/pizza --filter @ghostwright/pizza-preact test && pnpm --dir .dev/workspace --filter @ghostwright/pizza test:in-process && pnpm test:linked-ui",
+		"typecheck:pizza": "pnpm --dir .dev/workspace --filter @ghostwright/pizza-preact typecheck && tsc -p packages/pizza/spikes/tsconfig.json && tsc -p packages/pizza-preact/integration/tsconfig.json"
 	},
 	"devDependencies": {
 		"@bomb.sh/args": "catalog:",
@@ -34,7 +40,8 @@
 		"@clack/prompts": "catalog:",
 		"@types/node": "^22",
 		"typescript": "^5.9.3",
-		"vitest": "^4.1.9"
+		"vitest": "^4.1.9",
+		"yaml": "^2.9.0"
 	},
 	"devEngines": {
 		"packageManager": {

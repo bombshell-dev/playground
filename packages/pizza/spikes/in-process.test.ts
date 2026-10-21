@@ -12,7 +12,7 @@ class TestBodyError extends Error {}
 
 // Install explicitly for this UI, without changing process.env or a global registry.
 const describeUI: UIExtension = (context) => {
-	useSemantic(context.host, { surface: () => ({ columns: context.width, rows: context.height }) });
+	return useSemantic(context);
 };
 const delivery = locator('form[label="delivery"]');
 const name = delivery.locator('input[label="name"]');
@@ -26,9 +26,8 @@ test('renders an appended text node through injected streams', async () => {
 	await using terminal = await createTerminal();
 	await using ui = await createUI(terminal.appIO);
 
-	const text = ui.host.createElement('text');
-	ui.host.insertBefore(text, ui.host.createLiteral('hello world!'));
-	ui.host.insertBefore(ui.host.element, text);
+	terminal.run(ui.main);
+	ui.document.documentElement.appendChild(ui.document.createTextNode('hello world!'));
 
 	expect(await terminal.screen.findByText('hello world!')).toBeVisible();
 });
@@ -36,7 +35,7 @@ test('renders an appended text node through injected streams', async () => {
 test('orders a pizza through the same UI and keyboard, without a command or fixture file', async () => {
 	await using terminal = await createTerminal({ extensions: [clackTtyExtension()] });
 	await using ui = await createUI({ ...terminal.appIO, extensions: [describeUI] });
-	mountPizza(ui.host);
+	await mountPizza(ui.document);
 	terminal.run(ui.main);
 	const { screen, keyboard, waitFor } = terminal;
 
@@ -105,8 +104,8 @@ test('keeps two applications and their terminal input isolated in the same proce
 	await using right = await createTerminal();
 	await using leftUI = await createUI(left.appIO);
 	await using rightUI = await createUI(right.appIO);
-	mountPizza(leftUI.host);
-	mountPizza(rightUI.host);
+	await mountPizza(leftUI.document);
+	await mountPizza(rightUI.document);
 	left.run(leftUI.main);
 	right.run(rightUI.main);
 

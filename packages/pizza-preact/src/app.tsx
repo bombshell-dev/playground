@@ -1,112 +1,86 @@
-import { fixed, grow, rgba } from '@bomb.sh/tty';
 import type { ComponentChildren, VNode } from 'preact';
 import { useState } from 'preact/hooks';
 
-const black = rgba(0, 0, 0);
-const blue = rgba(0, 0, 238);
-const cyan = rgba(0, 205, 205);
-const gray = rgba(127, 127, 127);
-
-interface SubmitButtonProps {
-	children: ComponentChildren;
-	label: string;
-}
-
-function SubmitButton({ children, label }: SubmitButtonProps): VNode {
+function SubmitButton({ children, label }: { children: ComponentChildren; label: string }): VNode {
 	return (
 		<button
 			role="button"
 			label={label}
 			type="submit"
-			layout={{
-				width: fixed(16),
-				height: fixed(3),
-				padding: { top: 1, right: 1, bottom: 1, left: 1 },
+			style={{
+				width: '16px',
+				height: '3px',
+				borderStyle: 'solid',
+				borderColor: '#7f7f7f',
+				paddingLeft: '1px',
+				paddingRight: '1px',
 			}}
-			border={{ color: gray, top: 1, right: 1, bottom: 1, left: 1 }}
 		>
 			{children}
 		</button>
 	);
 }
-
-interface FieldRowProps {
-	label: string;
-	labelWidth: number;
-}
-
-function FieldRow({ label, labelWidth }: FieldRowProps): VNode {
+function FieldRow({ label, width }: { label: string; width: number }): VNode {
 	return (
-		<box layout={{ direction: 'ltr', gap: 1, width: grow() }}>
-			<box layout={{ width: fixed(labelWidth) }}>
-				<text color={gray}>{label}:</text>
-			</box>
+		<div style={{ width: '100%', gap: '1px' }}>
+			<div style={{ width: `${width}px` }}>
+				<span style={{ color: '#7f7f7f' }}>{label}:</span>
+			</div>
 			<input role="textbox" label={label} />
-		</box>
+		</div>
 	);
 }
+const formStyle = {
+	flexDirection: 'column',
+	gap: '1px',
+	paddingTop: '1px',
+	paddingBottom: '1px',
+	paddingLeft: '2px',
+	paddingRight: '2px',
+	minWidth: '32px',
+	maxWidth: '44px',
+	borderStyle: 'solid',
+	borderColor: '#0000ee',
+} as const;
 
-/** Pizza delivery expressed as a Preact tree over the clack/ui Host. */
+// oxlint-disable bombshell-dev/exported-function-async -- Preact components return their tree synchronously.
+/** The delivery application reconciles directly into the Clack terminal DOM. */
 export function PizzaDelivery(): VNode {
 	const [cardOpen, setCardOpen] = useState(false);
-
 	return (
-		<box layout={{ direction: 'ttb', width: grow(), height: grow() }}>
-			<form
-				role="form"
-				label="delivery"
-				onSubmit={() => setCardOpen(true)}
-				layout={{
-					direction: 'ttb',
-					gap: 1,
-					padding: { top: 1, right: 2, bottom: 1, left: 2 },
-					width: grow(32, 44),
-				}}
-				border={{ color: blue, top: 1, right: 1, bottom: 1, left: 1 }}
-			>
-				<text color={cyan}>Pizza Delivery</text>
-				<FieldRow label="name" labelWidth={9} />
-				<FieldRow label="address" labelWidth={9} />
-				<box layout={{ direction: 'ltr', gap: 1, width: grow() }}>
-					<SubmitButton label="add-card">Add card</SubmitButton>
-				</box>
+		<div style={{ flexDirection: 'column', width: '100%', height: '100%' }}>
+			<form role="form" label="delivery" style={formStyle} onSubmit={() => setCardOpen(true)}>
+				<span style={{ color: '#00cdcd' }}>Pizza Delivery</span>
+				<FieldRow label="name" width={9} />
+				<FieldRow label="address" width={9} />
+				<SubmitButton label="add-card">Add card</SubmitButton>
 			</form>
-
 			{cardOpen ? (
 				<dialog
 					role="dialog"
 					label="card"
-					modal={true}
-					layout={{ direction: 'ttb', width: grow(32, 44) }}
-					bg={black}
-					border={{ color: blue, top: 1, right: 1, bottom: 1, left: 1 }}
-					floating={{
-						attachTo: 'parent',
-						attachPoints: { element: 'center-center', parent: 'center-center' },
-						zIndex: 1,
+					modal
+					style={{
+						flexDirection: 'column',
+						minWidth: '32px',
+						maxWidth: '44px',
+						backgroundColor: '#000000',
 					}}
 				>
 					<form
 						role="form"
 						label="card-payment"
+						style={formStyle}
 						onSubmit={() => setCardOpen(false)}
-						layout={{
-							direction: 'ttb',
-							gap: 1,
-							padding: { top: 1, right: 2, bottom: 1, left: 2 },
-							width: grow(),
-						}}
 					>
-						<text color={cyan}>Card Details</text>
-						<FieldRow label="card-number" labelWidth={13} />
-						<FieldRow label="expiry" labelWidth={13} />
-						<FieldRow label="cvc" labelWidth={13} />
-						<box layout={{ direction: 'ltr', gap: 1, width: grow() }}>
-							<SubmitButton label="submit-card">Submit card</SubmitButton>
-						</box>
+						<span style={{ color: '#00cdcd' }}>Card Details</span>
+						<FieldRow label="card-number" width={13} />
+						<FieldRow label="expiry" width={13} />
+						<FieldRow label="cvc" width={13} />
+						<SubmitButton label="submit-card">Submit card</SubmitButton>
 					</form>
 				</dialog>
 			) : null}
-		</box>
+		</div>
 	);
 }

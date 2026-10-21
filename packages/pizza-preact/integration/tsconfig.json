@@ -1,0 +1,5 @@
+{
+	"extends": "../../pizza/spikes/tsconfig.json",
+	"compilerOptions": { "jsx": "react-jsx", "jsxImportSource": "@clack/ui-preact" },
+	"include": ["*.ts", "*.tsx"]
+}

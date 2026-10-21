@@ -5,25 +5,26 @@ Ghostty WASM engine, output/OSC decoder, observations, screen queries, and wait
 executor. It does not launch a command or require a native PTY host. Each terminal
 owns its own streams and mutable Ghostty state.
 
-The runnable example is `packages/pizza/spikes/in-process.test.ts`:
+The runnable example is `packages/pizza/spikes/in-process.test.ts`. The Preact journey is in
+`packages/pizza-preact/integration/pizza.test.tsx`:
 
 ```ts
 await using terminal = await createTerminal();
 await using ui = await createUI(terminal.appIO);
-mountPizza(ui.host);
+await mountPizza(ui.document);
 terminal.run(ui.main);
 
 await terminal.keyboard.type('Ryan');
 expect(await terminal.screen.findByText('Ryan')).toBeVisible();
 ```
 
-`mountPizza` is the same application constructor used by the pizza CLI. It builds
+`mountPizza(document)` is the same application constructor used by the pizza CLI. It builds
 the real forms, inputs, buttons, and dialog. The tests inspect Ghostty's terminal
 cells and cursor after sending encoded input. They never dispatch UI events or
 read field state directly.
 
 The first test constructs a text element directly inside the test, without an
-application module. This checkout exposes `ui.host`; it has no `ui.document` API.
+application module. It now uses `ui.document` from the linked UI repository.
 The interactive journey opts into the existing semantic producer through a
 UI-local extension and uses the existing Clack CSS locators and focus matchers.
 It does not change process streams, environment variables, or extension registries.
@@ -61,16 +62,15 @@ and run separately with `pnpm --filter @ghostwright/pizza test`.
 The connection is feasible without changing the Ghostwright subprocess API or
 Clack UI implementation. This is experimental source, not a published export.
 
-`createUI` currently separates rendering from input consumption. `terminal.run(ui.main)`
-starts and owns that input loop. Terminal disposal sends EOF and awaits it, with a
-one-second cleanup bound. Declare the UI after the terminal so UI restoration
-bytes are written before Ghostty is freed. General JavaScript tasks cannot be
-forcibly stopped if they ignore EOF.
+`createUI` owns rendering and input through one idempotent `main()` promise.
+`terminal.run(ui.main)` starts that promise and lets terminal disposal await it.
+Declare the UI after the terminal so UI disposal aborts its tasks and writes
+terminal restoration bytes before Ghostty is freed. Terminal disposal also
+cancels pending queries, delivers input EOF, and has a one-second cleanup bound.
+General JavaScript tasks cannot be forcibly stopped if they ignore cancellation.
 
-`createUI` also requires concrete `node:tty` stream types. The adapter has one
-explicit type assertion at this boundary: it implements the methods this UI
-consumes, but has no real file descriptor or kernel line discipline. A production
-version should define a minimal terminal I/O interface shared with `createUI`.
+The linked UI accepts ordinary `Readable` and `Writable` streams, so the adapter
+no longer needs assertions pretending its streams are OS TTY descriptors.
 
 The spike implements keyboard input, query replies, resizing, immutable screen
 queries, and waits. It does not yet provide the full session API: mouse actions,

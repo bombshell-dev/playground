@@ -30,6 +30,7 @@ build/Release
 
 # Dependency directories
 node_modules/
+.dev/
 jspm_packages/
 
 # Terminal test failure artifacts

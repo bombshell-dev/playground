@@ -1,5 +1,4 @@
 import { Readable, Writable } from 'node:stream';
-import type { ReadStream, WriteStream } from 'node:tty';
 import { run } from 'effection';
 import { GhostwrightError, SessionClosedError } from '../src/errors.ts';
 import { parseKey } from '../src/keys.ts';
@@ -65,7 +64,7 @@ class Output extends Writable {
 class InProcessTerminal implements AsyncDisposable {
 	readonly stdin = new Input();
 	readonly stdout: Output;
-	readonly appIO: { input: ReadStream; output: WriteStream };
+	readonly appIO: { input: Input; output: Output };
 	readonly screen;
 	readonly keyboard;
 	readonly #engine: GhosttyWasmTerminal;
@@ -110,9 +109,7 @@ class InProcessTerminal implements AsyncDisposable {
 		});
 		this.stdout.on('error', (error) => this.#fail(error));
 		Object.assign(this.stdout, this.#snapshot.viewport);
-		// createUI currently requires concrete node:tty streams. These implement its
-		// consumed stream contract, but deliberately provide no OS fd or line discipline.
-		this.appIO = { input: this.stdin as unknown as ReadStream, output: this.stdout as WriteStream };
+		this.appIO = { input: this.stdin, output: this.stdout };
 		this.screen = {
 			...createQueries({
 				current: (locator) => {
