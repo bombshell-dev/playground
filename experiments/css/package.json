@@ -1,0 +1,40 @@
+{
+	"name": "@bomb.sh/css",
+	"version": "0.0.0",
+	"description": "The Bombshell CSS engine: compiler front-end and cascade runtime as a freestanding wasm component, with canonical-ABI bindings and the embedded artifact",
+	"license": "MIT",
+	"author": {
+		"name": "Bombshell",
+		"email": "oss@bomb.sh",
+		"url": "https://bomb.sh"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/bombshell-dev/playground.git",
+		"directory": "experiments/css"
+	},
+	"type": "module",
+	"exports": {
+		".": "./src/index.js",
+		"./package.json": "./package.json"
+	},
+	"files": [
+		"src"
+	],
+	"scripts": {
+		"test": "node smoke.mjs",
+		"bundle": "node scripts/bundle-wasm.mjs"
+	},
+	"devEngines": {
+		"packageManager": {
+			"name": "pnpm",
+			"version": "10.7.0",
+			"onFail": "error"
+		},
+		"runtime": {
+			"name": "node",
+			"version": "22.14.0",
+			"onFail": "error"
+		}
+	}
+}
