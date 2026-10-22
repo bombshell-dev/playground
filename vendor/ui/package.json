@@ -39,7 +39,7 @@
 		"@types/node": "^22.20.0"
 	},
 	"devDependencies": {
-		"@bomb.sh/tools": "^0.5.4",
+		"@bomb.sh/tools": "catalog:",
 		"vitest": "^4.1.9"
 	},
 	"devEngines": {
