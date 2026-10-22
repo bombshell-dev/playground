@@ -1,0 +1,21 @@
+/* Single-line (minified) stylesheets: a rule body that opens and closes on
+   the same line must survive the shim's event stream, including comma
+   selectors, nesting, and grouping at-rules. */
+.card {
+	color: #fff;
+	padding: 4px;
+}
+.a,
+.b {
+	color: red;
+}
+.x {
+	& > .y {
+		color: blue;
+	}
+}
+@media (min-width: 24em) {
+	.z {
+		color: green;
+	}
+}

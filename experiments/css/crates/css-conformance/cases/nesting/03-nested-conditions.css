@@ -1,0 +1,16 @@
+/* CSS Nesting: group rules inside style rules keep the nesting context. */
+.panel {
+	padding: 4px;
+
+	@media (min-width: 24em) {
+		.item {
+			color: red;
+		}
+	}
+
+	@container (inline-size > 20em) {
+		.item {
+			color: blue;
+		}
+	}
+}

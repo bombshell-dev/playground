@@ -1,0 +1,17 @@
+[package]
+name = "bombshell-css-wasm"
+version = "0.1.0"
+description = "WIT component adapter for the Bombshell CSS engine"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+bombshell-css-core = { workspace = true }
+bombshell-css-compiler = { workspace = true }
+bombshell-css-runtime = { workspace = true }
+wit-bindgen = { workspace = true }

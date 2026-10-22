@@ -1,0 +1,14 @@
+[package]
+name = "bombshell-css-conformance"
+version = "0.1.0"
+description = "Conformance corpus for the Bombshell CSS pipeline"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dev-dependencies]
+bombshell-css-core = { workspace = true }
+bombshell-css-compiler = { workspace = true }
+bombshell-css-runtime = { workspace = true }

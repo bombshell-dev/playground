@@ -1,0 +1,13 @@
+/* CSS Nesting: implicit descendant nesting and explicit `&`.
+   Structure adapted from CSS Nesting Module (csswg-drafts/css-nesting-1) examples. */
+.card {
+	color: oklch(70% 0.2 40);
+
+	& > .title {
+		font-weight: bold;
+	}
+
+	.body {
+		color: color-mix(in oklab, red 40%, blue);
+	}
+}

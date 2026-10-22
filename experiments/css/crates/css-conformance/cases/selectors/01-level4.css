@@ -1,0 +1,22 @@
+/* Selectors Level 4: :is, :where, :not (complex args), :has, :nth-child(An+B of S). */
+:is(.a, .b) > .c {
+	color: red;
+}
+:where(#x, .y) .z {
+	color: green;
+}
+.item:not(.skip):not(.list > *) {
+	color: blue;
+}
+.row:has(> .col) {
+	outline: 1px;
+}
+.item:nth-child(2n + 1 of .tagged) {
+	color: yellow;
+}
+.item:nth-child(-n + 3) {
+	text-indent: 4px;
+}
+p:has(+ h2) {
+	margin: 4px;
+}

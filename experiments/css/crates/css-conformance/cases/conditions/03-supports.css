@@ -1,0 +1,21 @@
+/* Conditional rules: @supports declarations, selector(), and/or/not algebra. */
+@supports (color: oklch(70% 0.2 40)) {
+	.a {
+		color: red;
+	}
+}
+@supports selector(:has(> .b)) {
+	.a {
+		color: green;
+	}
+}
+@supports not (bogus-property: 1px) {
+	.a {
+		color: blue;
+	}
+}
+@supports (display: grid) and (color: red) {
+	.a {
+		color: orange;
+	}
+}

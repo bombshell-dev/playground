@@ -1,0 +1,8 @@
+/* Legacy nesting via @nest (requires an explicit & prefix). */
+.a {
+	color: red;
+
+	@nest & .b {
+		color: blue;
+	}
+}

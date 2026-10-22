@@ -1,0 +1,30 @@
+/* CSS Containment 3: named/anonymous containers, range and boolean size queries. */
+.panel {
+	container-type: inline-size;
+	container-name: panel;
+}
+@container panel (inline-size > 45em) {
+	.a {
+		color: red;
+	}
+}
+@container (width < 200px) {
+	.a {
+		color: green;
+	}
+}
+@container card (height >= 10em) {
+	.a {
+		color: blue;
+	}
+}
+@container (aspect-ratio > 5) {
+	.a {
+		color: orange;
+	}
+}
+@container panel style(color: red) {
+	.a {
+		color: purple;
+	}
+}
