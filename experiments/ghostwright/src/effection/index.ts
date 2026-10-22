@@ -1,3 +1,4 @@
+import type { TerminalProgram } from '../operations.ts';
 import { call, type Operation } from 'effection';
 import type {
 	AssertionOptions,
@@ -82,16 +83,23 @@ export class EffectionTerminal implements OperationTerminal {
 		options: CaptureOptions,
 		body: (terminal: EffectionTerminal) => Operation<unknown>,
 	): ReturnType<typeof captureOperation> {
-		return captureOperation(this.inner.session, options, (terminal) =>
-			body(new EffectionTerminal(terminal)),
+		return captureOperation(
+			this.inner.session,
+			options,
+			(terminal) => body(new EffectionTerminal(terminal)),
+			this.inner.keyboardMiddleware,
 		);
 	}
+	/** Invoke a program directly in the caller scope through owned capabilities. */
+	run<T>(program: TerminalProgram<T>): Operation<T> {
+		return this.inner.runOperation(program);
+	}
 	keyboard = {
-		press: (k: KeyName | KeyPress) => op(() => this.inner.keyboard.press(k)),
-		type: (t: string, o?: TraceableInputOptions) => op(() => this.inner.keyboard.type(t, o)),
-		paste: (t: string, o?: TraceableInputOptions) => op(() => this.inner.keyboard.paste(t, o)),
-		focus: (s: 'in' | 'out') => op(() => this.inner.keyboard.focus(s)),
-		write: (d: Uint8Array) => op(() => this.inner.keyboard.write(d)),
+		press: (k: KeyName | KeyPress) => this.inner.operations.keyboard.press(k),
+		type: (t: string, o?: TraceableInputOptions) => this.inner.operations.keyboard.type(t, o),
+		paste: (t: string, o?: TraceableInputOptions) => this.inner.operations.keyboard.paste(t, o),
+		focus: (s: 'in' | 'out') => this.inner.operations.keyboard.focus(s),
+		write: (d: Uint8Array) => this.inner.operations.keyboard.write(d),
 	};
 	mouse = {
 		move: (p: MouseTarget, o?: MouseOptions) => op(() => this.inner.mouse.move(p, o)),

@@ -1,3 +1,4 @@
+import type { KeyboardMiddleware } from './operations.ts';
 import type { CreateBackend } from './backend.ts';
 import type { Operation } from 'effection';
 import type { RegionLocator } from './locators.ts';
@@ -73,6 +74,8 @@ export interface TerminalExtensionDefinition<T = unknown> {
 }
 
 export interface TerminalLaunchOptions {
+	/** Keyboard operation middleware, outermost first. */
+	readonly keyboardMiddleware?: readonly KeyboardMiddleware[];
 	/** Fresh scoped emulator; defaults to createGhosttyBackend. */
 	backend?: CreateBackend;
 	command: string;

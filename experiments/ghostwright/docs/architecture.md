@@ -208,3 +208,38 @@ Explicit overrides of profile-owned environment keys are rejected. Other explici
 Maintainers use pinned Zig for upstream Ghostty WASM and Cargo plus the target linker for the Rust host.
 
 Artifact metadata pins source commit, toolchains, build flags, protocol/binding versions, ABI layouts, and checksums. Independent verification checks files without rebuilding them.
+
+## Operation composition
+
+Keyboard execution has an explicit capability boundary in `src/operations.ts`.
+`KeyboardOperations` is the port contract. `createKeyboardOperations` accepts a
+driver and an ordered list of typed middleware; callers receive the composed
+facade. Each middleware receives the original argument tuple and a `next`
+continuation with the same result type. The first entry is outermost.
+
+The session adapter implements this contract using the existing PTY action
+machinery. Encoding, command serialization, action receipts, and shutdown guards
+remain in the session. Middleware can surround an operation's execution and
+cleanup, but the raw driver is not exposed by the resulting execution capability.
+Middleware is trusted application code: forwarding twice performs two actions;
+there is no implicit retry or exactly-once enforcement.
+
+`TerminalProgram<T>` is a function from `ExecutionOperations` to `Operation<T>`.
+`AsyncExecution.run` executes a program in its owned scope; the Effection
+facade's `run` invokes the same program in the caller's current scope. Both use
+the same composed keyboard operations. Native keyboard calls no longer travel
+through the Promise facade, so middleware can resolve the caller's Effection
+context. The driver combines current-operation cancellation with owner
+cancellation, including interruption of blocked PTY writes.
+
+`captureProgram(options, body)` wraps a continuation with the existing capture
+kernel. Recording subscribes before the body starts; completion still requires
+both the condition and the body, and the deadline bounds both. Capture-local
+keyboard middleware is appended inside inherited middleware and passed to nested
+captures. It does not modify the parent. Escaped child capabilities reject calls
+after the capture closes, and middleware cleanup completes before cancellation
+returns. The existing callback capture APIs use the same inheritance rules.
+
+This first boundary covers keyboard operations and capture programs. Mouse,
+process, query, and graphics APIs retain their existing adapters. Driver injection
+is explicit; no scope-global port registry or experimental Effection API is needed.

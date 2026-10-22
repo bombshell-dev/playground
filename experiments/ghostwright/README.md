@@ -219,6 +219,68 @@ const matches = await terminal.history.findText('tool completed', { direction: '
 - [C versus Rust PTY-host comparison](HOST-COMPARISON.md)
 - [Performance report](PERFORMANCE.md)
 
+## Composable execution
+
+Keyboard input runs through an operation-based driver and typed middleware.
+The first middleware is outermost; capture-local middleware runs inside inherited
+middleware. Existing keyboard methods use this path in both async and Effection APIs.
+
+```ts
+import {
+	launchTerminal,
+	captureProgram,
+	regionLocator,
+	textContains,
+	type KeyboardMiddleware,
+	type TerminalProgram,
+} from 'ghostwright';
+
+const logKeys: KeyboardMiddleware = {
+	*press(args, next) {
+		const receipt = yield* next(...args);
+		console.log('acknowledged', receipt.actionSequence);
+		return receipt;
+	},
+};
+
+const submit: TerminalProgram<void> = function* ({ keyboard }) {
+	yield* keyboard.type('hello');
+	yield* keyboard.press('Enter');
+};
+
+await using terminal = await launchTerminal({
+	command: 'my-cli',
+	keyboardMiddleware: [logKeys],
+});
+await terminal.screen.findByText('Ready');
+
+const viewport = regionLocator({ column: 0, row: 0, width: 80, height: 24 });
+const recording = await terminal.run(
+	captureProgram(
+		{
+			until: viewport.satisfies(textContains('Complete')),
+		},
+		submit,
+	),
+);
+```
+
+The same program runs as `yield* terminal.run(program)` on the Effection terminal.
+Programs receive a capability facade with keyboard operations and nested capture.
+They return `Operation<T>`; the async runner returns `Promise<T>`. `captureProgram`
+returns the recording and waits for both the condition and the continuation.
+
+Use `keyboardMiddleware` in capture options to add behavior only within that
+capture and its children. Middleware may use `try/finally` for scoped cleanup;
+cancellation awaits it and cancels pending input without closing the parent
+session. Middleware is trusted: calling `next` twice sends two actions. Ghostwright
+does not retry keyboard actions automatically.
+
+`createKeyboardOperations({ driver, middleware })` provides the same typed
+composition for an explicit driver. `composeOperation` is the underlying function
+combinator. This initial operation core covers keyboard input and capture; other
+terminal APIs continue using their existing adapters.
+
 ## Terminal backend
 
 Ghostty remains the default and sole shipped emulator. A session can supply a
@@ -228,14 +290,14 @@ Ghostty remains the default and sole shipped emulator. A session can supply a
 import { createGhosttyBackend, launchTerminal, type CreateBackend } from 'ghostwright';
 
 const backend: CreateBackend = function* (options) {
-    const ghostty = yield* createGhosttyBackend(options);
-    return {
-        ...ghostty,
-        write(bytes) {
-            const update = ghostty.write(bytes);
-            return update; // detached snapshot and terminal effects
-        },
-    };
+	const ghostty = yield* createGhosttyBackend(options);
+	return {
+		...ghostty,
+		write(bytes) {
+			const update = ghostty.write(bytes);
+			return update; // detached snapshot and terminal effects
+		},
+	};
 };
 
 await using terminal = await launchTerminal({ command: 'my-cli', backend });

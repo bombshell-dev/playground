@@ -1,4 +1,10 @@
 import {
+	createKeyboardOperations,
+	type KeyboardMiddleware,
+	type ExecutionOperations,
+	type TerminalProgram,
+} from './operations.ts';
+import {
 	action,
 	call,
 	race,
@@ -32,6 +38,8 @@ import { waitForOperation, type WaitForOptions } from './wait-for.ts';
 import { locatedMouse, type LocatedMouse } from './mouse.ts';
 
 export interface CaptureOptions {
+	/** Appended inside inherited middleware for this capture and its children. */
+	readonly keyboardMiddleware?: readonly KeyboardMiddleware[];
 	readonly until: Condition;
 	readonly timeoutMs?: number;
 	readonly maxObservations?: number;
@@ -135,13 +143,66 @@ export class AsyncExecution implements AsyncTerminal {
 	readonly history: AsyncTerminal['history'];
 	readonly graphics: AsyncTerminal['graphics'];
 	readonly session: TerminalSession;
+	readonly operations: ExecutionOperations;
+	readonly keyboardMiddleware: readonly KeyboardMiddleware[];
 	private readonly scope: Scope;
 	readonly signal: AbortSignal;
-	constructor(session: TerminalSession, scope: Scope, signal: AbortSignal) {
+	constructor(
+		session: TerminalSession,
+		scope: Scope,
+		signal: AbortSignal,
+		middleware = session.options.keyboardMiddleware ?? [],
+	) {
 		this.session = session;
 		this.scope = scope;
 		this.signal = signal;
-		this.keyboard = this.#bind(session.keyboardFor(signal));
+		this.keyboardMiddleware = Object.freeze([...middleware]);
+		const invoke = function* <T>(
+			body: (keyboard: AsyncTerminal['keyboard']) => Promise<T>,
+		): Operation<T> {
+			const current = yield* useAbortSignal();
+			return yield* call(() => body(session.keyboardFor(AbortSignal.any([signal, current]))));
+		};
+		const keyboard = createKeyboardOperations({
+			driver: {
+				press: (...args) => invoke((k) => k.press(...args)),
+				type: (...args) => invoke((k) => k.type(...args)),
+				paste: (...args) => invoke((k) => k.paste(...args)),
+				focus: (...args) => invoke((k) => k.focus(...args)),
+				write: (...args) => invoke((k) => k.write(...args)),
+			},
+			middleware: this.keyboardMiddleware,
+		});
+		this.operations = Object.freeze({
+			keyboard: Object.freeze({
+				press: (...args: Parameters<typeof keyboard.press>) =>
+					this.#owned(() => keyboard.press(...args)),
+				type: (...args: Parameters<typeof keyboard.type>) =>
+					this.#owned(() => keyboard.type(...args)),
+				paste: (...args: Parameters<typeof keyboard.paste>) =>
+					this.#owned(() => keyboard.paste(...args)),
+				focus: (...args: Parameters<typeof keyboard.focus>) =>
+					this.#owned(() => keyboard.focus(...args)),
+				write: (...args: Parameters<typeof keyboard.write>) =>
+					this.#owned(() => keyboard.write(...args)),
+			}),
+			capture: (options: CaptureOptions, body: TerminalProgram<unknown>) =>
+				this.#owned(() =>
+					captureOperation(
+						session,
+						options,
+						(child) => body(child.operations),
+						this.keyboardMiddleware,
+					),
+				),
+		});
+		this.keyboard = {
+			press: (...args) => this.run((t) => t.keyboard.press(...args)),
+			type: (...args) => this.run((t) => t.keyboard.type(...args)),
+			paste: (...args) => this.run((t) => t.keyboard.paste(...args)),
+			focus: (...args) => this.run((t) => t.keyboard.focus(...args)),
+			write: (...args) => this.run((t) => t.keyboard.write(...args)),
+		};
 		this.mouse = locatedMouse(this.#bind(session.mouseFor(signal)), (locator, matcher) =>
 			this.assert(locator, matcher),
 		);
@@ -172,6 +233,15 @@ export class AsyncExecution implements AsyncTerminal {
 			}),
 		});
 	}
+	*#owned<T>(operation: () => Operation<T>): Operation<T> {
+		this.signal.throwIfAborted();
+		return yield* race([scoped(operation), aborted(this.signal)]);
+	}
+	/** Run reusable operation work through this executor's owned scope. */
+	run = <T>(program: TerminalProgram<T>): Promise<T> => this.#run(() => program(this.operations));
+	/** Native callers retain their current scope; owner cancellation still applies. */
+	runOperation = <T>(program: TerminalProgram<T>): Operation<T> =>
+		this.#owned(() => program(this.operations));
 	#bind<T extends Record<string, (...args: never[]) => Promise<unknown>>>(methods: T): T {
 		const bind =
 			<Args extends unknown[], Result>(method: (...args: Args) => Promise<Result>) =>
@@ -235,8 +305,11 @@ export class AsyncExecution implements AsyncTerminal {
 		body: (execution: AsyncExecution) => Promise<unknown>,
 	): Promise<Capture> =>
 		this.#run(() =>
-			captureOperation(this.session, options, (child) =>
-				call(() => Promise.resolve().then(() => body(child))),
+			captureOperation(
+				this.session,
+				options,
+				(child) => call(() => Promise.resolve().then(() => body(child))),
+				this.keyboardMiddleware,
 			),
 		);
 }
@@ -271,8 +344,11 @@ export function* assertRegion(
 	}
 }
 
-export function* execution(session: TerminalSession): Operation<AsyncExecution> {
-	return new AsyncExecution(session, yield* useScope(), yield* useAbortSignal());
+export function* execution(
+	session: TerminalSession,
+	middleware = session.options.keyboardMiddleware ?? [],
+): Operation<AsyncExecution> {
+	return new AsyncExecution(session, yield* useScope(), yield* useAbortSignal(), middleware);
 }
 
 // oxlint-disable-next-line bombshell-dev/max-params -- shared async/operation capture executor
@@ -280,6 +356,7 @@ export function* captureOperation(
 	session: TerminalSession,
 	options: CaptureOptions,
 	body: (execution: AsyncExecution) => Operation<unknown>,
+	inherited = session.options.keyboardMiddleware ?? [],
 ): Operation<Capture> {
 	const max = options.maxObservations ?? 1000,
 		maxBytes = options.maxBytes ?? 64 * 1024 * 1024;
@@ -287,7 +364,10 @@ export function* captureOperation(
 		throw new InvalidOptionsError('Capture limits must be positive safe integers');
 	return yield* bounded(
 		scoped(function* () {
-			const child = yield* execution(session);
+			const child = yield* execution(session, [
+				...inherited,
+				...(options.keyboardMiddleware ?? []),
+			]);
 			const startedAt = performance.now(),
 				baseline = session.observations.current()!;
 			const state = options.until.create(startedAt),

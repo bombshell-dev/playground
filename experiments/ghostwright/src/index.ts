@@ -1,3 +1,4 @@
+export * from './operations.ts';
 export type * from './backend.ts';
 export { createGhosttyBackend } from './terminal/ghostty-backend.ts';
 export * from './types.ts';
