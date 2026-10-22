@@ -1,0 +1,13 @@
+{
+	"extends": "@bomb.sh/tools/tsconfig.json",
+	"compilerOptions": {
+		"composite": false,
+		"types": ["node"],
+		"lib": ["ESNext", "DOM"],
+		"skipLibCheck": false,
+		"paths": {
+			"@bomb.sh/css": ["./src/css-types.d.ts"]
+		}
+	},
+	"include": ["src/**/*.ts", "test/**/*.ts"]
+}
