@@ -45,7 +45,7 @@ export function expectTerminal(
 	| AsyncLocatorExpectation
 	| OperationTerminalExpectation
 	| AsyncTerminalExpectation {
-	if (target instanceof AsyncExecution) return expectAsync(target.session);
+	if (target instanceof AsyncExecution) return expectAsync(target.session, target.signal);
 	if (target instanceof EffectionLocator || target instanceof EffectionTerminal)
 		return expectOperation(target);
 	if (target instanceof Locator) return expectAsync(target);

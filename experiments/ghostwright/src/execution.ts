@@ -31,7 +31,7 @@ import type { RegionLocator } from './locators.ts';
 import type { RegionInspection } from './inspection.ts';
 import type { Condition } from './conditions.ts';
 import type { Observation } from './observations.ts';
-import { TerminalSession } from './terminal/session.ts';
+import { TerminalSession, type Locator } from './terminal/session.ts';
 import type { ActionReceipt, AsyncTerminal, TerminalLaunchOptions } from './types.ts';
 import { createQueries, type ScreenQueries } from './queries.ts';
 import { waitForOperation, type WaitForOptions } from './wait-for.ts';
@@ -209,9 +209,12 @@ export class AsyncExecution implements AsyncTerminal {
 		this.process = {
 			status: () => session.process.status(),
 			signal: (name, target) => this.#promise(() => session.signalProcess(name, target, signal)),
-			waitForExit: (...args) => this.#promise(() => session.process.waitForExit(...args)),
+			waitForExit: (options) =>
+				this.#promise(() => session.process.waitForExit({ ...options, signal })),
 		};
-		this.revisions = this.#bind(session.revisions);
+		this.revisions = {
+			collect: (options) => this.#promise(() => session.collectRevisions(options, signal)),
+		};
 		this.history = this.#bind(session.history);
 		this.graphics = this.#bind(session.graphics);
 		this.screen = Object.freeze({
@@ -291,9 +294,17 @@ export class AsyncExecution implements AsyncTerminal {
 		);
 	getByText = (
 		...args: Parameters<AsyncTerminal['getByText']>
-	): ReturnType<TerminalSession['getByText']> => this.session.getByText(...args);
-	region = (...args: Parameters<AsyncTerminal['region']>): ReturnType<TerminalSession['region']> =>
-		this.session.region(...args);
+	): ReturnType<TerminalSession['getByText']> =>
+		this.session.getByText(...args).withSignal(this.signal);
+	region = (
+		...args: Parameters<AsyncTerminal['region']>
+	): ReturnType<TerminalSession['region']> => {
+		const region = this.session.region(...args);
+		return {
+			...region,
+			getByText: (...query) => (region.getByText(...query) as Locator).withSignal(this.signal),
+		};
+	};
 	resize = (viewport: Parameters<AsyncTerminal['resize']>[0]): Promise<ActionReceipt> =>
 		this.#promise(() => this.session.resize(viewport, this.signal));
 	close = (): Promise<ActionReceipt> => this.#promise(() => this.session.close());

@@ -271,9 +271,11 @@ They return `Operation<T>`; the async runner returns `Promise<T>`. `captureProgr
 returns the recording and waits for both the condition and the continuation.
 
 Use `keyboardMiddleware` in capture options to add behavior only within that
-capture and its children. Middleware may use `try/finally` for scoped cleanup;
-cancellation awaits it and cancels pending input without closing the parent
-session. Middleware is trusted: calling `next` twice sends two actions. Ghostwright
+capture and its children. Register asynchronous cleanup with Effection `ensure`;
+cancellation awaits that release and cancels pending input without closing the
+parent session. Effection 4.2 can interrupt a `finally` block that is already
+yielding when cancellation arrives, so reserve ordinary `finally` for synchronous
+cleanup. Middleware is trusted: calling `next` twice sends two actions. Ghostwright
 does not retry keyboard actions automatically.
 
 `createKeyboardOperations({ driver, middleware })` provides the same typed

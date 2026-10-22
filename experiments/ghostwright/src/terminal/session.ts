@@ -678,11 +678,12 @@ export class TerminalSession implements AsyncTerminal {
 		status: () => ({ ...this.#status }),
 		signal: (signal: string, target: 'child' | 'process-group' = 'process-group') =>
 			this.#send({ kind: FrameKind.SIGNAL, value: { signal, target } }),
-		waitForExit: async (options?: { timeoutMs?: number }) =>
+		waitForExit: async (options?: { timeoutMs?: number; signal?: AbortSignal }) =>
 			this.#timeout(
 				this.#exitPromise,
 				options?.timeoutMs ?? this.options.assertionTimeoutMs ?? DEFAULT_ASSERTION_TIMEOUT_MS,
 				() => new ProcessExitedError('Timed out waiting for process exit'),
+				options?.signal,
 			),
 	};
 	revisions = {
@@ -783,42 +784,67 @@ export class TerminalSession implements AsyncTerminal {
 			throw new ExtensionLifecycleError('Terminal resource cleanup failed', failures);
 	}
 
-	async waitForChange(test: () => boolean, timeout: number): Promise<void> {
+	async waitForChange(test: () => boolean, timeout: number, signal?: AbortSignal): Promise<void> {
+		signal?.throwIfAborted();
 		if (test()) return;
-		await new Promise<void>((resolvePromise, reject) => {
-			const off = this.subscribe(() => {
-					if (test()) {
-						clearTimeout(timer);
-						off();
-						resolvePromise();
-					} else if (this.#status.state === 'closed' || this.#status.state === 'failed') {
-						clearTimeout(timer);
-						off();
-						reject(new SessionClosedError('Session closed before condition matched'));
-					} else if (this.#status.ptyEof) {
-						clearTimeout(timer);
-						off();
-						reject(new ProcessExitedError('Process exited before condition matched'));
-					}
-				}),
-				timer = setTimeout(() => {
-					off();
-					reject(new TerminalAssertionError('timeout'));
-				}, timeout);
+		await new Promise<void>((resolve, reject) => {
+			const finish = (error?: unknown): void => {
+				clearTimeout(timer);
+				off();
+				signal?.removeEventListener('abort', abort);
+				if (error !== undefined) reject(error);
+				else resolve();
+			};
+			const check = (): void => {
+				try {
+					if (test()) finish();
+					else if (this.#status.state === 'closed' || this.#status.state === 'failed')
+						finish(new SessionClosedError('Session closed before condition matched'));
+					else if (this.#status.ptyEof)
+						finish(new ProcessExitedError('Process exited before condition matched'));
+				} catch (error) {
+					finish(error);
+				}
+			};
+			const off = this.subscribe(check);
+			const timer = setTimeout(() => finish(new TerminalAssertionError('timeout')), timeout);
+			const abort = (): void => finish(signal!.reason);
+			signal?.addEventListener('abort', abort, { once: true });
+			if (signal?.aborted) abort();
+			else check();
 		});
 	}
-	// oxlint-disable-next-line bombshell-dev/max-params -- internal method
-	async #timeout<T>(p: Promise<T>, ms: number, error: () => Error): Promise<T> {
-		return new Promise<T>((r, j) => {
-			const t = setTimeout(() => j(error()), ms);
+	// oxlint-disable-next-line bombshell-dev/max-params -- timeout, error, and cancellation boundary
+	async #timeout<T>(
+		p: Promise<T>,
+		ms: number,
+		error: () => Error,
+		signal?: AbortSignal,
+	): Promise<T> {
+		signal?.throwIfAborted();
+		return new Promise<T>((resolve, reject) => {
+			const cleanup = (): void => {
+				clearTimeout(timer);
+				signal?.removeEventListener('abort', abort);
+			};
+			const abort = (): void => {
+				cleanup();
+				reject(signal!.reason);
+			};
+			const timer = setTimeout(() => {
+				cleanup();
+				reject(error());
+			}, ms);
+			signal?.addEventListener('abort', abort, { once: true });
+			if (signal?.aborted) abort();
 			p.then(
-				(x) => {
-					clearTimeout(t);
-					r(x);
+				(value) => {
+					cleanup();
+					resolve(value);
 				},
-				(e) => {
-					clearTimeout(t);
-					j(e);
+				(cause) => {
+					cleanup();
+					reject(cause);
 				},
 			);
 		});
@@ -869,7 +895,11 @@ export class TerminalSession implements AsyncTerminal {
 				.slice(0, limit),
 		);
 	}
-	async collectRevisions(options: RevisionCollectionOptions): Promise<RevisionCollection> {
+	async collectRevisions(
+		options: RevisionCollectionOptions,
+		signal?: AbortSignal,
+	): Promise<RevisionCollection> {
+		signal?.throwIfAborted();
 		const baseline = this.#baselineSequence(options.since),
 			max = options.maxRevisions ?? 1000,
 			configuredMax = this.options.history?.maxRevisions ?? 1000,
@@ -894,6 +924,7 @@ export class TerminalSession implements AsyncTerminal {
 				const finish = (timer: ReturnType<typeof setTimeout>, error?: Error): void => {
 					clearTimeout(timer);
 					off();
+					signal?.removeEventListener('abort', abort);
 					if (error) reject(error);
 					else resolvePromise();
 				};
@@ -933,6 +964,9 @@ export class TerminalSession implements AsyncTerminal {
 						),
 					timeout,
 				);
+				const abort = (): void => finish(timer, signal!.reason);
+				signal?.addEventListener('abort', abort, { once: true });
+				if (signal?.aborted) abort();
 			});
 		return Object.freeze({
 			baselineSequence: baseline,
@@ -1114,17 +1148,29 @@ export class Locator implements AsyncLocator {
 		readonly options: TextLocatorOptions = {},
 		readonly index?: number,
 		readonly bounds?: Rect,
+		readonly signal?: AbortSignal,
 	) {}
+	withSignal(signal: AbortSignal): Locator {
+		return new Locator(
+			this.session,
+			this.query,
+			this.options,
+			this.index,
+			this.bounds,
+			this.signal ? AbortSignal.any([this.signal, signal]) : signal,
+		);
+	}
 	nth(index: number): Locator {
 		if (!Number.isInteger(index) || index < 0)
 			throw new CoordinateRangeError('nth index must be nonnegative');
-		return new Locator(this.session, this.query, this.options, index, this.bounds);
+		return new Locator(this.session, this.query, this.options, index, this.bounds, this.signal);
 	}
 	region(rect: Rect): Locator {
 		this.session.validateRegion(rect);
-		return new Locator(this.session, this.query, this.options, this.index, rect);
+		return new Locator(this.session, this.query, this.options, this.index, rect, this.signal);
 	}
 	matches(): readonly LocatorMatch[] {
+		this.signal?.throwIfAborted();
 		const out = findText(this.session.screen.current(), this.query, this.options, this.bounds);
 		const chosen = this.index === undefined ? out : out[this.index] ? [out[this.index]] : [];
 		return Object.freeze(chosen);
@@ -1139,14 +1185,18 @@ export class Locator implements AsyncLocator {
 				`Locator ${JSON.stringify(this.query)} matched ${m.length} ranges: ${m.map((x) => JSON.stringify(x.range)).join(', ')}`,
 			);
 		if (!m.length) {
-			await this.session.waitForChange(() => {
-				m = get();
-				if (m.length > 1)
-					throw new StrictLocatorError(
-						`Locator ${JSON.stringify(this.query)} matched multiple ranges`,
-					);
-				return m.length === 1;
-			}, timeout);
+			await this.session.waitForChange(
+				() => {
+					m = get();
+					if (m.length > 1)
+						throw new StrictLocatorError(
+							`Locator ${JSON.stringify(this.query)} matched multiple ranges`,
+						);
+					return m.length === 1;
+				},
+				timeout,
+				this.signal,
+			);
 		}
 		return m[0];
 	}
@@ -1156,6 +1206,6 @@ export class Locator implements AsyncLocator {
 				column: Math.floor((m.range.column + m.range.column + m.range.width - 1) / 2),
 				row: Math.floor((m.range.row + m.range.row + m.range.height - 1) / 2),
 			};
-		return this.session.mouse.click(p, options);
+		return this.session.mouseFor(this.signal).click(p, options);
 	}
 }

@@ -70,23 +70,53 @@ function diagnostic(
 			.join(', ') || 'none'
 	}\n\n    ${tens}\n    ${ones}\n${rows}`;
 }
-// oxlint-disable-next-line bombshell-dev/max-params -- wait needs all four params for polling logic
+// oxlint-disable-next-line bombshell-dev/max-params -- polling, diagnostics, and cancellation boundary
 async function wait(
 	session: TerminalSession,
 	test: () => boolean,
 	timeout: number,
 	message: () => string,
+	signal?: AbortSignal,
 ): Promise<void> {
 	try {
-		await session.waitForChange(test, timeout);
+		await session.waitForChange(test, timeout, signal);
 	} catch (cause) {
+		signal?.throwIfAborted();
 		if (cause instanceof StrictLocatorError) throw cause;
 		throw new TerminalAssertionError(message(), { cause });
 	}
 }
+/** Wait for a revision or settlement timer, releasing both on cancellation. */
+function pause(
+	session: TerminalSession,
+	options: { milliseconds: number; signal?: AbortSignal },
+): Promise<void> {
+	const { milliseconds, signal } = options;
+	signal?.throwIfAborted();
+	return new Promise((resolve, reject) => {
+		const finish = (): void => {
+			clearTimeout(timer);
+			off();
+			signal?.removeEventListener('abort', abort);
+			resolve();
+		};
+		const off = session.subscribe(finish);
+		const timer = setTimeout(finish, milliseconds);
+		const abort = (): void => {
+			reject(signal!.reason);
+			finish();
+		};
+		signal?.addEventListener('abort', abort, { once: true });
+		if (signal?.aborted) abort();
+	});
+}
 class LocatorExpectation implements AsyncLocatorExpectation {
 	constructor(readonly locator: Locator) {}
+	get signal(): AbortSignal | undefined {
+		return this.locator.signal;
+	}
 	async toBePresent(options: AssertionOptions = {}): Promise<LocatorMatch> {
+		this.signal?.throwIfAborted();
 		const timeout =
 			options.timeoutMs ??
 			this.locator.session.options.assertionTimeoutMs ??
@@ -94,6 +124,7 @@ class LocatorExpectation implements AsyncLocatorExpectation {
 		try {
 			return await this.locator.unique(timeout);
 		} catch (cause) {
+			this.signal?.throwIfAborted();
 			if (cause instanceof StrictLocatorError) throw cause;
 			throw new TerminalAssertionError(
 				diagnostic(
@@ -106,6 +137,7 @@ class LocatorExpectation implements AsyncLocatorExpectation {
 		}
 	}
 	async toBeStable(options: StableAssertionOptions = {}): Promise<LocatorMatch> {
+		this.signal?.throwIfAborted();
 		const timeout =
 				options.timeoutMs ??
 				this.locator.session.options.assertionTimeoutMs ??
@@ -114,6 +146,7 @@ class LocatorExpectation implements AsyncLocatorExpectation {
 			start = performance.now();
 		let match = await this.toBePresent({ timeoutMs: timeout });
 		for (;;) {
+			this.signal?.throwIfAborted();
 			const age =
 					this.locator.session.now() - this.locator.session.screen.current().lastVisualChangeAt,
 				remaining = Math.max(0, settle - age);
@@ -127,17 +160,7 @@ class LocatorExpectation implements AsyncLocatorExpectation {
 						settle,
 					),
 				);
-			await new Promise<void>((resolve) => {
-				const off = this.locator.session.subscribe(() => {
-						off();
-						clearTimeout(timer);
-						resolve();
-					}),
-					timer = setTimeout(() => {
-						off();
-						resolve();
-					}, remaining);
-			});
+			await pause(this.locator.session, { milliseconds: remaining, signal: this.signal });
 			const m = this.locator.matches();
 			if (m.length > 1)
 				throw new StrictLocatorError(
@@ -151,6 +174,7 @@ class LocatorExpectation implements AsyncLocatorExpectation {
 		}
 	}
 	async toBeAbsent(options: StableAssertionOptions = {}): Promise<void> {
+		this.signal?.throwIfAborted();
 		const timeout =
 				options.timeoutMs ??
 				this.locator.session.options.assertionTimeoutMs ??
@@ -158,22 +182,13 @@ class LocatorExpectation implements AsyncLocatorExpectation {
 			settle = options.settleMs ?? this.locator.session.options.settleMs ?? 100,
 			start = performance.now();
 		for (;;) {
+			this.signal?.throwIfAborted();
 			if (this.locator.matches().length === 0) {
 				const snapshot = this.locator.session.screen.current(),
 					age = this.locator.session.now() - snapshot.lastVisualChangeAt,
 					remaining = Math.max(0, settle - age);
 				if (remaining === 0) return;
-				await new Promise<void>((resolve) => {
-					const off = this.locator.session.subscribe(() => {
-							off();
-							clearTimeout(timer);
-							resolve();
-						}),
-						timer = setTimeout(() => {
-							off();
-							resolve();
-						}, remaining);
-				});
+				await pause(this.locator.session, { milliseconds: remaining, signal: this.signal });
 				if (
 					this.locator.matches().length === 0 &&
 					this.locator.session.now() - this.locator.session.screen.current().lastVisualChangeAt >=
@@ -201,10 +216,12 @@ class LocatorExpectation implements AsyncLocatorExpectation {
 						timeout,
 						settle,
 					),
+				this.signal,
 			);
 		}
 	}
 	async toHaveStyle(style: StyleQuery, options: AssertionOptions = {}): Promise<LocatorMatch> {
+		this.signal?.throwIfAborted();
 		const timeout =
 				options.timeoutMs ??
 				this.locator.session.options.assertionTimeoutMs ??
@@ -233,10 +250,12 @@ class LocatorExpectation implements AsyncLocatorExpectation {
 							: 'no match'
 					}`;
 				},
+				this.signal,
 			);
 		return this.locator.matches()[0];
 	}
 	async toContainCursor(options: AssertionOptions = {}): Promise<LocatorMatch> {
+		this.signal?.throwIfAborted();
 		const timeout =
 				options.timeoutMs ??
 				this.locator.session.options.assertionTimeoutMs ??
@@ -266,16 +285,21 @@ class LocatorExpectation implements AsyncLocatorExpectation {
 						`${JSON.stringify(this.locator.query)} to contain the cursor`,
 						timeout,
 					),
+				this.signal,
 			);
 		return this.locator.matches()[0];
 	}
 }
 class TerminalExpectation implements AsyncTerminalExpectation {
-	constructor(readonly session: TerminalSession) {}
+	constructor(
+		readonly session: TerminalSession,
+		readonly signal?: AbortSignal,
+	) {}
 	async toSatisfy(
 		predicate: (snapshot: ScreenSnapshot) => boolean,
 		options: StableAssertionOptions = {},
 	): Promise<ScreenSnapshot> {
+		this.signal?.throwIfAborted();
 		const timeout =
 				options.timeoutMs ??
 				this.session.options.assertionTimeoutMs ??
@@ -284,6 +308,7 @@ class TerminalExpectation implements AsyncTerminalExpectation {
 			started = performance.now(),
 			safe = safePredicate(predicate);
 		for (;;) {
+			this.signal?.throwIfAborted();
 			const snapshot = this.session.screen.current();
 			if (safe.test(snapshot)) {
 				const remaining = Math.max(0, settle - (this.session.now() - snapshot.lastVisualChangeAt));
@@ -292,17 +317,7 @@ class TerminalExpectation implements AsyncTerminalExpectation {
 					throw new TerminalAssertionError(
 						diagnostic(this.session, 'screen predicate to converge', timeout, settle) + safe.note(),
 					);
-				await new Promise<void>((resolve) => {
-					const unsubscribe = this.session.subscribe(() => {
-							clearTimeout(timer);
-							unsubscribe();
-							resolve();
-						}),
-						timer = setTimeout(() => {
-							unsubscribe();
-							resolve();
-						}, remaining);
-				});
+				await pause(this.session, { milliseconds: remaining, signal: this.signal });
 				continue;
 			}
 			await wait(
@@ -311,6 +326,7 @@ class TerminalExpectation implements AsyncTerminalExpectation {
 				Math.max(1, timeout - (performance.now() - started)),
 				() =>
 					diagnostic(this.session, 'screen predicate to converge', timeout, settle) + safe.note(),
+				this.signal,
 			);
 		}
 	}
@@ -318,6 +334,7 @@ class TerminalExpectation implements AsyncTerminalExpectation {
 		predicate: (snapshot: ScreenSnapshot) => boolean,
 		options: TransientAssertionOptions = {},
 	): Promise<ScreenRevision> {
+		this.signal?.throwIfAborted();
 		const timeout =
 				options.timeoutMs ??
 				this.session.options.assertionTimeoutMs ??
@@ -340,6 +357,7 @@ class TerminalExpectation implements AsyncTerminalExpectation {
 				() =>
 					diagnostic(this.session, `screen predicate since revision ${baseline}`, timeout) +
 					safe.note(),
+				this.signal,
 			);
 		return result as ScreenRevision;
 	}
@@ -351,15 +369,17 @@ class TerminalExpectation implements AsyncTerminalExpectation {
 	}
 }
 /** Create an async assertion expectation for a locator or terminal session. */
-export function expectTerminal(target: Locator): LocatorExpectation;
-export function expectTerminal(target: TerminalSession): TerminalExpectation;
+export function expectTerminal(target: Locator, signal?: AbortSignal): LocatorExpectation;
+export function expectTerminal(target: TerminalSession, signal?: AbortSignal): TerminalExpectation;
 export function expectTerminal(
 	target: Locator | TerminalSession,
+	signal?: AbortSignal,
 ): LocatorExpectation | TerminalExpectation;
 export function expectTerminal(
 	target: Locator | TerminalSession,
+	signal?: AbortSignal,
 ): LocatorExpectation | TerminalExpectation {
 	return target instanceof Locator
-		? new LocatorExpectation(target)
-		: new TerminalExpectation(target);
+		? new LocatorExpectation(signal ? target.withSignal(signal) : target)
+		: new TerminalExpectation(target, signal);
 }
