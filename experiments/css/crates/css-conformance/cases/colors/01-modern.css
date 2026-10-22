@@ -1,12 +1,30 @@
 /* CSS Color 4/5: wide-gamut spaces, mixing, relative syntax, light-dark().
    Values are validated and canonicalized by lightningcss; colors are not
    converted or gamut-mapped by the runtime yet. */
-.a { color: oklch(70% .2 40) }
-.b { color: oklab(0.5 -0.1 0.1 / 50%) }
-.c { color: lab(50% 20 -30) }
-.d { color: lch(50% 40 120deg) }
-.e { color: color(display-p3 1 0.5 0) }
-.f { color: color-mix(in oklab, red 40%, blue) }
-.g { color: rgb(from orange r g b / 50%) }
-.h { color: light-dark(white, black) }
-.i { color: hsl(120deg 75% 50%) }
+.a {
+	color: oklch(70% 0.2 40);
+}
+.b {
+	color: oklab(0.5 -0.1 0.1 / 50%);
+}
+.c {
+	color: lab(50% 20 -30);
+}
+.d {
+	color: lch(50% 40 120deg);
+}
+.e {
+	color: color(display-p3 1 0.5 0);
+}
+.f {
+	color: color-mix(in oklab, red 40%, blue);
+}
+.g {
+	color: rgb(from orange r g b / 50%);
+}
+.h {
+	color: light-dark(white, black);
+}
+.i {
+	color: hsl(120deg 75% 50%);
+}

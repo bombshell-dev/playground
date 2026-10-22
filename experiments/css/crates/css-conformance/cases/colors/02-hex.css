@@ -2,11 +2,27 @@
    report called out. Hex payloads that read as identifiers (#fff) tokenize
    as IDHash; digit-leading payloads (#333) tokenize as Hash — both must
    reach the IR and the computed style. */
-.a { color: #fff }
-.b { color: #ff8800 }
-.c { color: #ffffff }
-.d { color: #fffe }
-.e { color: #ff8800ff }
-.f { border-color: #333 }
-.g { border-color: #333333 }
-.h { background-color: #101010 }
+.a {
+	color: #fff;
+}
+.b {
+	color: #ff8800;
+}
+.c {
+	color: #ffffff;
+}
+.d {
+	color: #fffe;
+}
+.e {
+	color: #ff8800ff;
+}
+.f {
+	border-color: #333;
+}
+.g {
+	border-color: #333333;
+}
+.h {
+	background-color: #101010;
+}

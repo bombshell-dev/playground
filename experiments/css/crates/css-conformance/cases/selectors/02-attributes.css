@@ -1,7 +1,19 @@
 /* Selectors Level 4 attribute matching, including case flags. */
-[data-x^='pre'] { color: red }
-[title*='word' i] { color: green }
-[href$='.pdf'] { color: blue }
-[lang|='en'] { color: orange }
-[data-y~='item' s] { color: purple }
-[hidden] { visibility: hidden }
+[data-x^='pre'] {
+	color: red;
+}
+[title*='word' i] {
+	color: green;
+}
+[href$='.pdf'] {
+	color: blue;
+}
+[lang|='en'] {
+	color: orange;
+}
+[data-y~='item' s] {
+	color: purple;
+}
+[hidden] {
+	visibility: hidden;
+}

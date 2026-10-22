@@ -13,14 +13,14 @@
 		"url": "git+https://github.com/bombshell-dev/playground.git",
 		"directory": "experiments/css"
 	},
+	"files": [
+		"src"
+	],
 	"type": "module",
 	"exports": {
 		".": "./src/index.js",
 		"./package.json": "./package.json"
 	},
-	"files": [
-		"src"
-	],
 	"scripts": {
 		"test": "node smoke.mjs",
 		"test:using": "node smoke.using.mjs",

@@ -16,22 +16,21 @@
 //
 // Usage: node scripts/bundle-wasm.mjs <path-to-module.wasm>
 
-import { brotliCompressSync, constants } from "node:zlib";
-import { readFileSync, writeFileSync } from "node:fs";
+import { brotliCompressSync, constants } from 'node:zlib';
+import { readFileSync, writeFileSync } from 'node:fs';
 
-const Z85 =
-	"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.-:+=^!/*?&<>()[]{}@%$#";
+const Z85 = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.-:+=^!/*?&<>()[]{}@%$#';
 
 function encodeZ85(data) {
-	let padLen = (4 - (data.length % 4)) % 4;
+	const padLen = (4 - (data.length % 4)) % 4;
 	let src = data;
 	if (padLen > 0) {
 		src = new Uint8Array(data.length + padLen);
 		src.set(data);
 	}
-	let out = [];
+	const out = [];
 	for (let i = 0; i < src.length; i += 4) {
-		let v = src[i] * 16777216 + src[i + 1] * 65536 + src[i + 2] * 256 + src[i + 3];
+		const v = src[i] * 16777216 + src[i + 1] * 65536 + src[i + 2] * 256 + src[i + 3];
 		out.push(
 			Z85[Math.floor(v / 52200625)],
 			Z85[Math.floor(v / 614125) % 85],
@@ -40,7 +39,7 @@ function encodeZ85(data) {
 			Z85[v % 85],
 		);
 	}
-	return out.join("");
+	return out.join('');
 }
 
 const wasm = readFileSync(process.argv[2]);
@@ -71,9 +70,9 @@ const compressed=d(${JSON.stringify(z85)},${wasm.length});
 export const compiled=await WebAssembly.compile(new Uint8Array(brotliDecompressSync(compressed)));
 `;
 
-writeFileSync(new URL("../src/wasm.js", import.meta.url), source);
+writeFileSync(new URL('../src/wasm.js', import.meta.url), source);
 console.log(
-	`wrote src/wasm.js (${wasm.length} → ${compressed.byteLength} bytes compressed, ${z85.length} bytes z85, ${
-		Math.round((z85.length / wasm.length) * 100)
-	}%)`,
+	`wrote src/wasm.js (${wasm.length} → ${compressed.byteLength} bytes compressed, ${z85.length} bytes z85, ${Math.round(
+		(z85.length / wasm.length) * 100,
+	)}%)`,
 );

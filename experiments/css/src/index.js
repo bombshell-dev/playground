@@ -19,9 +19,9 @@
 //
 // The embedded artifact decodes via `node:zlib`, so it targets Node-like
 // runtimes; browser hosts load the raw module and use `loadCssComponent`.
-import { compiled } from "./wasm.js";
-import { decodeIr as decodeIrBytes, loadCssComponentFromModule } from "./abi.js";
-export { NO_PARENT, loadCssComponent, loadCssComponentFromModule } from "./abi.js";
+import { compiled } from './wasm.js';
+import { decodeIr as decodeIrBytes, loadCssComponentFromModule } from './abi.js';
+export { NO_PARENT, loadCssComponent, loadCssComponentFromModule } from './abi.js';
 export { compiled };
 
 export const component = loadCssComponentFromModule(compiled);
@@ -36,17 +36,17 @@ export function compile(css, origin = 2) {
 	}
 	const handle = component.prepare(ir);
 	if (handle === null) {
-		throw new Error("prepare rejected the IR");
+		throw new PrepareError();
 	}
-	return new Sheet(handle, ir, diagnostics);
+	return new Sheet({ handle, ir, diagnostics });
 }
 
-export function compute(sheet, nodes, parents, target, env) {
-	return component.compute([handleOf(sheet)], nodes, parents, target, env);
+export function compute(sheet, { nodes, parents, target, env } = {}) {
+	return component.compute({ sheets: [handleOf(sheet)], nodes, parents, target, env });
 }
 
-export function computeTree(sheet, nodes, parents, env) {
-	return component.computeTree([handleOf(sheet)], nodes, parents, env);
+export function computeTree(sheet, { nodes, parents, env } = {}) {
+	return component.computeTree({ sheets: [handleOf(sheet)], nodes, parents, env });
 }
 
 export function release(sheet) {
@@ -71,16 +71,24 @@ function handleOf(sheet) {
 /// severity/code/message list from the engine.
 export class CompileError extends Error {
 	constructor(diagnostics) {
-		super("compile returned no IR");
-		this.name = "CompileError";
+		super('compile returned no IR');
+		this.name = 'CompileError';
 		this.diagnostics = diagnostics;
+	}
+}
+
+/// Thrown when `prepare` rejects valid-looking IR bytes.
+export class PrepareError extends Error {
+	constructor() {
+		super('prepare rejected the IR');
+		this.name = 'PrepareError';
 	}
 }
 
 /// A prepared stylesheet. Wraps the raw handle so calls don't repeat it, and
 /// releases itself at scope exit: `using sheet = compile(css)`.
 export class Sheet {
-	constructor(handle, ir, diagnostics) {
+	constructor({ handle, ir, diagnostics }) {
 		this.handle = handle;
 		this.ir = ir;
 		this.diagnostics = diagnostics;
@@ -96,12 +104,18 @@ export class Sheet {
 		return this.#decodedIr().rules;
 	}
 
-	compute(nodes, parents, target, env) {
-		return component.compute([this.handle], nodes, parents, target, env);
+	compute(nodes, { parents, target, env } = {}) {
+		return component.compute({
+			sheets: [this.handle],
+			nodes,
+			parents,
+			target,
+			env,
+		});
 	}
 
-	computeTree(nodes, parents, env) {
-		return component.computeTree([this.handle], nodes, parents, env);
+	computeTree(nodes, { parents, env } = {}) {
+		return component.computeTree({ sheets: [this.handle], nodes, parents, env });
 	}
 
 	release() {

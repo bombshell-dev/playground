@@ -1,10 +1,10 @@
 [workspace]
 members = [
-  "crates/css-core",
-  "crates/css-compiler",
-  "crates/css-runtime",
-  "crates/css-wasm",
-  "crates/css-conformance",
+	"crates/css-core",
+	"crates/css-compiler",
+	"crates/css-runtime",
+	"crates/css-wasm",
+	"crates/css-conformance",
 ]
 resolver = "2"
 
@@ -24,7 +24,11 @@ parcel_selectors = "0.28.3"
 rustc-hash = "2"
 serde = { version = "1", default-features = false, features = ["derive", "alloc"] }
 postcard = { version = "1", default-features = false, features = ["alloc"] }
-wit-bindgen = { version = "0.62.0", default-features = false, features = ["macros", "realloc", "bitflags"] }
+wit-bindgen = { version = "0.62.0", default-features = false, features = [
+	"macros",
+	"realloc",
+	"bitflags",
+] }
 
 [profile.release]
 lto = true

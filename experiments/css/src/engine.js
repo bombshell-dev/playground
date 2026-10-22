@@ -56,18 +56,18 @@ export class Engine {
 	}
 
 	/// Computed style for one node across all sheets.
-	compute(nodes, parents, target, env) {
+	compute(nodes, { parents, target, env } = {}) {
 		const handles = this.#handles();
 		if (handles.length === 0) return [];
-		return component.compute(handles, nodes, parents, target, env);
+		return component.compute({ sheets: handles, nodes, parents, target, env });
 	}
 
 	/// Computed styles for every node in one pass, index-aligned with
 	/// `nodes`.
-	computeTree(nodes, parents, env) {
+	computeTree(nodes, { parents, env } = {}) {
 		const handles = this.#handles();
 		if (handles.length === 0) return nodes.map(() => []);
-		return component.computeTree(handles, nodes, parents, env);
+		return component.computeTree({ sheets: handles, nodes, parents, env });
 	}
 
 	/// Release every prepared sheet. A later `compute` re-prepares from the
