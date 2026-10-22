@@ -7,7 +7,8 @@ import { parseKey } from '../src/keys.ts';
 import { normalizeViewport } from '../src/profile.ts';
 import { createQueries } from '../src/queries.ts';
 import { TerminalOutput } from '../src/terminal/output.ts';
-import { GhosttyWasmTerminal } from '../src/terminal/wasm.ts';
+import type { TerminalBackend, BackendUpdate } from '../src/backend.ts';
+import { openBackend, type BackendScope } from '../src/terminal/backend-scope.ts';
 import { waitForOperation, type WaitForOptions } from '../src/wait-for.ts';
 import type {
 	KeyName,
@@ -20,20 +21,23 @@ import type {
 /** Experimental connection: no command, child process, native host, or global stream replacement. */
 export async function createTerminal(options: InProcessOptions = {}): Promise<InProcessTerminal> {
 	const viewport = normalizeViewport(options.viewport);
-	const engine = await GhosttyWasmTerminal.create(viewport);
+	const owner = await openBackend(
+		{ viewport, graphicsStorageLimitBytes: options.graphics?.storageLimitBytes },
+		{ create: options.backend },
+	);
 	try {
-		const terminal = new InProcessTerminal(engine, options);
+		const terminal = new InProcessTerminal(owner, options);
 		await terminal.installExtensions();
 		return terminal;
 	} catch (error) {
-		engine.free();
+		await owner[Symbol.asyncDispose]();
 		throw error;
 	}
 }
 
 type InProcessOptions = Pick<
 	TerminalLaunchOptions,
-	'viewport' | 'extensions' | 'selector' | 'assertionTimeoutMs'
+	'viewport' | 'extensions' | 'selector' | 'assertionTimeoutMs' | 'backend' | 'graphics'
 >;
 
 /** Buffer early input until the app installs its reader, even if it calls resume first. */
@@ -71,7 +75,8 @@ class InProcessTerminal implements AsyncDisposable {
 	readonly appIO: { input: Input; output: Output };
 	readonly screen;
 	readonly keyboard;
-	readonly #engine: GhosttyWasmTerminal;
+	readonly #engine: TerminalBackend;
+	readonly #backendScope: BackendScope;
 	readonly #extensions: ExtensionLifecycle;
 	readonly #output: TerminalOutput;
 	readonly #controller = new AbortController();
@@ -83,8 +88,9 @@ class InProcessTerminal implements AsyncDisposable {
 	#failure: unknown;
 	#closing?: Promise<void>;
 
-	constructor(engine: GhosttyWasmTerminal, options: InProcessOptions) {
-		this.#engine = engine;
+	constructor(owner: BackendScope, options: InProcessOptions) {
+		this.#backendScope = owner;
+		const engine = (this.#engine = owner.backend);
 		this.#options = options;
 		this.#snapshot = engine.snapshot();
 		this.#extensions = new ExtensionLifecycle(() => this.#snapshot);
@@ -92,8 +98,7 @@ class InProcessTerminal implements AsyncDisposable {
 			options.extensions ?? [],
 			() => this.#snapshot,
 			(bytes) => {
-				engine.write(bytes);
-				return this.#observe();
+				return this.#observe(engine.write(bytes));
 			},
 		);
 		this.stdout = new Output({
@@ -101,12 +106,6 @@ class InProcessTerminal implements AsyncDisposable {
 				try {
 					this.#ensureOpen();
 					this.#output.push(chunk);
-					for (const effect of engine.takeEffects()) {
-						if (effect.type === 'write-pty') {
-							// Never reenter app rendering from a Ghostty output callback.
-							void this.#send(effect.data).catch((error) => this.#fail(error));
-						}
-					}
 					done();
 				} catch (error) {
 					done(error instanceof Error ? error : new Error(String(error)));
@@ -173,8 +172,14 @@ class InProcessTerminal implements AsyncDisposable {
 		}
 	}
 
-	#observe(): ScreenSnapshot {
-		this.#snapshot = Object.freeze({ ...this.#engine.snapshot(), sequence: ++this.#revision });
+	#observe(update: BackendUpdate): ScreenSnapshot {
+		this.#snapshot = Object.freeze({ ...update.snapshot, sequence: ++this.#revision });
+		for (const effect of update.effects) {
+			if (effect.type === 'write-pty') {
+				// Queue responses without reentering application rendering.
+				void this.#send(effect.data).catch((error) => this.#fail(error));
+			}
+		}
 		this.#extensions.frame(this.#snapshot);
 		return this.#snapshot;
 	}
@@ -229,8 +234,7 @@ class InProcessTerminal implements AsyncDisposable {
 		this.#ensureOpen();
 		const size = normalizeViewport(viewport);
 		this.#extensions.action({ kind: 'resize', ...size });
-		this.#engine.resize(size);
-		this.#output.observations.screen(this.#observe());
+		this.#output.observations.screen(this.#observe(this.#engine.resize(size)));
 		Object.assign(this.stdout, size);
 		this.stdout.emit('resize');
 	}
@@ -262,8 +266,11 @@ class InProcessTerminal implements AsyncDisposable {
 			clearTimeout(deadline);
 			this.stdin.destroy();
 			this.stdout.destroy();
-			this.#engine.free();
-			await this.#extensions.close();
+			try {
+				await this.#backendScope[Symbol.asyncDispose]();
+			} finally {
+				await this.#extensions.close();
+			}
 		}
 	}
 }

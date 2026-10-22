@@ -70,6 +70,29 @@ Ghostty is the sole authority for:
 
 JavaScript does not interpret terminal control sequences. It extracts only registered description OSC messages before forwarding ordinary bytes to Ghostty.
 
+## Backend boundary
+
+`CreateBackend` is `(options: BackendOptions) => Operation<TerminalBackend>`.
+The default `createGhosttyBackend` acquires the existing Ghostty WASM engine as
+an Effection resource and releases it with its scope, including late acquisition
+and initialization failure. Its returned functions close over that instance and
+reject use after release. The async session bridge owns a child scope, inheriting
+the Effection caller when present, and explicitly closes it after transport drain.
+The factory is explicit per session; there is no global backend registry.
+
+`write` and `resize` return one `BackendUpdate`: a detached screen snapshot and
+terminal effects. These operations, input encoding, and reads cannot suspend.
+That keeps each ordinary byte segment and its resulting screen atomic relative
+to registered OSC boundaries. Effects are values; session-owned queues deliver
+PTY responses without blocking parsing. Session clocks and revision numbering
+remain above the emulator boundary.
+
+Live PTY sessions, local appIO sessions and replay consume the same contract.
+The backend owns VT semantics; the shared output pipeline owns metadata pairing
+and freshness. Replay consumes snapshots but does not deliver terminal effects.
+Trace identity checks reject a different emulator/version before processing
+recorded output. Existing Ghostty traces retain their artifact hash check.
+
 ## Session resource tree
 
 ```text
@@ -185,3 +208,78 @@ Explicit overrides of profile-owned environment keys are rejected. Other explici
 Maintainers use pinned Zig for upstream Ghostty WASM and Cargo plus the target linker for the Rust host.
 
 Artifact metadata pins source commit, toolchains, build flags, protocol/binding versions, ABI layouts, and checksums. Independent verification checks files without rebuilding them.
+
+## Operation composition
+
+Keyboard execution has an explicit capability boundary in `src/operations.ts`.
+`KeyboardOperations` is the port contract. `createKeyboardOperations` accepts a
+driver and an ordered list of typed middleware; callers receive the composed
+facade. Each middleware receives the original argument tuple and a `next`
+continuation with the same result type. The first entry is outermost.
+
+The session adapter implements this contract using the existing PTY action
+machinery. Encoding, command serialization, action receipts, and shutdown guards
+remain in the session. Middleware can surround an operation's execution and
+cleanup, but the raw driver is not exposed by the resulting execution capability.
+Middleware is trusted application code: forwarding twice performs two actions;
+there is no implicit retry or exactly-once enforcement.
+
+`TerminalProgram<T>` is a function from `ExecutionOperations` to `Operation<T>`.
+`AsyncExecution.run` executes a program in its owned scope; the Effection
+facade's `run` invokes the same program in the caller's current scope. Both use
+the same composed keyboard operations. Native keyboard calls no longer travel
+through the Promise facade, so middleware can resolve the caller's Effection
+context. The driver combines current-operation cancellation with owner
+cancellation, including interruption of blocked PTY writes.
+
+`captureProgram(options, body)` wraps a continuation with the existing capture
+kernel. Recording subscribes before the body starts; completion still requires
+both the condition and the body, and the deadline bounds both. Capture-local
+keyboard middleware is appended inside inherited middleware and passed to nested
+captures. It does not modify the parent. Escaped child capabilities reject calls
+after the capture closes, and cleanup registered with `ensure` completes before cancellation
+returns. The existing callback capture APIs use the same inheritance rules.
+
+This first boundary covers keyboard operations and capture programs. Mouse,
+process, query, and graphics APIs retain their existing adapters. Driver injection
+is explicit; no scope-global port registry or experimental Effection API is needed.
+
+## Scope ownership and cancellation
+
+Native `withTerminal` creates an explicit `scoped` boundary. Delegating to a
+resource with `yield*` alone shares the caller's scope; it does not delimit the
+session lifetime. On success, failure, or halt, the session now drains and closes
+before control returns to the outer operation. `useSession` remains a lower-level
+resource whose lifetime intentionally belongs to the acquiring scope.
+
+| Boundary                                                           | Context and lifetime                                                                                                                                                  |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Native keyboard operation / program                                | Child of the invoking scope; inherits current context and also observes terminal-owner cancellation.                                                                  |
+| Native Promise facade (queries, mouse, process, history, graphics) | Creates an invocation-local executor, so its async tasks belong to the caller's subtree instead of being siblings under the terminal owner.                           |
+| Async terminal methods                                             | Explicitly execute in the terminal/capture owner scope. A foreign Effection caller's context does not cross a Promise call automatically.                             |
+| Capture                                                            | Owns observation subscriptions, timers, callback tasks, and child capabilities. Local middleware is an explicit inherited list, not a dynamic Effection API registry. |
+| Backend scope                                                      | Explicit async bridge with an optional native parent for inherited context. The session keeps it alive through PTY output drain and explicitly awaits its release.    |
+
+`useAbortSignal` is itself a resource. Its abortion follows cleanup registration
+order, so cleanup must not assume that every signal is already aborted when it
+starts. Native Promise bridges pass an invocation signal to actual cancellable
+work. Cancelling only the Effection `call` would abandon the Promise while its
+subscriptions, timers, or input remained active. Legacy assertions, locator
+clicks, revision collection, and process-exit timeouts release their waits on
+abort as well. Synchronous snapshots remain evidence values and do not acquire
+new scopes.
+
+Middleware functions and `composeOperation` do not capture a `Scope`. Explicit
+owner binding exists only at the async facade; native invocation preserves the
+caller's context. Concurrent callers can shadow context values without affecting
+each other, and operation resources release before the action returns.
+
+For asynchronous middleware release, use `yield* ensure(function* () { ... })`.
+Effection 4.2 has characterized limitations around yielding `finally`: a halt
+arriving while a finally block is already yielding can skip its remaining work,
+and a yielding delegated finally can resume its caller after halt. Ghostwright
+does not claim to repair arbitrary user generators. Its framework-owned resource
+finalizers enter cleanup when their suspended resource is released; synchronous
+capture unsubscribe/stop paths do not yield. The ownership tests gate `ensure`
+cleanup and verify that repeated disposal and shutdown during an already-running
+release wait for completion.

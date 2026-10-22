@@ -1,3 +1,4 @@
+import type { TerminalEffect, BackendHistoryRow } from '../backend.ts';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { FUNCTIONAL_KEYS } from '../keys.ts';
@@ -81,16 +82,6 @@ function callbackModule(parameterCount: number, returnsInt = false): WebAssembly
 	);
 }
 
-export type TerminalEffect =
-	| { type: 'write-pty'; data: Uint8Array }
-	| { type: 'bell' }
-	| { type: 'title' }
-	| { type: 'working-directory' }
-	| { type: 'clipboard-write'; data: string };
-interface HistoryRow {
-	line: ScreenLine;
-	kittyVirtualPlaceholder: boolean;
-}
 const defaultStyle: CellStyle = Object.freeze({
 	bold: false,
 	italic: false,
@@ -172,8 +163,13 @@ export class GhosttyWasmTerminal {
 		// The pinned, hash-checked module supplies this C ABI. WebAssembly's
 		// standard typings do not describe individual exported signatures.
 		self.#e = instance.exports as Exports;
-		self.#initialize(storageLimitBytes);
-		return self;
+		try {
+			self.#initialize(storageLimitBytes);
+			return self;
+		} catch (error) {
+			self.free();
+			throw error;
+		}
 	}
 	#view(): DataView<ArrayBuffer> {
 		return new DataView(this.#e.memory.buffer);
@@ -607,7 +603,7 @@ export class GhosttyWasmTerminal {
 		return this.#get(15);
 	}
 	/** Copies a bounded oldest-based scrollback range without moving Ghostty's viewport. */
-	history(start: number, count: number): readonly HistoryRow[] {
+	history(start: number, count: number): readonly BackendHistoryRow[] {
 		const total = this.#get(14),
 			available = this.#get(15),
 			end = Math.min(available, start + count),
@@ -623,7 +619,7 @@ export class GhosttyWasmTerminal {
 			style = this.#alloc(styleLayout.size),
 			graphemes = this.#alloc(256),
 			length = this.#alloc(4),
-			result: HistoryRow[] = [];
+			result: BackendHistoryRow[] = [];
 		// `total` is deliberately read even though `available` determines the range:
 		// it exercises Ghostty's documented total/scrollback coordinate contract.
 		void total;

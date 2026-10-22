@@ -219,6 +219,114 @@ const matches = await terminal.history.findText('tool completed', { direction: '
 - [C versus Rust PTY-host comparison](HOST-COMPARISON.md)
 - [Performance report](PERFORMANCE.md)
 
+## Composable execution
+
+Keyboard input runs through an operation-based driver and typed middleware.
+The first middleware is outermost; capture-local middleware runs inside inherited
+middleware. Existing keyboard methods use this path in both async and Effection APIs.
+
+```ts
+import {
+	launchTerminal,
+	captureProgram,
+	regionLocator,
+	textContains,
+	type KeyboardMiddleware,
+	type TerminalProgram,
+} from 'ghostwright';
+
+const logKeys: KeyboardMiddleware = {
+	*press(args, next) {
+		const receipt = yield* next(...args);
+		console.log('acknowledged', receipt.actionSequence);
+		return receipt;
+	},
+};
+
+const submit: TerminalProgram<void> = function* ({ keyboard }) {
+	yield* keyboard.type('hello');
+	yield* keyboard.press('Enter');
+};
+
+await using terminal = await launchTerminal({
+	command: 'my-cli',
+	keyboardMiddleware: [logKeys],
+});
+await terminal.screen.findByText('Ready');
+
+const viewport = regionLocator({ column: 0, row: 0, width: 80, height: 24 });
+const recording = await terminal.run(
+	captureProgram(
+		{
+			until: viewport.satisfies(textContains('Complete')),
+		},
+		submit,
+	),
+);
+```
+
+The same program runs as `yield* terminal.run(program)` on the Effection terminal.
+Programs receive a capability facade with keyboard operations and nested capture.
+They return `Operation<T>`; the async runner returns `Promise<T>`. `captureProgram`
+returns the recording and waits for both the condition and the continuation.
+
+Use `keyboardMiddleware` in capture options to add behavior only within that
+capture and its children. Register asynchronous cleanup with Effection `ensure`;
+cancellation awaits that release and cancels pending input without closing the
+parent session. Effection 4.2 can interrupt a `finally` block that is already
+yielding when cancellation arrives, so reserve ordinary `finally` for synchronous
+cleanup. Middleware is trusted: calling `next` twice sends two actions. Ghostwright
+does not retry keyboard actions automatically.
+
+`createKeyboardOperations({ driver, middleware })` provides the same typed
+composition for an explicit driver. `composeOperation` is the underlying function
+combinator. This initial operation core covers keyboard input and capture; other
+terminal APIs continue using their existing adapters.
+
+## Terminal backend
+
+Ghostty remains the default and sole shipped emulator. A session can supply a
+`backend: CreateBackend` factory to substitute or decorate it:
+
+```ts
+import { createGhosttyBackend, launchTerminal, type CreateBackend } from 'ghostwright';
+
+const backend: CreateBackend = function* (options) {
+	const ghostty = yield* createGhosttyBackend(options);
+	return {
+		...ghostty,
+		write(bytes) {
+			const update = ghostty.write(bytes);
+			return update; // detached snapshot and terminal effects
+		},
+	};
+};
+
+await using terminal = await launchTerminal({ command: 'my-cli', backend });
+```
+
+The factory returns an Effection `Operation<TerminalBackend>` and acquires fresh
+state for each session. Use Effection resources to register release with the
+factory's scope. The session keeps that scope alive through process/output drain
+and awaits its cleanup on close or failed launch. Factories invoked through the
+Effection API inherit the caller's context. Async and local component sessions
+own their own scopes; pass their configuration explicitly in the factory closure.
+
+Backend reads, writes, resize and input encoders are synchronous. A write or
+resize returns a `BackendUpdate` containing the resulting immutable snapshot and
+an ordered list of effects. The session queues PTY responses; the emulator never
+performs transport I/O or reenters application output. The existing semantic OSC
+splitter, CSS locator adapters, revision retention and assertions remain shared.
+History and graphics inspection are part of the contract; unsupported graphics
+must be reported explicitly in the snapshot.
+
+The same factory option works with trace replay and the experimental local
+component harness. Traces record `backend.identity` (name and behavior version).
+Replay requires a matching identity and an explicit factory for custom backends;
+it never loads code named in a recording. A decorator that changes emulator or
+input behavior must use a distinct identity. The terminal environment still uses
+Ghostwright's deterministic profile; this seam does not add alternate profiles.
+
 ## Compatibility
 
 - Node 22+

@@ -1,3 +1,6 @@
+export * from './operations.ts';
+export type * from './backend.ts';
+export { createGhosttyBackend } from './terminal/ghostty-backend.ts';
 export * from './types.ts';
 export * from './observations.ts';
 export * from './inspection.ts';
@@ -42,7 +45,7 @@ export function expectTerminal(
 	| AsyncLocatorExpectation
 	| OperationTerminalExpectation
 	| AsyncTerminalExpectation {
-	if (target instanceof AsyncExecution) return expectAsync(target.session);
+	if (target instanceof AsyncExecution) return expectAsync(target.session, target.signal);
 	if (target instanceof EffectionLocator || target instanceof EffectionTerminal)
 		return expectOperation(target);
 	if (target instanceof Locator) return expectAsync(target);

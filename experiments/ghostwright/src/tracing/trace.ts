@@ -1,3 +1,4 @@
+import type { BackendIdentity } from '../backend.ts';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 // oxlint-disable-next-line no-restricted-imports -- path module needed for path resolution
 import { resolve } from 'node:path';
@@ -16,6 +17,7 @@ export interface TraceEvent {
 }
 /** Records terminal events and optionally persists trace artifacts on failure. */
 export class SessionTrace {
+	backend?: BackendIdentity;
 	#events: TraceEvent[] = [];
 	#seq = 0;
 	readonly started = performance.now();
@@ -106,11 +108,15 @@ export class SessionTrace {
 					runtime: currentRuntime(),
 					platform: { os: process.platform, arch: process.arch },
 					ghostwrightVersion: '0.1.0',
-					ghostty: {
-						repository: 'https://github.com/ghostty-org/ghostty',
-						commit: 'f8041e849b36efbbb9736b6ecf0ccfcb01d94e69',
-						wasmSha256: wasmArtifact.sha256,
-					},
+					backend: this.backend,
+					ghostty:
+						this.backend?.name === 'ghostty'
+							? {
+									repository: 'https://github.com/ghostty-org/ghostty',
+									commit: 'f8041e849b36efbbb9736b6ecf0ccfcb01d94e69',
+									wasmSha256: wasmArtifact.sha256,
+								}
+							: undefined,
 					ptyHost: { protocolVersion: 1, target, sha256: hostArtifact.sha256 },
 					profile: {
 						term: 'xterm-ghostty',
