@@ -24,14 +24,14 @@ function createComponent(instance) {
   let memory = new Uint8Array(exports.memory.buffer);
   let view = new DataView(exports.memory.buffer);
   const realloc = exports.cabi_realloc;
-  const compileFn = exports['bombshell:css/stylesheet@0.3.0#compile'];
-  const computeFn = exports['bombshell:css/stylesheet@0.3.0#compute'];
-  const prepareFn = exports['bombshell:css/stylesheet@0.3.0#prepare'];
-  const releaseFn = exports['bombshell:css/stylesheet@0.3.0#release'];
-  const computeTreeFn = exports['bombshell:css/stylesheet@0.3.0#compute-tree'];
-  const postComputeTree = exports['cabi_post_bombshell:css/stylesheet@0.3.0#compute-tree'];
-  const postCompile = exports['cabi_post_bombshell:css/stylesheet@0.3.0#compile'];
-  const postCompute = exports['cabi_post_bombshell:css/stylesheet@0.3.0#compute'];
+  const compileFn = exports['bombshell:css/stylesheet@0.4.0#compile'];
+  const computeFn = exports['bombshell:css/stylesheet@0.4.0#compute'];
+  const prepareFn = exports['bombshell:css/stylesheet@0.4.0#prepare'];
+  const releaseFn = exports['bombshell:css/stylesheet@0.4.0#release'];
+  const computeTreeFn = exports['bombshell:css/stylesheet@0.4.0#compute-tree'];
+  const postComputeTree = exports['cabi_post_bombshell:css/stylesheet@0.4.0#compute-tree'];
+  const postCompile = exports['cabi_post_bombshell:css/stylesheet@0.4.0#compile'];
+  const postCompute = exports['cabi_post_bombshell:css/stylesheet@0.4.0#compute'];
   function refresh() {
     memory = new Uint8Array(exports.memory.buffer);
     view = new DataView(exports.memory.buffer);
@@ -104,6 +104,62 @@ function createComponent(instance) {
     return { pointer, count: entries.length };
   }
 
+  function u32ListPointer(values) {
+    if (values.length === 0) {
+      return { pointer: 0, count: 0 };
+    }
+    const pointer = realloc(0, 0, 4, values.length * 4);
+    refresh();
+    values.forEach((value, i) => {
+      view.setUint32(pointer + i * 4, value, true);
+    });
+    return { pointer, count: values.length };
+  }
+
+  /// Serialize the flat node list for `compute`/`compute-tree`:
+  /// tag (ptr@0, len@4), id option<string> (disc@8, ptr@12, len@16),
+  /// classes list<string> (ptr@20, len@24), attributes list<attribute>
+  /// (ptr@28, len@32), state u8@36, width option<f32> (disc@40, f32@44),
+  /// height option<f32> (disc@48, f32@52), style option<string>
+  /// (disc@56, ptr@60, len@64) — 68 bytes per node.
+  function serializeNodes(nodes) {
+    const stride = 68;
+    const data = new Uint8Array(nodes.length * stride);
+    const dataView = new DataView(data.buffer);
+    nodes.forEach((node, i) => {
+      const base = i * stride;
+      const tag = stringPointer(node.tag);
+      dataView.setUint32(base, tag.pointer, true);
+      dataView.setUint32(base + 4, tag.length, true);
+      const id = node.id ? stringPointer(node.id) : null;
+      dataView.setUint32(base + 8, id ? 1 : 0, true);
+      if (id) {
+        dataView.setUint32(base + 12, id.pointer, true);
+        dataView.setUint32(base + 16, id.length, true);
+      }
+      const classes = stringListPointer(node.classes ?? []);
+      dataView.setUint32(base + 20, classes.pointer, true);
+      dataView.setUint32(base + 24, classes.count, true);
+      const attributes = attributeListPointer(node.attributes ?? []);
+      dataView.setUint32(base + 28, attributes.pointer, true);
+      dataView.setUint32(base + 32, attributes.count, true);
+      dataView.setUint8(base + 36, node.state ?? 0);
+      const hasWidth = node.width !== undefined && node.width !== null;
+      const hasHeight = node.height !== undefined && node.height !== null;
+      dataView.setUint32(base + 40, hasWidth ? 1 : 0, true);
+      dataView.setFloat32(base + 44, hasWidth ? node.width : 0, true);
+      dataView.setUint32(base + 48, hasHeight ? 1 : 0, true);
+      dataView.setFloat32(base + 52, hasHeight ? node.height : 0, true);
+      const style = node.style ? stringPointer(node.style) : null;
+      dataView.setUint8(base + 56, style ? 1 : 0);
+      if (style) {
+        dataView.setUint32(base + 60, style.pointer, true);
+        dataView.setUint32(base + 64, style.length, true);
+      }
+    });
+    return allocate(data);
+  }
+
   function compile(css, origin = 2) {
     const bytes = encoder.encode(css);
     const cssPointer = allocate(bytes);
@@ -148,36 +204,9 @@ function createComponent(instance) {
 
   /// Resolve computed styles for every node in one pass. Returns one
   /// declaration list per node, index-aligned with `nodes`.
-  function computeTree(sheet, nodes, parents, env) {
-    const stride = 56;
-    const data = new Uint8Array(nodes.length * stride);
-    const dataView = new DataView(data.buffer);
-    nodes.forEach((node, i) => {
-      const base = i * stride;
-      const tag = stringPointer(node.tag);
-      dataView.setUint32(base, tag.pointer, true);
-      dataView.setUint32(base + 4, tag.length, true);
-      const id = node.id ? stringPointer(node.id) : null;
-      dataView.setUint32(base + 8, id ? 1 : 0, true);
-      if (id) {
-        dataView.setUint32(base + 12, id.pointer, true);
-        dataView.setUint32(base + 16, id.length, true);
-      }
-      const classes = stringListPointer(node.classes ?? []);
-      dataView.setUint32(base + 20, classes.pointer, true);
-      dataView.setUint32(base + 24, classes.count, true);
-      const attributes = attributeListPointer(node.attributes ?? []);
-      dataView.setUint32(base + 28, attributes.pointer, true);
-      dataView.setUint32(base + 32, attributes.count, true);
-      dataView.setUint8(base + 36, node.state ?? 0);
-      const hasWidth = node.width !== undefined && node.width !== null;
-      const hasHeight = node.height !== undefined && node.height !== null;
-      dataView.setUint32(base + 40, hasWidth ? 1 : 0, true);
-      dataView.setFloat32(base + 44, hasWidth ? node.width : 0, true);
-      dataView.setUint32(base + 48, hasHeight ? 1 : 0, true);
-      dataView.setFloat32(base + 52, hasHeight ? node.height : 0, true);
-    });
-    const nodesPointer = allocate(data);
+  function computeTree(sheets, nodes, parents, env) {
+    const handleList = u32ListPointer(sheets);
+    const nodesPointer = serializeNodes(nodes);
 
     const parentBytes = new Uint8Array(parents.length * 4);
     const parentView = new DataView(parentBytes.buffer);
@@ -185,7 +214,8 @@ function createComponent(instance) {
     const parentPointer = allocate(parentBytes);
 
     const result = computeTreeFn(
-      sheet,
+      handleList.pointer,
+      handleList.count,
       nodesPointer,
       nodes.length,
       parentPointer,
@@ -226,40 +256,9 @@ function createComponent(instance) {
     releaseFn(sheet);
   }
 
-  function compute(sheet, nodes, parents, target, env) {
-    // node: tag (ptr@0, len@4), id option<string> (disc@8, ptr@12, len@16),
-    // classes list<string> (ptr@20, len@24), attributes list<attribute>
-    // (ptr@28, len@32), state u8@36, width option<f32> (disc@40, f32@44),
-    // height option<f32> (disc@48, f32@52) — 56 bytes per node.
-    const stride = 56;
-    const data = new Uint8Array(nodes.length * stride);
-    const dataView = new DataView(data.buffer);
-    nodes.forEach((node, i) => {
-      const base = i * stride;
-      const tag = stringPointer(node.tag);
-      dataView.setUint32(base, tag.pointer, true);
-      dataView.setUint32(base + 4, tag.length, true);
-      const id = node.id ? stringPointer(node.id) : null;
-      dataView.setUint32(base + 8, id ? 1 : 0, true);
-      if (id) {
-        dataView.setUint32(base + 12, id.pointer, true);
-        dataView.setUint32(base + 16, id.length, true);
-      }
-      const classes = stringListPointer(node.classes ?? []);
-      dataView.setUint32(base + 20, classes.pointer, true);
-      dataView.setUint32(base + 24, classes.count, true);
-      const attributes = attributeListPointer(node.attributes ?? []);
-      dataView.setUint32(base + 28, attributes.pointer, true);
-      dataView.setUint32(base + 32, attributes.count, true);
-      dataView.setUint8(base + 36, node.state ?? 0);
-      const hasWidth = node.width !== undefined && node.width !== null;
-      const hasHeight = node.height !== undefined && node.height !== null;
-      dataView.setUint32(base + 40, hasWidth ? 1 : 0, true);
-      dataView.setFloat32(base + 44, hasWidth ? node.width : 0, true);
-      dataView.setUint32(base + 48, hasHeight ? 1 : 0, true);
-      dataView.setFloat32(base + 52, hasHeight ? node.height : 0, true);
-    });
-    const nodesPointer = allocate(data);
+  function compute(sheets, nodes, parents, target, env) {
+    const handleList = u32ListPointer(sheets);
+    const nodesPointer = serializeNodes(nodes);
 
     const parentBytes = new Uint8Array(parents.length * 4);
     const parentView = new DataView(parentBytes.buffer);
@@ -267,7 +266,8 @@ function createComponent(instance) {
     const parentPointer = allocate(parentBytes);
 
     const result = computeFn(
-      sheet,
+      handleList.pointer,
+      handleList.count,
       nodesPointer,
       nodes.length,
       parentPointer,

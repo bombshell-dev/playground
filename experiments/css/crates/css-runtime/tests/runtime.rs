@@ -45,6 +45,86 @@ fn get<'a>(style: &'a bombshell_css_runtime::ComputedStyle, name: &str) -> &'a s
 }
 
 #[test]
+fn inline_styles_cascade_above_selectors() {
+    // All cases bind first: the invariant `SelectorList` borrow unifies IR
+    // lifetimes across the sheets of a single `compute` call, so every
+    // `Case` must outlive every `Stylesheet`.
+    let case = stylesheet(".card { color: #fff; background: black }");
+    let important_case = stylesheet(".card { color: red !important }");
+    let other_case = stylesheet(".other { color: red !important }");
+    let sheet = case.sheet();
+    let important = important_case.sheet();
+    let other = other_case.sheet();
+    let env = Environment::default();
+
+    // Inline-normal beats every author stylesheet declaration.
+    let mut n = node("card");
+    n.classes = vec!["card".into()];
+    n.style = Some("color: blue; border: none".into());
+    let t = tree(vec![n], vec![NO_PARENT]);
+    let s = compute(std::slice::from_ref(&&sheet), &t, 0, &env).unwrap();
+    assert_eq!(get(&s, "color"), "blue");
+    assert_eq!(get(&s, "background"), "black");
+    assert_eq!(get(&s, "border"), "none");
+
+    // Author `!important` beats inline-normal…
+    let s = compute(&[&sheet, &important], &t, 0, &env).unwrap();
+    assert_eq!(get(&s, "color"), "red");
+    // …even when the important rule is in an earlier sheet.
+    let s = compute(&[&important, &sheet], &t, 0, &env).unwrap();
+    assert_eq!(get(&s, "color"), "red");
+
+    // …and an `!important` in a rule that does NOT match the node must not
+    // shield the property: the inline style wins.
+    let s = compute(&[&other, &sheet], &t, 0, &env).unwrap();
+    assert_eq!(get(&s, "color"), "blue");
+
+    // Inline `!important` beats author stylesheet `!important`.
+    let mut n_imp = node("card");
+    n_imp.classes = vec!["card".into()];
+    n_imp.style = Some("color: blue !important".into());
+    let t_imp = tree(vec![n_imp], vec![NO_PARENT]);
+    let s = compute(&[&sheet, &important], &t_imp, 0, &env).unwrap();
+    assert_eq!(get(&s, "color"), "blue");
+}
+
+#[test]
+fn inline_styles_participate_in_inheritance() {
+    // Inline declarations are part of the node's declared values BEFORE
+    // var() substitution and inheritance, so descendants inherit the
+    // inline-overridden computed values.
+    let case = stylesheet(".child { color: var(--brand) }");
+    let sheet = case.sheet();
+    let env = Environment::default();
+    let mut parent = node("root");
+    parent.style = Some("--brand: red".into());
+    let mut child = node("child");
+    child.classes = vec!["child".into()];
+    let t = tree(vec![parent, child], vec![NO_PARENT, 0]);
+    let s = compute(std::slice::from_ref(&&sheet), &t, 1, &env).unwrap();
+    assert_eq!(get(&s, "color"), "red");
+}
+
+#[test]
+fn inline_styles_reject_malformed_declarations() {
+    // url() with a data URI keeps its colons and semicolons intact; junk
+    // parts are dropped instead of poisoning the cascade.
+    let case = stylesheet(".card { color: #fff }");
+    let sheet = case.sheet();
+    let env = Environment::default();
+    let mut n = node("card");
+    n.classes = vec!["card".into()];
+    n.style = Some("background: url(data:image/png;base64,AAA); ::bad; color".into());
+    let t = tree(vec![n], vec![NO_PARENT]);
+    let s = compute(std::slice::from_ref(&&sheet), &t, 0, &env).unwrap();
+    assert_eq!(get(&s, "color"), "#fff");
+    assert_eq!(
+        get(&s, "background"),
+        "url(data:image/png;base64,AAA)"
+    );
+}
+
+#[test]
 fn matches_selectors() {
     let css = r"
         box { color: red }
@@ -82,7 +162,7 @@ fn matches_selectors() {
 
     assert_eq!(
         get(
-            &compute(std::slice::from_ref(&sheet), &t, 0, &env).unwrap(),
+            &compute(std::slice::from_ref(&&sheet), &t, 0, &env).unwrap(),
             "color"
         ),
         "red"
@@ -90,21 +170,21 @@ fn matches_selectors() {
     // .a.b wins over .panel (higher specificity).
     assert_eq!(
         get(
-            &compute(std::slice::from_ref(&sheet), &t, 1, &env).unwrap(),
+            &compute(std::slice::from_ref(&&sheet), &t, 1, &env).unwrap(),
             "color"
         ),
         "#ff0"
     );
     assert_eq!(
         get(
-            &compute(std::slice::from_ref(&sheet), &t, 1, &env).unwrap(),
+            &compute(std::slice::from_ref(&&sheet), &t, 1, &env).unwrap(),
             "opacity"
         ),
         ".5"
     );
     assert_eq!(
         get(
-            &compute(std::slice::from_ref(&sheet), &t, 1, &env).unwrap(),
+            &compute(std::slice::from_ref(&&sheet), &t, 1, &env).unwrap(),
             "text-transform"
         ),
         "uppercase"
@@ -112,14 +192,14 @@ fn matches_selectors() {
     // [data-x^='pre'] also matched.
     assert_eq!(
         get(
-            &compute(std::slice::from_ref(&sheet), &t, 1, &env).unwrap(),
+            &compute(std::slice::from_ref(&&sheet), &t, 1, &env).unwrap(),
             "text-decoration"
         ),
         "underline"
     );
     assert_eq!(
         get(
-            &compute(std::slice::from_ref(&sheet), &t, 2, &env).unwrap(),
+            &compute(std::slice::from_ref(&&sheet), &t, 2, &env).unwrap(),
             "color"
         ),
         "#00f"
@@ -180,7 +260,7 @@ fn matches_combinators_and_structural_pseudos() {
     let env = Environment::default();
 
     // item 3: first-child; ancestor `.root:has(.special)` styles all items
-    let s3 = compute(std::slice::from_ref(&sheet), &t, 3, &env).unwrap();
+    let s3 = compute(std::slice::from_ref(&&sheet), &t, 3, &env).unwrap();
     assert_eq!(get(&s3, "color"), "#00f");
     assert_eq!(get(&s3, "cursor"), "pointer");
     assert_eq!(get(&s3, "text-align"), "center");
@@ -189,14 +269,14 @@ fn matches_combinators_and_structural_pseudos() {
     assert!(s3.get("font-weight").is_none());
 
     // item 4: nth-child(2), has previous sibling → bold
-    let s4 = compute(std::slice::from_ref(&sheet), &t, 4, &env).unwrap();
+    let s4 = compute(std::slice::from_ref(&&sheet), &t, 4, &env).unwrap();
     assert_eq!(get(&s4, "color"), "green");
     assert_eq!(get(&s4, "font-weight"), "700");
     assert_eq!(get(&s4, "opacity"), ".5");
     assert_eq!(get(&s4, "text-decoration"), "line-through");
 
     // item 5: last-child; :not(.skip) applies
-    let s5 = compute(std::slice::from_ref(&sheet), &t, 5, &env).unwrap();
+    let s5 = compute(std::slice::from_ref(&&sheet), &t, 5, &env).unwrap();
     assert_eq!(get(&s5, "color"), "#ff0");
     assert_eq!(get(&s5, "cursor"), "pointer");
 }
@@ -234,12 +314,12 @@ fn state_pseudos_match() {
     let env = Environment::default();
     assert_eq!(
         get(
-            &compute(std::slice::from_ref(&sheet), &t, 1, &env).unwrap(),
+            &compute(std::slice::from_ref(&&sheet), &t, 1, &env).unwrap(),
             "color"
         ),
         "#fff"
     );
-    let s2 = compute(std::slice::from_ref(&sheet), &t, 2, &env).unwrap();
+    let s2 = compute(std::slice::from_ref(&&sheet), &t, 2, &env).unwrap();
     assert_eq!(get(&s2, "color"), "#000");
     assert_eq!(get(&s2, "outline"), "1px");
     // app has no focus; focus-within on ancestors of focused node — app is ancestor, but we only computed leaf nodes; focus-within on btn itself also true
@@ -281,20 +361,20 @@ fn cascades_by_origin_layer_specificity_order() {
     let env = Environment::default();
 
     // Later author rule wins over earlier.
-    let s = compute(&[author.clone(), author_later.clone()], &t, 0, &env).unwrap();
+    let s = compute(&[&author, &author_later], &t, 0, &env).unwrap();
     assert_eq!(get(&s, "color"), "green");
     assert_eq!(get(&s, "padding"), "1px");
 
     // !important beats normal even from an earlier sheet.
-    let s = compute(&[author.clone(), author_important.clone()], &t, 0, &env).unwrap();
+    let s = compute(&[&author, &author_important], &t, 0, &env).unwrap();
     assert_eq!(get(&s, "color"), "#00f");
 
     // Unlayered beats layered.
-    let s = compute(&[author.clone(), layered.clone()], &t, 0, &env).unwrap();
+    let s = compute(&[&author, &layered], &t, 0, &env).unwrap();
     assert_eq!(get(&s, "color"), "red");
 
     // User !important beats author !important.
-    let s = compute(&[author_important.clone(), important_user.clone()], &t, 0, &env).unwrap();
+    let s = compute(&[&author_important, &important_user], &t, 0, &env).unwrap();
     assert_eq!(get(&s, "color"), "#fff");
 
     // Specificity: #id beats .class.
@@ -309,7 +389,7 @@ fn cascades_by_origin_layer_specificity_order() {
         }],
         vec![NO_PARENT],
     );
-    let s = compute(&[specific], &t2, 0, &env).unwrap();
+    let s = compute(&[&specific], &t2, 0, &env).unwrap();
     assert_eq!(get(&s, "color"), "purple");
 }
 
@@ -345,19 +425,19 @@ fn inherits_and_resolves_custom_properties() {
     );
     let env = Environment::default();
 
-    let s0 = compute(std::slice::from_ref(&sheet), &t, 0, &env).unwrap();
+    let s0 = compute(std::slice::from_ref(&&sheet), &t, 0, &env).unwrap();
     assert_eq!(get(&s0, "color"), "oklch(70% .2 40)");
     assert_eq!(get(&s0, "--brand"), "oklch(70% .2 40)");
 
     // color inherits from root; --gap overridden locally; border-color via var
-    let s1 = compute(std::slice::from_ref(&sheet), &t, 1, &env).unwrap();
+    let s1 = compute(std::slice::from_ref(&&sheet), &t, 1, &env).unwrap();
     assert_eq!(get(&s1, "color"), "oklch(70% .2 40)");
     assert_eq!(get(&s1, "border-color"), "oklch(70% .2 40)");
     assert_eq!(get(&s1, "margin"), "4px");
     assert_eq!(get(&s1, "--gap"), "4px");
 
     // explicit inherit keyword pulls parent's border-color
-    let s2 = compute(std::slice::from_ref(&sheet), &t, 2, &env).unwrap();
+    let s2 = compute(std::slice::from_ref(&&sheet), &t, 2, &env).unwrap();
     assert_eq!(get(&s2, "border-color"), "oklch(70% .2 40)");
     assert_eq!(get(&s2, "--gap"), "4px");
 }
@@ -394,21 +474,21 @@ fn var_fallbacks_and_cycles() {
     let env = Environment::default();
     assert_eq!(
         get(
-            &compute(std::slice::from_ref(&sheet), &t, 0, &env).unwrap(),
+            &compute(std::slice::from_ref(&&sheet), &t, 0, &env).unwrap(),
             "color"
         ),
         "red"
     );
     // Cycle → declaration dropped.
     assert!(
-        compute(std::slice::from_ref(&sheet), &t, 1, &env)
+        compute(std::slice::from_ref(&&sheet), &t, 1, &env)
             .unwrap()
             .get("color")
             .is_none()
     );
     // Missing without fallback → dropped.
     assert!(
-        compute(std::slice::from_ref(&sheet), &t, 2, &env)
+        compute(std::slice::from_ref(&&sheet), &t, 2, &env)
             .unwrap()
             .get("color")
             .is_none()
@@ -461,7 +541,7 @@ fn evaluates_media_container_supports() {
     };
     // Both the 400px rule and the dark-scheme rule match; the dark rule is
     // later in source order, so it wins.
-    let s1 = compute(std::slice::from_ref(&sheet), &t, 1, &env).unwrap();
+    let s1 = compute(std::slice::from_ref(&&sheet), &t, 1, &env).unwrap();
     assert_eq!(get(&s1, "color"), "#fff");
 
     // With a light scheme only the viewport rule matches.
@@ -470,13 +550,13 @@ fn evaluates_media_container_supports() {
         viewport_height: Some(800.0),
         ..Default::default()
     };
-    let s1 = compute(std::slice::from_ref(&sheet), &t, 1, &light).unwrap();
+    let s1 = compute(std::slice::from_ref(&&sheet), &t, 1, &light).unwrap();
     assert_eq!(get(&s1, "color"), "red");
 
-    let s2 = compute(std::slice::from_ref(&sheet), &t, 2, &env).unwrap();
+    let s2 = compute(std::slice::from_ref(&&sheet), &t, 2, &env).unwrap();
     assert!(s2.get("color").is_none(), "no container ancestor yet");
 
-    let s3 = compute(std::slice::from_ref(&sheet), &t, 3, &env).unwrap();
+    let s3 = compute(std::slice::from_ref(&&sheet), &t, 3, &env).unwrap();
     assert_eq!(get(&s3, "color"), "oklch(70% .2 40)");
 }
 
@@ -510,7 +590,7 @@ fn container_queries_evaluate_against_ancestors() {
         vec![NO_PARENT, 0],
     );
     let env = Environment::default();
-    let s = compute(std::slice::from_ref(&sheet), &t, 1, &env).unwrap();
+    let s = compute(std::slice::from_ref(&&sheet), &t, 1, &env).unwrap();
     assert_eq!(get(&s, "color"), "#00f");
     assert!(s.get("font-weight").is_none());
 
@@ -531,7 +611,7 @@ fn container_queries_evaluate_against_ancestors() {
         ],
         vec![NO_PARENT, 0],
     );
-    let s = compute(std::slice::from_ref(&sheet), &t2, 1, &env).unwrap();
+    let s = compute(std::slice::from_ref(&&sheet), &t2, 1, &env).unwrap();
     assert_eq!(get(&s, "color"), "red");
 }
 
@@ -561,7 +641,7 @@ fn dark_scheme_and_state_via_nesting() {
         color_scheme: bombshell_css_core::ColorScheme::Dark,
         ..Default::default()
     };
-    let s = compute(std::slice::from_ref(&sheet), &t, 0, &env).unwrap();
+    let s = compute(std::slice::from_ref(&&sheet), &t, 0, &env).unwrap();
     // :hover and dark-mode rules both match; dark rule is later in source order.
     assert_eq!(get(&s, "color"), "#fff");
 }

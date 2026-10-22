@@ -1,4 +1,5 @@
-// @bomb.sh/css — bindings and runtime for the bombshell:css component.
+// @bomb.sh/css — bindings and runtime for the bombshell:css component
+// (WIT world `bombshell:css@0.4.0`).
 //
 // - `compiled` is the freestanding wasm module (brotli+Z85 embedded; the
 //   module is decoded eagerly at import and ready for synchronous
@@ -10,6 +11,8 @@
 //   decoded `version`/`rules`.
 // - `compute(sheet, ...)` / `computeTree(sheet, ...)` / `release(sheet)` are
 //   free-function alternatives to the Sheet methods.
+// - `createEngine()` hosts any number of sheets, cascaded natively by the
+//   component (see engine.js).
 // - For hosts that ship their own artifact: `loadCssComponent(bytes)` /
 //   `loadCssComponentFromModule(module)` return the raw ABI object
 //   (`compile`/`prepare`/`compute`/`computeTree`/`release`/`raw`).
@@ -39,11 +42,11 @@ export function compile(css, origin = 2) {
 }
 
 export function compute(sheet, nodes, parents, target, env) {
-	return component.compute(handleOf(sheet), nodes, parents, target, env);
+	return component.compute([handleOf(sheet)], nodes, parents, target, env);
 }
 
 export function computeTree(sheet, nodes, parents, env) {
-	return component.computeTree(handleOf(sheet), nodes, parents, env);
+	return component.computeTree([handleOf(sheet)], nodes, parents, env);
 }
 
 export function release(sheet) {
@@ -94,11 +97,11 @@ export class Sheet {
 	}
 
 	compute(nodes, parents, target, env) {
-		return component.compute(this.handle, nodes, parents, target, env);
+		return component.compute([this.handle], nodes, parents, target, env);
 	}
 
 	computeTree(nodes, parents, env) {
-		return component.computeTree(this.handle, nodes, parents, env);
+		return component.computeTree([this.handle], nodes, parents, env);
 	}
 
 	release() {
@@ -124,4 +127,4 @@ export class Sheet {
 	#decoded = null;
 }
 
-export { Engine, createEngine, parseInlineStyle } from './engine.js';
+export { Engine, createEngine } from './engine.js';

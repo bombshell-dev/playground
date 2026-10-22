@@ -1,4 +1,4 @@
-package bombshell:css@0.3.0;
+package bombshell:css@0.4.0;
 
 /// Shared record types crossing the CSS boundary.
 interface types {
@@ -50,6 +50,11 @@ interface types {
     width: option<f32>,
     /// Layout height in CSS px, if known.
     height: option<f32>,
+    /// Inline style declarations, as authored in the element's `style`
+    /// attribute (e.g. `color: red; --x: 1`). Parsed by the cascade: author
+    /// origin, above every stylesheet declaration of the same importance,
+    /// below author-`!important` rules.
+    style: option<string>,
   }
 
   /// Rendering environment consulted by `@media` evaluation. Unknown
@@ -92,12 +97,13 @@ interface stylesheet {
   prepare: func(ir: list<u8>) -> option<u32>;
 
   /// Resolve the computed style for the node at `target`. The host supplies
+  /// the prepared sheets in cascade order (later wins at equal weight) plus
   /// the full flat tree snapshot (nodes in document order plus parent
   /// indices) and the environment. Ancestors are cascaded automatically for
   /// inheritance, custom properties, and container lookups. Designed for
-  /// per-frame use: the parsed stylesheet is reused across calls.
+  /// per-frame use: the parsed stylesheets are reused across calls.
   compute: func(
-    sheet: u32,
+    sheets: list<u32>,
     nodes: list<node>,
     parents: list<u32>,
     target: u32,
@@ -109,7 +115,7 @@ interface stylesheet {
   /// and descendants inherit computed values. Returns one entry per node,
   /// index-aligned with `nodes`. This is the per-frame entry point.
   compute-tree: func(
-    sheet: u32,
+    sheets: list<u32>,
     nodes: list<node>,
     parents: list<u32>,
     env: environment,

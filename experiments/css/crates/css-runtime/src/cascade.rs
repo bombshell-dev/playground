@@ -12,10 +12,11 @@ use crate::values::resolve_vars;
 use bombshell_css_core::{CompiledStylesheet, ContainerQuery, Declaration, Origin, TreeSnapshot};
 use rustc_hash::FxHashMap as HashMap;
 
-/// Property map for one element: keys are canonical IR property names;
-/// values borrow the IR until a `var()` substitution or inheritance
-/// materializes something new.
-pub type StyleMap<'ir> = HashMap<&'ir str, Cow<'ir, str>>;
+/// Property map for one element: keys are canonical IR property names
+/// (borrowed) or inline-style names (owned); values borrow the IR until a
+/// `var()` substitution, inheritance, or an inline declaration materializes
+/// something new.
+pub type StyleMap<'ir> = HashMap<Cow<'ir, str>, Cow<'ir, str>>;
 
 /// Properties that inherit by default (CSS-wide custom properties also
 /// inherit unconditionally).
@@ -223,15 +224,7 @@ impl<'ir> Stylesheet<'ir> {
     }
 
     fn layer_rank(&self, layer: Option<&[String]>) -> u32 {
-        match layer {
-            None => u32::MAX,
-            Some(path) => self
-                .layer_order
-                .iter()
-                .position(|p| p.as_slice() == path)
-                .map(|p| p as u32)
-                .unwrap_or(u32::MAX - 1),
-        }
+        layer_rank(self.layer_order, layer)
     }
 }
 
@@ -241,8 +234,11 @@ impl<'ir> Stylesheet<'ir> {
 /// insertion sort costs nothing and behaves identically.
 fn sort_by<T>(v: &mut [T], mut less: impl FnMut(&T, &T) -> bool) {
     for i in 1..v.len() {
+        // The element being inserted is `v[i]`; compare it against the
+        // sorted prefix. Comparing `v[j]` instead would test the wrong pair
+        // as soon as the key moves more than one slot.
         let mut j = i;
-        while j > 0 && less(&v[j], &v[j - 1]) {
+        while j > 0 && less(&v[i], &v[j - 1]) {
             j -= 1;
         }
         if j != i {
@@ -255,20 +251,21 @@ fn sort_by<T>(v: &mut [T], mut less: impl FnMut(&T, &T) -> bool) {
 /// values borrow until substitution produces something new.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ComputedStyle<'ir> {
-    /// (property name, computed value), sorted by name.
-    pub declarations: Vec<(&'ir str, Cow<'ir, str>)>,
+    /// (property name, computed value), sorted by name. Names borrow the IR
+    /// unless they came from an inline style.
+    pub declarations: Vec<(Cow<'ir, str>, Cow<'ir, str>)>,
 }
 
 impl<'ir> ComputedStyle<'ir> {
     pub fn get(&self, name: &str) -> Option<&str> {
         self.declarations
             .iter()
-            .find(|(n, _)| *n == name)
+            .find(|(n, _)| n.as_ref() == name)
             .map(|(_, v)| v.as_ref())
     }
 
     pub(crate) fn from_map(map: StyleMap<'ir>) -> ComputedStyle<'ir> {
-        let mut declarations: Vec<(&'ir str, Cow<'ir, str>)> = map.into_iter().collect();
+        let mut declarations: Vec<(Cow<'ir, str>, Cow<'ir, str>)> = map.into_iter().collect();
         sort_by(&mut declarations, |a, b| a < b);
         ComputedStyle { declarations }
     }
@@ -279,7 +276,7 @@ impl<'ir> ComputedStyle<'ir> {
 /// The full ancestor chain is cascaded so container lookups, inheritance,
 /// and style queries see computed values.
 pub fn compute<'ir>(
-    sheets: &[Stylesheet<'ir>],
+    sheets: &[&Stylesheet<'ir>],
     tree: &TreeSnapshot,
     target: usize,
     env: &bombshell_css_core::Environment,
@@ -301,7 +298,7 @@ pub fn compute<'ir>(
 /// restricts which entries are resolved (an empty list resolves every
 /// node). Unresolved entries are empty styles.
 pub fn compute_tree<'ir>(
-    sheets: &[Stylesheet<'ir>],
+    sheets: &[&Stylesheet<'ir>],
     tree: &TreeSnapshot,
     env: &bombshell_css_core::Environment,
     targets: &[usize],
@@ -321,6 +318,29 @@ pub fn compute_tree<'ir>(
     // Resolved maps per node, kept so descendants can inherit computed
     // values; the sorted `ComputedStyle` form is built only for output.
     let mut maps: Vec<Option<StyleMap<'ir>>> = Vec::with_capacity(count);
+
+    // `@layer` order is a document-wide property: layers rank by first
+    // appearance across all sheets in cascade order. With a single sheet
+    // this is exactly that sheet's own order — no allocation, and the
+    // zero-allocation frame-loop claim holds for the common case.
+    let merged: Vec<Vec<String>> = if sheets.len() == 1 {
+        Vec::new()
+    } else {
+        let mut merged: Vec<Vec<String>> = Vec::new();
+        for sheet in sheets {
+            for path in sheet.layer_order {
+                if !merged.iter().any(|existing| *existing == *path) {
+                    merged.push(path.clone());
+                }
+            }
+        }
+        merged
+    };
+    let layers: &[Vec<String>] = if sheets.len() == 1 {
+        sheets[0].layer_order
+    } else {
+        &merged
+    };
     for index in 0..count {
         if !wanted[index] {
             maps.push(None);
@@ -353,13 +373,13 @@ pub fn compute_tree<'ir>(
             current = tree.parent_of(ancestor);
         }
 
-        let mut map: StyleMap<'ir> = cascade(sheets, tree, index, env, &containers);
+        let mut map: StyleMap<'ir> = cascade(sheets, tree, index, env, &containers, layers);
         apply_css_wide_keywords(&mut map, &inherited);
         for (name, value) in &inherited {
             let inherits =
-                name.starts_with("--") || INHERITED_PROPERTIES.iter().any(|p| *p == *name);
-            if inherits && !map.contains_key(*name) {
-                map.insert(*name, value.clone());
+                name.starts_with("--") || INHERITED_PROPERTIES.iter().any(|p| *p == name.as_ref());
+            if inherits && !map.contains_key(name) {
+                map.insert(name.clone(), value.clone());
             }
         }
         // var() substitution is part of computing the value: descendants
@@ -374,6 +394,7 @@ pub fn compute_tree<'ir>(
 }
 
 fn computed_container_type(map: &StyleMap<'_>) -> Option<ContainerType> {
+    // `map.get` accepts `&str` via `Borrow<str>` on the `Cow` key.
     match map.get("container-type").map(|v| v.as_ref()) {
         Some("size") => Some(ContainerType::Size),
         Some("inline-size") => Some(ContainerType::InlineSize),
@@ -385,12 +406,12 @@ fn computed_container_type(map: &StyleMap<'_>) -> Option<ContainerType> {
 /// Resolve var() references in every non-custom declaration (custom
 /// properties keep their raw values until referenced).
 fn resolve_vars_in_map(map: &mut StyleMap<'_>) {
-    let names: Vec<&str> = map.keys().copied().collect();
+    let names: Vec<Cow<'_, str>> = map.keys().cloned().collect();
     for name in names {
         if name.starts_with("--") {
             continue;
         }
-        if let Some(value) = map.get(name) {
+        if let Some(value) = map.get(name.as_ref()) {
             if value.contains("var(") {
                 match resolve_vars(value, map) {
                     Some(resolved) => {
@@ -398,7 +419,7 @@ fn resolve_vars_in_map(map: &mut StyleMap<'_>) {
                     }
                     None => {
                         // Invalid at computed-value time.
-                        map.remove(name);
+                        map.remove(name.as_ref());
                     }
                 }
             }
@@ -408,37 +429,38 @@ fn resolve_vars_in_map(map: &mut StyleMap<'_>) {
 
 /// Handle `inherit`, `initial`, `unset`, and `revert` keywords.
 fn apply_css_wide_keywords<'ir>(map: &mut StyleMap<'ir>, inherited: &StyleMap<'ir>) {
-    let names: Vec<&str> = map.keys().copied().collect();
+    let names: Vec<Cow<'ir, str>> = map.keys().cloned().collect();
     for name in names {
-        let keyword = map.get(name).map(|v| v.trim()).unwrap_or_default();
-        let inherits = name.starts_with("--") || INHERITED_PROPERTIES.iter().any(|p| *p == name);
+        let keyword = map.get(name.as_ref()).map(|v| v.trim()).unwrap_or_default();
+        let inherits =
+            name.starts_with("--") || INHERITED_PROPERTIES.iter().any(|p| *p == name.as_ref());
         match keyword {
-            "inherit" => match inherited.get(name) {
+            "inherit" => match inherited.get(name.as_ref()) {
                 Some(value) => {
                     map.insert(name, value.clone());
                 }
                 None => {
-                    map.remove(name);
+                    map.remove(name.as_ref());
                 }
             },
             "unset" => {
                 if inherits {
-                    match inherited.get(name) {
+                    match inherited.get(name.as_ref()) {
                         Some(value) => {
                             map.insert(name, value.clone());
                         }
                         None => {
-                            map.remove(name);
+                            map.remove(name.as_ref());
                         }
                     }
                 } else {
-                    map.remove(name);
+                    map.remove(name.as_ref());
                 }
             }
             // No initial-value table yet: `initial` and `revert` drop the
             // declaration.
             "initial" | "revert" => {
-                map.remove(name);
+                map.remove(name.as_ref());
             }
             _ => {}
         }
@@ -447,20 +469,22 @@ fn apply_css_wide_keywords<'ir>(map: &mut StyleMap<'ir>, inherited: &StyleMap<'i
 
 /// Cascade one node: condition-filtered, selector-matched rules, sorted by
 /// origin/importance, layer, specificity, then source order; last write per
-/// property wins.
+/// property wins. Inline style declarations slot in at their cascade
+/// boundaries (see [`parse_inline_style`]).
 fn cascade<'ir>(
-    sheets: &[Stylesheet<'ir>],
+    sheets: &[&Stylesheet<'ir>],
     tree: &TreeSnapshot,
     node_index: usize,
     env: &bombshell_css_core::Environment,
     containers: &[ContainerAncestor],
+    layers: &[Vec<String>],
 ) -> StyleMap<'ir> {
     let Some(element) = crate::element::MatchElement::new(tree, node_index) else {
         return HashMap::default();
     };
 
-    struct Candidate<'a, 'ir> {
-        rule: &'a CascadeRule<'ir>,
+    struct Candidate<'a> {
+        declaration: &'a Declaration,
         origin_rank: u32,
         layer_rank: u32,
         specificity: u32,
@@ -487,9 +511,9 @@ fn cascade<'ir>(
             }
             for declaration in rule.declarations {
                 candidates.push(Candidate {
-                    rule,
+                    declaration,
                     origin_rank: origin_importance_rank(sheet.origin, declaration.important),
-                    layer_rank: sheet.layer_rank(rule.layer),
+                    layer_rank: layer_rank(layers, rule.layer),
                     specificity: rule.specificity,
                     order: (sheet.sheet_index, rule.order),
                 });
@@ -502,18 +526,140 @@ fn cascade<'ir>(
             < (b.origin_rank, b.layer_rank, b.specificity, b.order)
     });
 
+    // Inline styles are author-origin declarations with precedence above
+    // every stylesheet declaration of the same importance: inline-normal
+    // slots in after all normal author rules, inline-`!important` after all
+    // author-`!important` rules. Both still lose to higher tiers (user /
+    // user-agent `!important`). Writing in ascending order means the last
+    // write per property wins.
+    let (inline_normal, inline_important) = tree.nodes[node_index]
+        .style
+        .as_deref()
+        .map(parse_inline_style)
+        .unwrap_or_default();
+
     // Ascending order: later candidates overwrite earlier ones, so the map
     // ends up holding the winning value per property.
     let mut winners: StyleMap<'ir> = HashMap::default();
-    for candidate in candidates {
-        for declaration in candidate.rule.declarations {
-            winners.insert(
-                declaration.name.as_str(),
-                Cow::Borrowed(declaration.value.as_str()),
-            );
+    let mut inline_normal_pending = !inline_normal.is_empty();
+    let mut inline_important_pending = !inline_important.is_empty();
+    for candidate in &candidates {
+        if inline_normal_pending && candidate.origin_rank >= 3 {
+            for (name, value) in &inline_normal {
+                winners.insert(Cow::Owned(name.clone()), Cow::Owned(value.clone()));
+            }
+            inline_normal_pending = false;
+        }
+        if inline_important_pending && candidate.origin_rank >= 4 {
+            for (name, value) in &inline_important {
+                winners.insert(Cow::Owned(name.clone()), Cow::Owned(value.clone()));
+            }
+            inline_important_pending = false;
+        }
+        let declaration = candidate.declaration;
+        winners.insert(
+            Cow::Borrowed(declaration.name.as_str()),
+            Cow::Borrowed(declaration.value.as_str()),
+        );
+    }
+    if inline_normal_pending {
+        for (name, value) in &inline_normal {
+            winners.insert(Cow::Owned(name.clone()), Cow::Owned(value.clone()));
+        }
+    }
+    if inline_important_pending {
+        for (name, value) in &inline_important {
+            winners.insert(Cow::Owned(name.clone()), Cow::Owned(value.clone()));
         }
     }
     winners
+}
+
+/// `@layer` order across sheets: layers rank by first appearance across all
+/// sheets in the order the host supplies them (later layers win). Unlayered
+/// ranks above every layer.
+fn layer_rank(layers: &[Vec<String>], layer: Option<&[String]>) -> u32 {
+    match layer {
+        None => u32::MAX,
+        Some(path) => layers
+            .iter()
+            .position(|p| p.as_slice() == path)
+            .map(|p| p as u32)
+            .unwrap_or(u32::MAX - 1),
+    }
+}
+
+/// Parse an inline `style` attribute into (normal, important) declaration
+/// lists, in authorship order. Splits on `;` and the first `:` outside
+/// parens, brackets, and quotes, so values like `url(data:image/png;base64,…)`
+/// survive. Names are lowercased; values pass through un-canonicalized (the
+/// compiler never sees them).
+fn parse_inline_style(style: &str) -> (Vec<(String, String)>, Vec<(String, String)>) {
+    let mut normal: Vec<(String, String)> = Vec::new();
+    let mut important: Vec<(String, String)> = Vec::new();
+    for part in top_level_split(style, ';') {
+        let Some(sep) = top_level_index(part, ':') else {
+            continue;
+        };
+        let name = part[..sep].trim().to_ascii_lowercase();
+        let value = part[sep + 1..].trim();
+        let Some((value, is_important)) = strip_important(value) else {
+            continue;
+        };
+        if name.is_empty() || value.is_empty() {
+            continue;
+        }
+        if is_important {
+            important.push((name, value.to_string()));
+        } else {
+            normal.push((name, value.to_string()));
+        }
+    }
+    (normal, important)
+}
+
+/// Strip a trailing case-insensitive `!important`; returns `None` when the
+/// declaration is empty after trimming.
+fn strip_important(value: &str) -> Option<(&str, bool)> {
+    let lower = value.to_ascii_lowercase();
+    if let Some(pos) = lower.rfind("!important") {
+        if lower[pos + "!important".len()..].trim().is_empty() {
+            let trimmed = value[..pos].trim_end();
+            return Some((trimmed, true));
+        }
+    }
+    (!value.is_empty()).then_some((value, false))
+}
+
+/// Split on every `sep` that sits outside parens, brackets, and quotes.
+fn top_level_split(style: &str, sep: char) -> Vec<&str> {
+    let mut out: Vec<&str> = Vec::new();
+    let mut depth = 0usize;
+    let mut quote: Option<char> = None;
+    let mut start = 0usize;
+    for (index, ch) in style.char_indices() {
+        match ch {
+            '(' | '[' if quote.is_none() => depth += 1,
+            ')' | ']' if quote.is_none() => depth = depth.saturating_sub(1),
+            '\'' | '"' if quote.is_none() => quote = Some(ch),
+            c if Some(c) == quote => quote = None,
+            _ => {}
+        }
+        if ch == sep && quote.is_none() && depth == 0 {
+            out.push(&style[start..index]);
+            start = index + ch.len_utf8();
+        }
+    }
+    out.push(&style[start..]);
+    out
+}
+
+/// Index of the first `sep` outside parens, brackets, and quotes.
+fn top_level_index(style: &str, sep: char) -> Option<usize> {
+    top_level_split(style, sep)
+        .first()
+        .map(|head| head.len())
+        .filter(|&len| len < style.len())
 }
 
 /// Cascade priority within (origin, importance), ascending.

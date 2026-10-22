@@ -69,7 +69,7 @@ mod guest {
         }
 
         fn compute(
-            sheet: u32,
+            sheets: Vec<u32>,
             nodes: Vec<WitNode>,
             parents: Vec<u32>,
             target: u32,
@@ -85,15 +85,16 @@ mod guest {
 
             SHEETS.with(|cell| -> Vec<(String, String)> {
                 let slots = cell.borrow();
-                let Some(entry) = slots.get(sheet as usize).and_then(|slot| slot.as_ref()) else {
-                    return Vec::new();
-                };
-                let style = bombshell_css_runtime::compute(
-                    std::slice::from_ref(&entry.sheet),
-                    &tree,
-                    target,
-                    &environment,
-                );
+                let loaded: Vec<&bombshell_css_runtime::Stylesheet> = sheets
+                    .iter()
+                    .filter_map(|&sheet| {
+                        slots
+                            .get(sheet as usize)
+                            .and_then(|slot| slot.as_ref())
+                            .map(|entry| &entry.sheet)
+                    })
+                    .collect();
+                let style = bombshell_css_runtime::compute(&loaded, &tree, target, &environment);
                 // Names borrow the IR and values borrow until a var()
                 // substitution; the canonical-ABI lowering needs owned text.
                 style
@@ -109,7 +110,7 @@ mod guest {
         }
 
         fn compute_tree(
-            sheet: u32,
+            sheets: Vec<u32>,
             nodes: Vec<WitNode>,
             parents: Vec<u32>,
             env: WitEnvironment,
@@ -121,15 +122,16 @@ mod guest {
 
             SHEETS.with(|cell| -> Vec<Vec<(String, String)>> {
                 let slots = cell.borrow();
-                let Some(entry) = slots.get(sheet as usize).and_then(|slot| slot.as_ref()) else {
-                    return Vec::new();
-                };
-                bombshell_css_runtime::cascade::compute_tree(
-                    std::slice::from_ref(&entry.sheet),
-                    &tree,
-                    &environment,
-                    &[],
-                )
+                let loaded: Vec<&bombshell_css_runtime::Stylesheet> = sheets
+                    .iter()
+                    .filter_map(|&sheet| {
+                        slots
+                            .get(sheet as usize)
+                            .and_then(|slot| slot.as_ref())
+                            .map(|entry| &entry.sheet)
+                    })
+                    .collect();
+                bombshell_css_runtime::cascade::compute_tree(&loaded, &tree, &environment, &[])
                 .into_iter()
                 .map(|style| {
                     style
@@ -210,6 +212,7 @@ mod guest {
                 active: n.state.contains(NodeState::ACTIVE),
                 width: n.width,
                 height: n.height,
+                style: n.style,
             })
             .collect();
         Ok(TreeSnapshot { nodes, parents })

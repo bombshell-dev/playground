@@ -156,7 +156,7 @@ engine.addSheet('.card { color: #0f0 }');
 engine.addSheet('.card { color: #f00 }');
 assertColor(colorOf(engine.compute(cardOnly, cardRoot, 0, env)), '#f00', 'sheet order');
 
-// Lazy recompile on edit; removal reverts to the prior cascade.
+// Each sheet compiles once; removal reverts to the prior cascade.
 const whiteId = engine.addSheet('.card { color: #123456 }');
 assertColor(colorOf(engine.compute(cardOnly, cardRoot, 0, env)), '#123456', 'added sheet');
 if (engine.removeSheet(whiteId) !== true) throw new Error('removeSheet failed');
@@ -191,7 +191,24 @@ assertColor(colorOf(noShield.compute(inlineNode, cardRoot, 0, env)), 'blue', 'in
 if (noShield.compute(inlineNode, cardRoot, 0, env).some(([n, v]) => n === 'border' && v !== 'none')) {
 	throw new Error('inline border not applied');
 }
+// An !important in a rule that does NOT match the node must not shield:
+// the inline style still wins (impossible under the old JS-side merge).
+const wrongShield = createEngine();
+wrongShield.addSheet('.other { color: #f00 !important }');
+wrongShield.addSheet('.card { color: #fff }');
+assertColor(colorOf(wrongShield.compute(inlineNode, cardRoot, 0, env)), 'blue', 'non-matching !important does not shield');
+// Inline declarations seed inheritance: the child inherits the parent's
+// inline-overridden custom property.
+const inheritEngine = createEngine();
+inheritEngine.addSheet('.child { color: var(--brand) }');
+const inheritTree = [
+	{ tag: 'root', style: '--brand: red' },
+	{ tag: 'child', classes: ['child'] },
+];
+assertColor(colorOf(inheritEngine.computeTree(inheritTree, [NO_PARENT, 0], env)[1]), 'red', 'inline custom property inherits');
 noShield.release();
+wrongShield.release();
+inheritEngine.release();
 
 // Engine dispose releases the sheet; a later compute lazily re-prepares.
 inlineEngine[Symbol.dispose]();

@@ -75,11 +75,11 @@ fn nesting_case_styles_the_tree() {
         vec![NO_PARENT, 0, 0],
     );
     let env = Environment::default();
-    let s = compute(std::slice::from_ref(&sheet), &t, 1, &env).unwrap();
+    let s = compute(std::slice::from_ref(&&sheet), &t, 1, &env).unwrap();
     assert_eq!(get(&s, "font-weight"), "700");
     // `color` inherits from .card; `.card .body` does not apply to the title.
     assert_eq!(get(&s, "color"), "oklch(70% .2 40)");
-    let s = compute(std::slice::from_ref(&sheet), &t, 2, &env).unwrap();
+    let s = compute(std::slice::from_ref(&&sheet), &t, 2, &env).unwrap();
     // lightningcss canonicalizes the static color-mix() to a resolved oklab.
     let color = get(&s, "color");
     assert!(
@@ -104,14 +104,14 @@ fn level4_selectors_match() {
     );
     let env = Environment::default();
     // .row:has(> .col) matches the row.
-    let s = compute(std::slice::from_ref(&sheet), &t, 0, &env).unwrap();
+    let s = compute(std::slice::from_ref(&&sheet), &t, 0, &env).unwrap();
     assert_eq!(get(&s, "outline"), "1px");
     // nth-child(odd of .tagged): node 2 is the 1st tagged child → matches.
-    let s = compute(std::slice::from_ref(&sheet), &t, 2, &env).unwrap();
+    let s = compute(std::slice::from_ref(&&sheet), &t, 2, &env).unwrap();
     assert_eq!(get(&s, "color"), "#ff0");
     // node 3 is the 3rd child → nth-child(-n+3) applies (blue outranks it on
     // `color` specificity, so the corpus rule uses a distinct property).
-    let s = compute(std::slice::from_ref(&sheet), &t, 3, &env).unwrap();
+    let s = compute(std::slice::from_ref(&&sheet), &t, 3, &env).unwrap();
     assert_eq!(get(&s, "text-indent"), "4px");
 }
 
@@ -129,7 +129,7 @@ fn media_ranges_and_or_lists() {
     // all match at 600px; later source order wins.
     assert_eq!(
         get(
-            &compute(std::slice::from_ref(&sheet), &t, 0, &env).unwrap(),
+            &compute(std::slice::from_ref(&&sheet), &t, 0, &env).unwrap(),
             "color"
         ),
         "purple"
@@ -140,7 +140,7 @@ fn media_ranges_and_or_lists() {
     let interval = interval.sheet();
     assert_eq!(
         get(
-            &compute(std::slice::from_ref(&interval), &t, 0, &env).unwrap(),
+            &compute(std::slice::from_ref(&&interval), &t, 0, &env).unwrap(),
             "color"
         ),
         "red"
@@ -150,7 +150,7 @@ fn media_ranges_and_or_lists() {
         ..Default::default()
     };
     assert!(
-        compute(std::slice::from_ref(&interval), &t, 0, &small)
+        compute(std::slice::from_ref(&&interval), &t, 0, &small)
             .unwrap()
             .get("color")
             .is_none()
@@ -160,7 +160,7 @@ fn media_ranges_and_or_lists() {
         ..Default::default()
     };
     assert_eq!(
-        get(&compute(&[interval], &t, 0, &edge).unwrap(), "color"),
+        get(&compute(&[&interval], &t, 0, &edge).unwrap(), "color"),
         "red"
     );
 
@@ -172,7 +172,7 @@ fn media_ranges_and_or_lists() {
     };
     assert_eq!(
         get(
-            &compute(std::slice::from_ref(&sheet), &t, 0, &small_height).unwrap(),
+            &compute(std::slice::from_ref(&&sheet), &t, 0, &small_height).unwrap(),
             "color"
         ),
         "purple"
@@ -192,7 +192,7 @@ fn dark_scheme_reaches_the_runtime() {
     // and appears later in source order.
     assert_eq!(
         get(
-            &compute(std::slice::from_ref(&sheet), &t, 0, &env).unwrap(),
+            &compute(std::slice::from_ref(&&sheet), &t, 0, &env).unwrap(),
             "color"
         ),
         "orange"
@@ -203,7 +203,7 @@ fn dark_scheme_reaches_the_runtime() {
     let dark = dark.sheet();
     assert_eq!(
         get(
-            &compute(std::slice::from_ref(&dark), &t, 0, &env).unwrap(),
+            &compute(std::slice::from_ref(&&dark), &t, 0, &env).unwrap(),
             "color"
         ),
         "green"
@@ -227,7 +227,7 @@ fn container_corpus_case() {
         vec![NO_PARENT, 0],
     );
     let env = Environment::default();
-    let s = compute(std::slice::from_ref(&sheet), &t, 1, &env).unwrap();
+    let s = compute(std::slice::from_ref(&&sheet), &t, 1, &env).unwrap();
     // inline-size 800 > 45em (720px) → red; width 800 > 200 → the anonymous
     // container query would win too but it targets `(width < 200px)` → no.
     assert_eq!(get(&s, "color"), "red");
@@ -247,12 +247,12 @@ fn var_case_resolves_through_the_tree() {
         vec![NO_PARENT, 0, 0, 0],
     );
     let env = Environment::default();
-    let s = compute(std::slice::from_ref(&sheet), &t, 1, &env).unwrap();
+    let s = compute(std::slice::from_ref(&&sheet), &t, 1, &env).unwrap();
     assert_eq!(get(&s, "color"), "oklch(70% .2 40)");
     assert_eq!(get(&s, "margin"), "8px");
-    let s = compute(std::slice::from_ref(&sheet), &t, 2, &env).unwrap();
+    let s = compute(std::slice::from_ref(&&sheet), &t, 2, &env).unwrap();
     assert_eq!(get(&s, "padding"), "2px");
-    let s = compute(std::slice::from_ref(&sheet), &t, 3, &env).unwrap();
+    let s = compute(std::slice::from_ref(&&sheet), &t, 3, &env).unwrap();
     assert_eq!(get(&s, "color"), "oklch(70% .2 40)");
 }
 
@@ -265,7 +265,7 @@ fn layer_order_matches_first_appearance() {
     // Unlayered rule beats both layered rules.
     assert_eq!(
         get(
-            &compute(std::slice::from_ref(&sheet), &t, 0, &env).unwrap(),
+            &compute(std::slice::from_ref(&&sheet), &t, 0, &env).unwrap(),
             "color"
         ),
         "#00f"
@@ -280,7 +280,7 @@ fn important_beats_source_order() {
     let env = Environment::default();
     assert_eq!(
         get(
-            &compute(std::slice::from_ref(&sheet), &t, 0, &env).unwrap(),
+            &compute(std::slice::from_ref(&&sheet), &t, 0, &env).unwrap(),
             "color"
         ),
         "red"
@@ -297,10 +297,10 @@ fn hex_colors_reach_computed_styles() {
     );
     let env = Environment::default();
     // 3-digit hex on `color`…
-    let a = compute(std::slice::from_ref(&sheet), &t, 0, &env).unwrap();
+    let a = compute(std::slice::from_ref(&&sheet), &t, 0, &env).unwrap();
     assert_eq!(get(&a, "color"), "#fff");
     // …and on `border-color`.
-    let f = compute(std::slice::from_ref(&sheet), &t, 1, &env).unwrap();
+    let f = compute(std::slice::from_ref(&&sheet), &t, 1, &env).unwrap();
     assert_eq!(get(&f, "border-color"), "#333");
 }
 
@@ -314,12 +314,12 @@ fn single_line_rules_reach_computed_styles() {
     );
     let env = Environment::default();
     // Both declarations of the single-line rule survive.
-    let s = compute(std::slice::from_ref(&sheet), &t, 0, &env).unwrap();
+    let s = compute(std::slice::from_ref(&&sheet), &t, 0, &env).unwrap();
     assert_eq!(get(&s, "color"), "#fff");
     assert_eq!(get(&s, "padding"), "4px");
     // The nested rule opened and closed on the same line as its parent.
     // (`blue` canonicalizes to `#00f`: equal-length ties go to hex.)
-    let s = compute(std::slice::from_ref(&sheet), &t, 1, &env).unwrap();
+    let s = compute(std::slice::from_ref(&&sheet), &t, 1, &env).unwrap();
     assert_eq!(get(&s, "color"), "#00f");
 }
 
@@ -343,7 +343,7 @@ fn compile_and_prepare_survive_compute_tree() {
         vec![NO_PARENT, NO_PARENT],
     );
 
-    bombshell_css_runtime::cascade::compute_tree(std::slice::from_ref(&sheet), &t, &env, &[]);
+    bombshell_css_runtime::cascade::compute_tree(std::slice::from_ref(&&sheet), &t, &env, &[]);
 
     // A later compile walks the same pipeline: identical source, identical IR.
     let second = load(&read_case("colors/02-hex.css"));
@@ -353,8 +353,8 @@ fn compile_and_prepare_survive_compute_tree() {
     // and computes.
     let decoded = decode_ir(&encode_ir(&first.ir)).expect("re-encoded IR decodes");
     let reloaded = Stylesheet::from_ir(&decoded, 0);
-    let s = compute(std::slice::from_ref(&reloaded), &t, 0, &env).unwrap();
+    let s = compute(std::slice::from_ref(&&reloaded), &t, 0, &env).unwrap();
     assert_eq!(get(&s, "color"), "#fff");
-    let f = compute(std::slice::from_ref(&reloaded), &t, 1, &env).unwrap();
+    let f = compute(std::slice::from_ref(&&reloaded), &t, 1, &env).unwrap();
     assert_eq!(get(&f, "border-color"), "#333");
 }

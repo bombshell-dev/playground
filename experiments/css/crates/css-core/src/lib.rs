@@ -99,6 +99,10 @@ pub struct NodeSnapshot {
     pub width: Option<f32>,
     /// Layout height in CSS px, if known.
     pub height: Option<f32>,
+    /// Inline style declarations as authored (e.g. `color: red; --x: 1`).
+    /// Parsed by the runtime cascade; author origin, above every stylesheet
+    /// declaration of the same importance, below author-`!important` rules.
+    pub style: Option<String>,
 }
 
 /// A flat tree snapshot: nodes in document order plus each node's parent index.

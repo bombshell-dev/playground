@@ -29,7 +29,7 @@ pub use selectors::{SelectorList, parse_selector_list};
 
 /// Resolve the computed style for `target`.
 pub fn compute<'ir>(
-    sheets: &[Stylesheet<'ir>],
+    sheets: &[&Stylesheet<'ir>],
     tree: &TreeSnapshot,
     target: usize,
     env: &Environment,
