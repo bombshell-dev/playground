@@ -1,8 +1,8 @@
-// Smoke test: drive the canonical ABI through the package entry, against
+// Smoke test: drive the ergonomic API through the package entry, against
 // the embedded artifact.
 // Usage: node smoke.mjs
 
-import { component, decodeIr, NO_PARENT } from './src/index.js';
+import { component, compile, prepare, compute, computeTree, release, decodeIr, NO_PARENT } from './src/index.js';
 
 const css = `
   :root { --brand: oklch(70% .2 40); color: var(--brand) }
@@ -16,20 +16,17 @@ const css = `
   }
 `;
 
-const { ir, diagnostics } = component.compile(css, 2);
+const { ir, diagnostics } = compile(css, 2);
 console.log('diagnostics:', diagnostics.length ? diagnostics : 'none');
 if (!ir) {
   throw new Error('compile returned no IR');
 }
 console.log('ir bytes:', ir.byteLength);
-const sheet_handle = component.prepare(ir);
-if (sheet_handle === null) {
-  throw new Error('prepare rejected the IR');
-}
+const sheet = prepare(ir);
 
-const sheet = decodeIr(ir);
-console.log('ir version:', sheet.version);
-for (const rule of sheet.rules) {
+const parsed = decodeIr(ir);
+console.log('ir version:', parsed.version);
+for (const rule of parsed.rules) {
   console.log(`  ${rule.selector} spec=0x${rule.specificity.toString(16)} ->`, rule.declarations);
 }
 
@@ -44,7 +41,7 @@ const parents = [NO_PARENT, 0, 1];
 // this fixture relies on the width. Compute each node with a dark viewport.
 const env = { viewportWidth: 400, viewportHeight: 300, colorScheme: 'dark', reducedMotion: false, resolution: 1 };
 for (const target of [0, 1, 2]) {
-  const computed = component.compute(sheet_handle, tree, parents, target, env);
+  const computed = sheet.compute(tree, parents, target, env);
   console.log(`node ${target}:`, JSON.stringify(computed));
 }
 
@@ -54,31 +51,36 @@ for (const target of [0, 1, 2]) {
 function memoryPages() {
   return component.raw.memory.buffer.byteLength;
 }
-// The tree API must agree with the per-node API.
+// The tree API must agree with the per-node API — via both the Sheet methods
+// and the module-level functions.
 const perNode = [];
 for (const target of tree.keys()) {
-  perNode.push(component.compute(sheet_handle, tree, parents, target, env));
+  perNode.push(sheet.compute(tree, parents, target, env));
 }
-const whole = component.computeTree(sheet_handle, tree, parents, env);
+const wholeViaSheet = sheet.computeTree(tree, parents, env);
+const whole = computeTree(sheet, tree, parents, env);
+if (JSON.stringify(perNode) !== JSON.stringify(wholeViaSheet)) {
+  throw new Error('Sheet.computeTree disagrees with Sheet.compute');
+}
 if (JSON.stringify(perNode) !== JSON.stringify(whole)) {
-  throw new Error('computeTree disagrees with compute');
+  throw new Error('module-level computeTree disagrees with compute');
 }
 
 // Re-prepare + release exercises the slot lifecycle before the loop.
-const other = component.compile('.x { color: blue }', 2);
-const other_handle = component.prepare(other.ir);
-component.compute(other_handle, tree, parents, 2, env);
-component.release(other_handle);
+const other = compile('.x { color: blue }', 2);
+const otherSheet = prepare(other.ir);
+otherSheet.compute(tree, parents, 2, env);
+otherSheet.release();
 for (let i = 0; i < 500; i++) {
-  component.compute(sheet_handle, tree, parents, 2, env);
+  sheet.compute(tree, parents, 2, env);
 }
 if (memoryPages() !== memoryPages()) throw new Error('unstable');
 const pagesAfterFrames = memoryPages();
 for (let i = 0; i < 500; i++) {
   for (const target of tree.keys()) {
-    component.compute(sheet_handle, tree, parents, target, env);
+    sheet.compute(tree, parents, target, env);
   }
-  component.computeTree(sheet_handle, tree, parents, env);
+  sheet.computeTree(tree, parents, env);
 }
 const growth = memoryPages() - pagesAfterFrames;
 console.log(`frame loop: 5500 computes, memory grew ${growth} bytes`);
@@ -90,40 +92,45 @@ if (growth > 0) {
 // pointer from compute-tree's lowering, so the option discriminant's padding
 // bytes are no longer zero. Reading the disc as anything wider than one byte
 // misreads these results as absent.
-const hot = component.compile('.card { color: #fff }', 2);
+const hot = compile('.card { color: #fff }', 2);
 if (hot.ir === null) {
   throw new Error('compile after compute-tree reported no IR');
 }
-const hotHandle = component.prepare(hot.ir);
-if (hotHandle === null) {
-  throw new Error('prepare after compute-tree rejected valid IR');
-}
-component.release(hotHandle);
+const hotSheet = prepare(hot.ir);
+hotSheet.release();
 
 // The rest of the poison matrix: re-preparing the ORIGINAL IR bytes…
-const rePrepare = component.prepare(ir);
-if (rePrepare === null) {
-  throw new Error('re-prepare of the existing IR rejected valid bytes');
-}
+const reSheet = prepare(ir);
 // …and computing on a sheet adopted after compute-tree.
-const adopted = component.compile('.card { color: #0f0 }', 2);
+const adopted = compile('.card { color: #0f0 }', 2);
 if (adopted.ir === null) {
   throw new Error('compile after compute-tree reported no IR');
 }
-const adoptedHandle = component.prepare(adopted.ir);
-if (adoptedHandle === null) {
-  throw new Error('prepare after compute-tree rejected valid IR');
-}
-const afterPoison = component.computeTree(adoptedHandle, tree, parents, env);
+const adoptedSheet = prepare(adopted.ir);
+const afterPoison = adoptedSheet.computeTree(tree, parents, env);
 if (afterPoison.length !== tree.length || afterPoison[1].length === 0) {
   throw new Error(`compute-tree on a late-prepared sheet returned no styles: ${JSON.stringify(afterPoison)}`);
 }
-component.release(rePrepare);
-component.release(adoptedHandle);
+reSheet.release();
+adoptedSheet.release();
+
+// Disposable protocol: release is synchronous, so `using` works via
+// Symbol.dispose and `await using` via Symbol.asyncDispose. (The `using`
+// syntax itself is exercised in smoke.using.mjs on Node 24+/bun.)
+{
+  const scoped = prepare(compile('.card { color: red }', 2).ir);
+  if (scoped.compute(tree, parents, 1, env).length === 0) {
+    throw new Error('scoped sheet returned no styles');
+  }
+  scoped[Symbol.dispose]();
+  if (scoped.handle !== null) throw new Error('Symbol.dispose did not drop the handle');
+  scoped.release(); // double release is a safe no-op
+  await scoped[Symbol.asyncDispose]();
+}
 
 // Diagnostics surface through the ABI: an invalid color warns and the rest
 // of the rule recovers.
-const warned = component.compile('.card { color: notacolor; padding: 4px }', 2);
+const warned = compile('.card { color: notacolor; padding: 4px }', 2);
 if (
   warned.ir === null ||
   !warned.diagnostics.some(
@@ -133,5 +140,5 @@ if (
   throw new Error(`expected a warning diagnostic, got ${JSON.stringify(warned.diagnostics)}`);
 }
 
-component.release(sheet_handle);
+sheet.release();
 console.log('smoke ok');
