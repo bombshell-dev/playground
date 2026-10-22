@@ -14,15 +14,25 @@ export interface SnapshotOptions {
 	viewport?: TerminalSize;
 }
 
+export interface DocumentSnapshot {
+	nodes: CssNode[];
+	parents: number[];
+	/// Text content per node: leaf elements carry their `textContent`, boxes
+	/// are `undefined`. The CSS node record has no text slot, so hosts keep
+	/// the content channel alongside the snapshot.
+	texts: (string | undefined)[];
+}
+
 /// Snapshot a document into the flat, document-ordered node/parent form
 /// `computeTree` consumes: `NO_PARENT` marks a root, sibling order follows
 /// document order, and the focus flag reflects `document.activeElement`.
 export function snapshotDocument(
 	document: Document,
 	options: SnapshotOptions = {},
-): { nodes: CssNode[]; parents: number[] } {
+): DocumentSnapshot {
 	const nodes: CssNode[] = [];
 	const parents: number[] = [];
+	const texts: (string | undefined)[] = [];
 	const visit = (element: Element, parent: number): void => {
 		const index = nodes.length;
 		const isRoot = parent === NO_PARENT;
@@ -43,6 +53,7 @@ export function snapshotDocument(
 					: (element.getAttribute('style') ?? undefined),
 		});
 		parents.push(parent);
+		texts.push(element.childElementCount === 0 ? (element.textContent ?? undefined) : undefined);
 		for (const child of element.children) {
 			visit(child, index);
 		}
@@ -50,17 +61,18 @@ export function snapshotDocument(
 	if (document.documentElement) {
 		visit(document.documentElement, NO_PARENT);
 	}
-	return { nodes, parents };
+	return { nodes, parents, texts };
 }
 
 const CARDS: [string, string][] = [
-	['layout', 'One column below 80 columns, two above — @media (min-width: 80ch).'],
+	['layout', 'One column below 80 columns, a row above — @media (min-width: 80ch).'],
 	['scheme', 'Colors come from light-dark(), resolved against the probed background.'],
 	['motion', 'The host wires its own reduced-motion switch into the environment.'],
 ];
 
-/// Build the demo document: a header plus a small board of cards.
-export function createDemoDocument(): Document {
+/// Build the demo document: a header, a board of cards, and a status bar
+/// that prints the numbers.
+export function createDemoDocument(numbers = ''): Document {
 	const document = new Document();
 	const app = document.createElement('box');
 	app.id = 'app';
@@ -92,7 +104,14 @@ export function createDemoDocument(): Document {
 		board.append(card);
 	}
 
-	app.append(header, board);
+	const statusbar = document.createElement('box');
+	statusbar.className = 'statusbar';
+	const readout = document.createElement('text');
+	readout.className = 'numbers';
+	readout.textContent = numbers;
+	statusbar.append(readout);
+
+	app.append(header, board, statusbar);
 	document.append(app);
 	return document;
 }

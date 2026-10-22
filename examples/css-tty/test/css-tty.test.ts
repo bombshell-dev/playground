@@ -89,7 +89,7 @@ describe('document snapshot', () => {
 		expect(nodes[0]!.width).toBe(80 * CELL_WIDTH_PX);
 		expect(nodes[0]!.height).toBe(24 * CELL_HEIGHT_PX);
 		// Document order: app, header, title, status, board, then each
-		// card with its heading and body.
+		// card with its heading and body, then the status bar's readout.
 		expect(nodes.map((node) => node.classes?.[0])).toEqual([
 			'app',
 			'header',
@@ -105,6 +105,8 @@ describe('document snapshot', () => {
 			'card',
 			'heading',
 			'body',
+			'statusbar',
+			'numbers',
 		]);
 	});
 
@@ -169,10 +171,19 @@ describe('demo stylesheet through the engine', () => {
 		// heading (node 6) resolves var(--accent) instead.
 		const dark = style({ columns: 80, rows: 24, background: NEAR_BLACK });
 		expect(dark[5]).toContainEqual(['color', '#e2e2e8']);
-		expect(dark[6]).toContainEqual(['color', '#f59e0b']);
 		const light = style({ columns: 80, rows: 24, background: WHITE });
 		expect(light[5]).toContainEqual(['color', '#1b1b22']);
-		expect(light[6]).toContainEqual(['color', '#b45309']);
+	});
+
+	it('changes the accent color across the 80ch breakpoint', () => {
+		// The wide breakpoint hands the accent from amber to violet — this
+		// is what makes the rendered demo change colors on resize.
+		const narrow = style({ columns: 40, rows: 25, background: NEAR_BLACK });
+		expect(narrow[6]).toContainEqual(['color', '#f59e0b']);
+		const wide = style({ columns: 80, rows: 24, background: NEAR_BLACK });
+		expect(wide[6]).toContainEqual(['color', '#8b5cf6']);
+		const wideLight = style({ columns: 80, rows: 24, background: WHITE });
+		expect(wideLight[6]).toContainEqual(['color', '#6d28d9']);
 	});
 
 	it('drops malformed inline light-dark() at computed-value time', () => {

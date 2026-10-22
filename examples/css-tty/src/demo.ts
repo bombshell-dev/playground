@@ -1,29 +1,36 @@
-// CSS + @media queries driven by terminal capabilities.
+// CSS + @media queries driven by terminal capabilities, rendered live.
 //
 // Detects the terminal (terminfo, plus a bounded probe round-trip when
 // stdin is a TTY), keeps the capability maps in a `@bomb.sh/tty` term —
 // `scan()` events flow through `term.update()`, which folds them into
-// `term.capabilities` — snapshots a `@bomb.sh/dom` document, and computes
-// styles with `@bomb.sh/css`. While the demo stays open, resizing the
-// terminal re-evaluates the `@media` queries live; the parsed stylesheet
-// is reused across evaluations, exactly like the engine's per-frame story.
+// `term.capabilities` — snapshots a `@bomb.sh/dom` document, computes
+// styles with `@bomb.sh/css`, and renders the computed styles as real
+// frames: resize the terminal and the `@media` queries re-evaluate, the
+// board relayouts, the accent color changes, and the status bar prints
+// the numbers.
 //
 // `@bomb.sh/dom` has no run loop by design (frame scheduling belongs to
-// consumers), so the demo owns a minimal one: probe window, then repaint
-// on resize. Real applications get the loop from the platform
-// (`@clack/ui`'s `createUI().main()`).
+// consumers), so the demo owns a minimal one: probe window, then
+// repaint-on-resize (the render itself diffs inside `Term.render`, so
+// only changed cells hit the wire). Real applications get the loop from
+// the platform (`@clack/ui`'s `createUI().main()`).
 //
 // Usage: pnpm --filter @examples/css-tty demo
 import { compile, type ComputedProperty, type CssNode } from '@bomb.sh/css';
 import {
+	alternateBuffer,
 	createInput,
 	createTerm,
+	cursor,
 	detectTerminal,
+	settings,
 	type RuntimeCapabilities,
+	type Setting,
 	type TerminalInfo,
 } from '@bomb.sh/tty';
 import { capabilityVariables, environmentFromCapabilities, type TerminalSize } from './index.ts';
-import { createDemoDocument, snapshotDocument } from './tree.ts';
+import { createDemoDocument, snapshotDocument, type DocumentSnapshot } from './tree.ts';
+import { renderTree } from './render.ts';
 import { DEMO_CSS } from './styles.ts';
 
 /// How long to wait for probe responses before proceeding with whatever
@@ -31,9 +38,11 @@ import { DEMO_CSS } from './styles.ts';
 const PROBE_TIMEOUT_MS = 250;
 
 function currentSize(): TerminalSize {
+	// `||` rather than `??`: a degenerate pty reports 0×0, and a zero-sized
+	// term lays out nothing.
 	return {
-		columns: process.stdout.columns ?? 80,
-		rows: process.stdout.rows ?? 24,
+		columns: process.stdout.columns || 80,
+		rows: process.stdout.rows || 24,
 	};
 }
 
@@ -92,18 +101,43 @@ async function probeCapabilities(
 	}
 }
 
+interface Frame extends DocumentSnapshot {
+	env: ReturnType<typeof environmentFromCapabilities>;
+	computed: ComputedProperty[][];
+	numbers: string;
+}
+
 /// Snapshot the demo document and compute every node's style against the
-/// environment built from the capability map. The stylesheet is compiled
-/// once and reused; each evaluation is one `computeTree` call.
-function evaluate(sheet: ReturnType<typeof compile>, capabilities: RuntimeCapabilities) {
+/// environment built from the capability map. The status bar prints the
+/// numbers, and the numbers themselves are computed values — so the frame
+/// is computed twice: once to read what the CSS decided (axis, gap,
+/// breakpoint), once with those numbers written into the tree.
+function evaluate(sheet: ReturnType<typeof compile>, capabilities: RuntimeCapabilities): Frame {
 	const size = currentSize();
-	const document = createDemoDocument();
-	const { nodes, parents } = snapshotDocument(document, {
+	const env = environmentFromCapabilities(capabilities, { size });
+
+	const draft = snapshotDocument(createDemoDocument(), {
 		rootStyle: capabilityVariables(capabilities),
 		viewport: size,
 	});
-	const env = environmentFromCapabilities(capabilities, { size });
-	return { env, nodes, computed: sheet.computeTree(nodes, { parents, env }) };
+	const draftComputed = sheet.computeTree(draft.nodes, { parents: draft.parents, env });
+	const root = Object.fromEntries(draftComputed[0] ?? []);
+	const numbers =
+		`${size.columns}×${size.rows} cells → ${env.viewportWidth}×${env.viewportHeight}px` +
+		` · ${env.colorScheme} · ${capabilities.colors} colors${capabilities.trueColor ? ' · truecolor' : ''}` +
+		` · ${root['--axis']} board · gap ${root['--gap']} · ${root['--columns']}-column` +
+		` · motion ${root['--motion']}`;
+
+	const frame = snapshotDocument(createDemoDocument(numbers), {
+		rootStyle: capabilityVariables(capabilities),
+		viewport: size,
+	});
+	return {
+		...frame,
+		env,
+		computed: sheet.computeTree(frame.nodes, { parents: frame.parents, env }),
+		numbers,
+	};
 }
 
 const formatDeclarations = (declarations: ComputedProperty[]): string =>
@@ -114,15 +148,12 @@ const formatNodeLabel = (node: CssNode): string =>
 		'',
 	);
 
-function report(capabilities: RuntimeCapabilities, evaluated: ReturnType<typeof evaluate>): string {
-	const { env, nodes, computed } = evaluated;
-	const theme = capabilities.theme;
-	const lines: string[] = [
-		`capabilities  colors=${capabilities.colors} truecolor=${capabilities.trueColor ? 'yes' : 'no'}`,
-		`              theme=${theme.background ? `bg ${rgb(theme.background)}` : 'unprobed'}`,
-		`              kitty-keyboard=${capabilities.kittyKeyboard} kitty-graphics=${capabilities.kittyGraphics}`,
+function report(frame: Frame): string {
+	const { env, nodes, computed } = frame;
+	const lines = [
 		`env           viewport=${env.viewportWidth}×${env.viewportHeight}px color-scheme=${env.colorScheme}`,
 		`              reduced-motion=${env.reducedMotion ? 'reduce' : 'no-preference'} resolution=${env.resolution}`,
+		`              ${frame.numbers}`,
 		'',
 	];
 	for (let index = 0; index < nodes.length; index++) {
@@ -132,11 +163,6 @@ function report(capabilities: RuntimeCapabilities, evaluated: ReturnType<typeof 
 		);
 	}
 	return lines.join('\n');
-}
-
-function rgb({ r, g, b }: { r: number; g: number; b: number }): string {
-	const hex = (channel: number) => channel.toString(16).padStart(2, '0');
-	return `#${hex(r)}${hex(g)}${hex(b)}`;
 }
 
 const sheet = compile(DEMO_CSS, 2);
@@ -151,31 +177,57 @@ if (process.stdin.isTTY) {
 	await probeCapabilities(terminfo, term);
 }
 
-let first = true;
-const print = () => {
-	const text = report(term.capabilities, evaluate(sheet, term.capabilities));
-	// Repaints clear the screen so the @media flip is visible in place.
-	process.stdout.write(first ? `\n${text}\n` : `\x1b[H\x1b[2J${text}\n`);
-	first = false;
+const visual = Boolean(process.stdin.isTTY);
+let setup: Setting | undefined;
+if (visual) {
+	// Full-screen app mode: alternate buffer, hidden cursor. Reverted on exit.
+	setup = settings(alternateBuffer({ clear: true }), cursor(false));
+	process.stdout.write(setup.apply);
+}
+
+const repaint = () => {
+	const frame = evaluate(sheet, term.capabilities);
+	if (!visual) {
+		return frame;
+	}
+	const ops = renderTree(frame, frame.computed);
+	const { output } = term.render(ops);
+	process.stdout.write(output);
+	return frame;
 };
 
-print();
+const firstFrame = repaint();
 
-if (process.stdin.isTTY) {
-	console.info('\nresize the terminal to re-evaluate @media · Ctrl-C exits');
-	// Nothing else holds the event loop open after the probe pauses stdin;
-	// keep stdin referenced so the demo stays live for resizes. Cooked
-	// mode is restored, so Ctrl-C still delivers SIGINT.
+if (visual) {
+	// Live loop: fold the new size into the term (no WASM reinit), then
+	// re-evaluate the stylesheet and re-render. Diffing happens inside
+	// Term.render, so only changed cells hit the wire.
+	process.stdout.on('resize', () => {
+		const next = currentSize();
+		term.update([{ type: 'resize', width: next.columns, height: next.rows }]);
+		repaint();
+	});
+	// Liveness, belt and suspenders: stdin referenced AND a timer anchor,
+	// so the event loop cannot drain no matter how the underlying streams
+	// behave. Cooked mode is restored after the probe, so Ctrl-C still
+	// delivers SIGINT.
 	process.stdin.ref();
-	process.stdout.on('resize', print);
+	const keepAlive = setInterval(() => {}, 2_147_483_647);
 	const exit = () => {
+		clearInterval(keepAlive);
+		if (setup) {
+			process.stdout.write(setup.revert);
+		}
 		sheet.release();
 		process.exit(0);
 	};
 	process.on('SIGINT', exit);
 	process.on('SIGTERM', exit);
 } else {
-	// Piped or non-interactive: one evaluation, then done.
+	// Piped or non-interactive: one evaluation of the numbers + computed
+	// declarations, then done.
+	console.info(`\n${firstFrame.numbers}`);
+	console.info(report(firstFrame));
 	sheet.release();
-	console.info('\nno TTY on stdin — one-shot evaluation');
+	console.info(`\nno TTY on stdin (isTTY=${process.stdin.isTTY}) — one-shot evaluation`);
 }
