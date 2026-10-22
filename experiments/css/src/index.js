@@ -123,3 +123,5 @@ export class Sheet {
 
 	#decoded = null;
 }
+
+export { Engine, createEngine, parseInlineStyle } from './engine.js';

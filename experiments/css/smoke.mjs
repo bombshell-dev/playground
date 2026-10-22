@@ -2,7 +2,7 @@
 // the embedded artifact.
 // Usage: node smoke.mjs
 
-import { component, compile, compute, computeTree, release, decodeIr, NO_PARENT } from './src/index.js';
+import { component, compile, compute, computeTree, release, decodeIr, createEngine, NO_PARENT } from './src/index.js';
 
 const css = `
   :root { --brand: oklch(70% .2 40); color: var(--brand) }
@@ -131,4 +131,74 @@ warned.release();
 }
 
 sheet.release();
+
+// ---------------------------------------------------------------------------
+// Engine: multi-sheet aggregation, lazy recompile, removal, @layer, inline.
+// ---------------------------------------------------------------------------
+
+function colorOf(declarations) {
+	const hit = declarations.find(([name]) => name === 'color');
+	return hit ? hit[1] : null;
+}
+function assertColor(actual, expected, label) {
+	if (actual !== expected) {
+		throw new Error(`${label}: expected color ${expected}, got ${actual}`);
+	}
+}
+
+const cardOnly = [{ tag: 'card', classes: ['card'] }];
+const cardRoot = [NO_PARENT];
+
+// Later sheets win at equal specificity (document order). Colors come back
+// canonicalized (named → shortest hex), so assert canonical values.
+const engine = createEngine();
+engine.addSheet('.card { color: #0f0 }');
+engine.addSheet('.card { color: #f00 }');
+assertColor(colorOf(engine.compute(cardOnly, cardRoot, 0, env)), '#f00', 'sheet order');
+
+// Lazy recompile on edit; removal reverts to the prior cascade.
+const whiteId = engine.addSheet('.card { color: #123456 }');
+assertColor(colorOf(engine.compute(cardOnly, cardRoot, 0, env)), '#123456', 'added sheet');
+if (engine.removeSheet(whiteId) !== true) throw new Error('removeSheet failed');
+assertColor(colorOf(engine.compute(cardOnly, cardRoot, 0, env)), '#f00', 'after removeSheet');
+
+// @layer across sheets: layers rank by first appearance (later wins), and
+// re-referencing an earlier layer must NOT reorder it to the end — that's
+// the discriminator the concatenation scheme has to preserve.
+const layerEngine = createEngine();
+const bId = layerEngine.addSheet('@layer b { .card { color: #0f0 } }');
+const aId = layerEngine.addSheet('@layer a { .card { color: #ff0 } }');
+const plainId = layerEngine.addSheet('.card { color: #234567 }');
+assertColor(colorOf(layerEngine.compute(cardOnly, cardRoot, 0, env)), '#234567', 'unlayered wins');
+layerEngine.removeSheet(plainId);
+assertColor(colorOf(layerEngine.compute(cardOnly, cardRoot, 0, env)), '#ff0', 'later layer wins');
+const bAgain = layerEngine.addSheet('@layer b { .card { color: #00f } }');
+assertColor(colorOf(layerEngine.compute(cardOnly, cardRoot, 0, env)), '#ff0', '@layer first-appearance survives re-reference');
+
+// Inline styles: inline-normal beats sheet-normal, sheet-!important beats
+// inline-normal, inline-!important beats everything. Inline values pass
+// through un-canonicalized.
+const inlineEngine = createEngine();
+inlineEngine.addSheet('.card { color: #fff; background: black }');
+inlineEngine.addSheet('.card { color: #f00 !important }');
+const inlineNode = [{ tag: 'card', classes: ['card'], style: 'color: blue; border: none' }];
+const inlineImp = [{ tag: 'card', classes: ['card'], style: 'color: blue !important' }];
+assertColor(colorOf(inlineEngine.compute(inlineNode, cardRoot, 0, env)), '#f00', 'sheet !important beats inline');
+assertColor(colorOf(inlineEngine.compute(inlineImp, cardRoot, 0, env)), 'blue', 'inline !important wins');
+const noShield = createEngine();
+noShield.addSheet('.card { color: #fff }');
+assertColor(colorOf(noShield.compute(inlineNode, cardRoot, 0, env)), 'blue', 'inline beats sheet-normal');
+if (noShield.compute(inlineNode, cardRoot, 0, env).some(([n, v]) => n === 'border' && v !== 'none')) {
+	throw new Error('inline border not applied');
+}
+noShield.release();
+
+// Engine dispose releases the sheet; a later compute lazily re-prepares.
+inlineEngine[Symbol.dispose]();
+assertColor(colorOf(inlineEngine.compute(cardOnly, cardRoot, 0, env)), '#f00', 'engine resurrects after dispose');
+inlineEngine.release();
+layerEngine.release();
+engine.release();
+console.log('engine ok');
+
 console.log('smoke ok');
