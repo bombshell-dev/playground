@@ -4,32 +4,35 @@
 // Usage: node smoke.using.mjs
 
 import assert from 'node:assert/strict';
-import { component, compile, prepare, NO_PARENT } from './src/index.js';
+import { component, compile, decodeIr } from './src/index.js';
 
 const tree = [
   { tag: 'root', classes: ['root'], width: 400, height: 100, state: 0 },
   { tag: 'card', classes: ['card'] },
 ];
-const parents = [NO_PARENT, 0];
+const parents = [0xffffffff, 0];
 const env = { viewportWidth: 400, viewportHeight: 300, colorScheme: 'dark', reducedMotion: false, resolution: 1 };
 
-// Sync `using`: the sheet is released when the block exits.
+// Sync `using`: compile prepares and returns the Sheet; released at block exit.
 {
-  using sheet = prepare(compile('.card { color: red }', 2).ir);
+  using sheet = compile('.card { color: red }');
+  assert(sheet.diagnostics.length === 0);
   assert(sheet.compute(tree, parents, 1, env).some(([name]) => name === 'color'));
+  assert(sheet.rules.length > 0);
+  assert(decodeIr(sheet).version === 2);
 }
 const pagesAfterSync = component.raw.memory.buffer.byteLength;
 
 // `await using` also works — release is synchronous but the protocol accepts it.
 {
-  await using sheet = prepare(compile('.card { color: blue }', 2).ir);
+  await using sheet = compile('.card { color: blue }');
   assert(sheet.compute(tree, parents, 1, env).some(([name]) => name === 'color'));
 }
 
-// Neither sheet leaked: a second compile/prepare/compute round still works
-// and memory has not grown beyond the sheets we hold open.
+// Neither sheet leaked: a third round still works and memory has not grown
+// beyond the sheets we hold open.
 {
-  using sheet = prepare(compile('.card { color: green }', 2).ir);
+  using sheet = compile('.card { color: green }');
   assert(sheet.compute(tree, parents, 1, env).some(([name]) => name === 'color'));
 }
 assert(component.raw.memory.buffer.byteLength <= pagesAfterSync + 65536 * 4);

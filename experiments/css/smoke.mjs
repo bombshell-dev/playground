@@ -2,7 +2,7 @@
 // the embedded artifact.
 // Usage: node smoke.mjs
 
-import { component, compile, prepare, compute, computeTree, release, decodeIr, NO_PARENT } from './src/index.js';
+import { component, compile, compute, computeTree, release, decodeIr, NO_PARENT } from './src/index.js';
 
 const css = `
   :root { --brand: oklch(70% .2 40); color: var(--brand) }
@@ -16,15 +16,13 @@ const css = `
   }
 `;
 
-const { ir, diagnostics } = compile(css, 2);
-console.log('diagnostics:', diagnostics.length ? diagnostics : 'none');
-if (!ir) {
-  throw new Error('compile returned no IR');
-}
-console.log('ir bytes:', ir.byteLength);
-const sheet = prepare(ir);
+// compile both compiles and prepares: the Sheet carries diagnostics, the IR
+// bytes, and the decoded rules.
+const sheet = compile(css, 2);
+console.log('diagnostics:', sheet.diagnostics.length ? sheet.diagnostics : 'none');
+console.log('ir bytes:', sheet.ir.byteLength);
 
-const parsed = decodeIr(ir);
+const parsed = decodeIr(sheet);
 console.log('ir version:', parsed.version);
 for (const rule of parsed.rules) {
   console.log(`  ${rule.selector} spec=0x${rule.specificity.toString(16)} ->`, rule.declarations);
@@ -66,9 +64,8 @@ if (JSON.stringify(perNode) !== JSON.stringify(whole)) {
   throw new Error('module-level computeTree disagrees with compute');
 }
 
-// Re-prepare + release exercises the slot lifecycle before the loop.
-const other = compile('.x { color: blue }', 2);
-const otherSheet = prepare(other.ir);
+// Re-compile + release exercises the slot lifecycle before the loop.
+const otherSheet = compile('.x { color: blue }', 2);
 otherSheet.compute(tree, parents, 2, env);
 otherSheet.release();
 for (let i = 0; i < 500; i++) {
@@ -92,21 +89,14 @@ if (growth > 0) {
 // pointer from compute-tree's lowering, so the option discriminant's padding
 // bytes are no longer zero. Reading the disc as anything wider than one byte
 // misreads these results as absent.
-const hot = compile('.card { color: #fff }', 2);
-if (hot.ir === null) {
-  throw new Error('compile after compute-tree reported no IR');
-}
-const hotSheet = prepare(hot.ir);
+const hotSheet = compile('.card { color: #fff }', 2);
+hotSheet.compute(tree, parents, 1, env);
 hotSheet.release();
 
-// The rest of the poison matrix: re-preparing the ORIGINAL IR bytes…
-const reSheet = prepare(ir);
+// The rest of the poison matrix: re-compiling the ORIGINAL css…
+const reSheet = compile(css, 2);
 // …and computing on a sheet adopted after compute-tree.
-const adopted = compile('.card { color: #0f0 }', 2);
-if (adopted.ir === null) {
-  throw new Error('compile after compute-tree reported no IR');
-}
-const adoptedSheet = prepare(adopted.ir);
+const adoptedSheet = compile('.card { color: #0f0 }', 2);
 const afterPoison = adoptedSheet.computeTree(tree, parents, env);
 if (afterPoison.length !== tree.length || afterPoison[1].length === 0) {
   throw new Error(`compute-tree on a late-prepared sheet returned no styles: ${JSON.stringify(afterPoison)}`);
@@ -114,11 +104,23 @@ if (afterPoison.length !== tree.length || afterPoison[1].length === 0) {
 reSheet.release();
 adoptedSheet.release();
 
+// Diagnostics surface through the API: an invalid color warns and the rest
+// of the rule recovers — the compile still succeeds.
+const warned = compile('.card { color: notacolor; padding: 4px }', 2);
+if (
+  !warned.diagnostics.some(
+    (d) => d.severity === 1 && d.code === 'declaration' && d.message.includes('notacolor'),
+  )
+) {
+  throw new Error(`expected a warning diagnostic, got ${JSON.stringify(warned.diagnostics)}`);
+}
+warned.release();
+
 // Disposable protocol: release is synchronous, so `using` works via
 // Symbol.dispose and `await using` via Symbol.asyncDispose. (The `using`
 // syntax itself is exercised in smoke.using.mjs on Node 24+/bun.)
 {
-  const scoped = prepare(compile('.card { color: red }', 2).ir);
+  const scoped = compile('.card { color: red }', 2);
   if (scoped.compute(tree, parents, 1, env).length === 0) {
     throw new Error('scoped sheet returned no styles');
   }
@@ -126,18 +128,6 @@ adoptedSheet.release();
   if (scoped.handle !== null) throw new Error('Symbol.dispose did not drop the handle');
   scoped.release(); // double release is a safe no-op
   await scoped[Symbol.asyncDispose]();
-}
-
-// Diagnostics surface through the ABI: an invalid color warns and the rest
-// of the rule recovers.
-const warned = compile('.card { color: notacolor; padding: 4px }', 2);
-if (
-  warned.ir === null ||
-  !warned.diagnostics.some(
-    (d) => d.severity === 1 && d.code === 'declaration' && d.message.includes('notacolor'),
-  )
-) {
-  throw new Error(`expected a warning diagnostic, got ${JSON.stringify(warned.diagnostics)}`);
 }
 
 sheet.release();
