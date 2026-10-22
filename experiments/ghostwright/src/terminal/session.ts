@@ -1,3 +1,4 @@
+import type { Scope } from 'effection';
 // oxlint-disable-next-line no-restricted-imports -- path module needed for path resolution
 import { resolve } from 'node:path';
 import {
@@ -60,7 +61,8 @@ import type {
 import { ExtensionLifecycle } from './lifecycle.ts';
 import { TerminalOutput } from './output.ts';
 import type { Observations } from '../observations.ts';
-import { GhosttyWasmTerminal } from './wasm.ts';
+import type { TerminalBackend, TerminalEffect } from '../backend.ts';
+import { openBackend, type BackendScope } from './backend-scope.ts';
 import { findText } from './text.ts';
 type ControlCommand =
 	| { kind: FrameKind.RESIZE; value: Required<Viewport> }
@@ -91,7 +93,9 @@ function observableKey(s: ScreenSnapshot): string {
 export class TerminalSession implements AsyncTerminal {
 	#host!: SidecarClient;
 	observations!: Observations;
-	#engine!: GhosttyWasmTerminal;
+	#engine!: TerminalBackend;
+	#backendScope!: BackendScope;
+	readonly #started = performance.now();
 	#snapshot!: ScreenSnapshot;
 	#status: ProcessStatus = { state: 'starting', ptyEof: false };
 	#closed = false;
@@ -131,7 +135,7 @@ export class TerminalSession implements AsyncTerminal {
 		this.#trace = new SessionTrace({ options, policy: t, directory: dir });
 		this.#exitPromise = new Promise((r) => (this.#exitResolve = r));
 	}
-	static async launch(options: TerminalLaunchOptions): Promise<TerminalSession> {
+	static async launch(options: TerminalLaunchOptions, parent?: Scope): Promise<TerminalSession> {
 		assertSupportedRuntime();
 		if (!options.command || options.command.includes('\0'))
 			throw new GhostwrightError({
@@ -179,26 +183,32 @@ export class TerminalSession implements AsyncTerminal {
 				);
 			throw cause;
 		}
-		self.#engine = await GhosttyWasmTerminal.create(
-			self.#viewport,
-			options.graphics?.storageLimitBytes ?? 64 * 1024 * 1024,
+		self.#backendScope = await openBackend(
+			{
+				viewport: self.#viewport,
+				graphicsStorageLimitBytes: options.graphics?.storageLimitBytes,
+			},
+			{ create: options.backend, parent },
 		);
-		self.#snapshot = self.#engine.snapshot();
+		self.#engine = self.#backendScope.backend;
+		self.#trace.backend = self.#engine.identity;
 		self.#extensions = new ExtensionLifecycle(() => self.#snapshot);
 		try {
+			self.#snapshot = self.#engine.snapshot();
 			self.#outputStream = new TerminalOutput(
 				options.extensions ?? [],
 				() => self.#snapshot,
 				(bytes) => {
-					self.#engine.write(bytes);
+					const update = self.#engine.write(bytes);
 					self.#terminalHistoryGeneration++;
-					self.#publish('pty-output', self.#sourceFrameSequence);
+					self.#publish(update.snapshot, 'pty-output', self.#sourceFrameSequence);
+					self.#effects(update.effects);
 					return self.#snapshot;
 				},
 				(error) => self.#trace.add('extension-diagnostic', { message: error.message }),
 			);
 		} catch (error) {
-			self.#engine.free();
+			await self.#backendScope[Symbol.asyncDispose]();
 			throw error;
 		}
 		self.observations = self.#outputStream.observations;
@@ -219,9 +229,8 @@ export class TerminalSession implements AsyncTerminal {
 			await self.#extensions.install(options.extensions ?? []);
 			self.#host = await SidecarClient.start(assets.host, options.commandTimeoutMs ?? 5000);
 		} catch (error) {
-			self.#engine.free();
 			try {
-				await self.#extensions.close();
+				await self.#release();
 			} catch (cleanupError) {
 				throw new ExtensionLifecycleError('Terminal launch and extension cleanup failed', [
 					error,
@@ -282,13 +291,12 @@ export class TerminalSession implements AsyncTerminal {
 			self.#host.forceKill();
 			await self.#outputPump;
 			self.#closed = true;
-			self.#engine.free();
 			const failure = new LaunchError(
 				`Unable to launch ${JSON.stringify(options.command)} in ${JSON.stringify(cwd)}`,
 				{ cause },
 			);
 			try {
-				await self.#extensions.close();
+				await self.#release();
 			} catch (error) {
 				throw new ExtensionLifecycleError('Terminal launch and extension cleanup failed', [
 					failure,
@@ -301,13 +309,12 @@ export class TerminalSession implements AsyncTerminal {
 			self.#host.forceKill();
 			await self.#outputPump;
 			self.#closed = true;
-			self.#engine.free();
 			const failure = new LaunchError(
 				`Unable to launch ${JSON.stringify(options.command)} in ${JSON.stringify(cwd)}: ${self.#fatalError.message}`,
 				{ cause: self.#fatalError },
 			);
 			try {
-				await self.#extensions.close();
+				await self.#release();
 			} catch (error) {
 				throw new ExtensionLifecycleError('Terminal launch and extension cleanup failed', [
 					failure,
@@ -316,11 +323,13 @@ export class TerminalSession implements AsyncTerminal {
 			}
 			throw failure;
 		}
+		// A short-lived child can exit or reach EOF before spawn's promise resumes.
+		// Preserve those observations while adding the acknowledged identity.
 		self.#status = {
-			state: 'running',
+			...self.#status,
+			state: self.#status.state === 'starting' ? 'running' : self.#status.state,
 			pid: spawned.pid,
 			processGroupId: spawned.processGroupId,
-			ptyEof: false,
 		};
 		self.#trace.add('spawned', { pid: spawned.pid, processGroupId: spawned.processGroupId });
 		return self;
@@ -338,7 +347,7 @@ export class TerminalSession implements AsyncTerminal {
 		return (this.options.extensions ?? []).some((extension) => extension.id === id);
 	}
 	now(): number {
-		return this.#engine.now();
+		return performance.now() - this.#started;
 	}
 	#notify(): void {
 		for (const f of this.#listeners) f();
@@ -355,7 +364,9 @@ export class TerminalSession implements AsyncTerminal {
 		while (this.#raw.reduce((n, b) => n + b.length, 0) > max) this.#raw.shift();
 		this.#sourceFrameSequence = sourceFrameSequence;
 		this.#outputStream.push(bytes);
-		for (const effect of this.#engine.takeEffects()) {
+	}
+	#effects(effects: readonly TerminalEffect[]): void {
+		for (const effect of effects) {
 			this.#trace.add('terminal-effect', {
 				effect: effect.type,
 				...(effect.type === 'write-pty' ? { bytes: effect.data.length } : {}),
@@ -364,6 +375,7 @@ export class TerminalSession implements AsyncTerminal {
 				this.#trace.input(effect.data, 0, false);
 				// Parsing output must not wait for a child that has stopped reading replies.
 				void this.#command(() => this.#host.write(effect.data)).catch((error) => {
+					if (this.#closePromise) return;
 					this.#fatalError = error;
 					this.#status = { ...this.#status, state: 'failed' };
 					this.#notify();
@@ -381,20 +393,29 @@ export class TerminalSession implements AsyncTerminal {
 				}),
 			);
 		this.#queuedCommands++;
-		const result = this.#commands.then(operation).finally(() => {
-			this.#queuedCommands--;
-		});
+		const result = this.#commands
+			.then(() => {
+				// CLOSE overtakes the queue; never send another command behind it.
+				this.#ensure('perform queued action');
+				return operation();
+			})
+			.finally(() => {
+				this.#queuedCommands--;
+			});
 		this.#commands = result.catch(() => undefined);
 		return result;
 	}
-	#publish(cause: 'pty-output' | 'resize' | 'reset', sourceFrameSequence?: number): void {
-		const decoded = this.#engine.snapshot(cause),
-			lines = decoded.lines.map((line, index) =>
+	#publish(
+		decoded: ScreenSnapshot,
+		cause: 'pty-output' | 'resize' | 'reset',
+		sourceFrameSequence?: number,
+	): void {
+		const lines = decoded.lines.map((line, index) =>
 				JSON.stringify(line) === JSON.stringify(this.#snapshot.lines[index])
 					? this.#snapshot.lines[index]
 					: line,
 			),
-			next = Object.freeze({ ...decoded, lines: Object.freeze(lines) }),
+			next = Object.freeze({ ...decoded, timestamp: this.now(), lines: Object.freeze(lines) }),
 			changed = observableKey(next) !== observableKey(this.#snapshot);
 		if (!changed) return;
 		const visual = visualKey(next) !== visualKey(this.#snapshot),
@@ -466,9 +487,10 @@ export class TerminalSession implements AsyncTerminal {
 				// arrive before the PTY acknowledgement reaches the caller.
 				this.#viewport = command.value;
 				this.#trace.add('resize', { viewport: command.value });
-				this.#engine.resize(command.value);
+				const update = this.#engine.resize(command.value);
 				this.#terminalHistoryGeneration++;
-				this.#publish('resize');
+				this.#publish(update.snapshot, 'resize');
+				this.#effects(update.effects);
 				this.observations.screen(this.#snapshot);
 				return this.#host.resize(command.value);
 			}
@@ -477,7 +499,7 @@ export class TerminalSession implements AsyncTerminal {
 		const receipt: Readonly<ActionReceipt> = Object.freeze({
 			actionSequence: sequence,
 			screenSequenceBefore: before,
-			acknowledgedAt: this.#engine.now(),
+			acknowledgedAt: this.now(),
 			bytesWritten: ack.bytesWritten ?? 0,
 		});
 		this.#lastAction = receipt;
@@ -527,7 +549,7 @@ export class TerminalSession implements AsyncTerminal {
 		const receipt = Object.freeze({
 			actionSequence: sequence,
 			screenSequenceBefore: before,
-			acknowledgedAt: this.#engine.now(),
+			acknowledgedAt: this.now(),
 			bytesWritten: total,
 		});
 		this.#lastAction = receipt;
@@ -710,7 +732,7 @@ export class TerminalSession implements AsyncTerminal {
 			return Object.freeze({
 				actionSequence: ++this.#action,
 				screenSequenceBefore: this.#revision,
-				acknowledgedAt: this.#engine.now(),
+				acknowledgedAt: this.now(),
 				bytesWritten: 0,
 			});
 		const before = this.#revision,
@@ -731,7 +753,7 @@ export class TerminalSession implements AsyncTerminal {
 			const receipt = Object.freeze({
 				actionSequence: sequence,
 				screenSequenceBefore: before,
-				acknowledgedAt: this.#engine.now(),
+				acknowledgedAt: this.now(),
 				bytesWritten: 0,
 			});
 			this.#lastAction = receipt;
@@ -740,12 +762,27 @@ export class TerminalSession implements AsyncTerminal {
 		} finally {
 			this.#closed = true;
 			this.#status = { ...this.#status, state: 'closed' };
-			this.#engine.free();
 			this.#trace.add('cleanup');
 			this.#notify();
-			await this.#extensions.close();
+			await this.#release();
 		}
 	}
+	async #release(): Promise<void> {
+		const failures: unknown[] = [];
+		for (const close of [
+			() => this.#backendScope[Symbol.asyncDispose](),
+			() => this.#extensions.close(),
+		]) {
+			try {
+				await close();
+			} catch (error) {
+				failures.push(error);
+			}
+		}
+		if (failures.length)
+			throw new ExtensionLifecycleError('Terminal resource cleanup failed', failures);
+	}
+
 	async waitForChange(test: () => boolean, timeout: number): Promise<void> {
 		if (test()) return;
 		await new Promise<void>((resolvePromise, reject) => {

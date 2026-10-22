@@ -1,3 +1,4 @@
+import type { CreateBackend } from './backend.ts';
 import type { Operation } from 'effection';
 import type { RegionLocator } from './locators.ts';
 
@@ -72,6 +73,8 @@ export interface TerminalExtensionDefinition<T = unknown> {
 }
 
 export interface TerminalLaunchOptions {
+	/** Fresh scoped emulator; defaults to createGhosttyBackend. */
+	backend?: CreateBackend;
 	command: string;
 	args?: readonly string[];
 	cwd?: string;

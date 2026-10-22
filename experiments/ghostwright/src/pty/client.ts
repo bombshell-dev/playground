@@ -70,7 +70,9 @@ export class SidecarClient {
 		child.stderr.on('data', (b: Buffer) => {
 			this.#stderr = (this.#stderr + b.toString()).slice(-8192);
 		});
-		child.on('exit', (code, signal) => {
+		// Process exit can precede the final stdout ACK. Drain stdio before
+		// deciding that the host disappeared without completing its requests.
+		child.on('close', (code, signal) => {
 			if (!this.#closed)
 				this.#fail(new SidecarExitedError(`PTY host exited (${code ?? signal}); ${this.#stderr}`));
 		});

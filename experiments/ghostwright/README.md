@@ -219,6 +219,50 @@ const matches = await terminal.history.findText('tool completed', { direction: '
 - [C versus Rust PTY-host comparison](HOST-COMPARISON.md)
 - [Performance report](PERFORMANCE.md)
 
+## Terminal backend
+
+Ghostty remains the default and sole shipped emulator. A session can supply a
+`backend: CreateBackend` factory to substitute or decorate it:
+
+```ts
+import { createGhosttyBackend, launchTerminal, type CreateBackend } from 'ghostwright';
+
+const backend: CreateBackend = function* (options) {
+    const ghostty = yield* createGhosttyBackend(options);
+    return {
+        ...ghostty,
+        write(bytes) {
+            const update = ghostty.write(bytes);
+            return update; // detached snapshot and terminal effects
+        },
+    };
+};
+
+await using terminal = await launchTerminal({ command: 'my-cli', backend });
+```
+
+The factory returns an Effection `Operation<TerminalBackend>` and acquires fresh
+state for each session. Use Effection resources to register release with the
+factory's scope. The session keeps that scope alive through process/output drain
+and awaits its cleanup on close or failed launch. Factories invoked through the
+Effection API inherit the caller's context. Async and local component sessions
+own their own scopes; pass their configuration explicitly in the factory closure.
+
+Backend reads, writes, resize and input encoders are synchronous. A write or
+resize returns a `BackendUpdate` containing the resulting immutable snapshot and
+an ordered list of effects. The session queues PTY responses; the emulator never
+performs transport I/O or reenters application output. The existing semantic OSC
+splitter, CSS locator adapters, revision retention and assertions remain shared.
+History and graphics inspection are part of the contract; unsupported graphics
+must be reported explicitly in the snapshot.
+
+The same factory option works with trace replay and the experimental local
+component harness. Traces record `backend.identity` (name and behavior version).
+Replay requires a matching identity and an explicit factory for custom backends;
+it never loads code named in a recording. A decorator that changes emulator or
+input behavior must use a distinct identity. The terminal environment still uses
+Ghostwright's deterministic profile; this seam does not add alternate profiles.
+
 ## Compatibility
 
 - Node 22+

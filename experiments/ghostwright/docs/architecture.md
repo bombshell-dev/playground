@@ -70,6 +70,29 @@ Ghostty is the sole authority for:
 
 JavaScript does not interpret terminal control sequences. It extracts only registered description OSC messages before forwarding ordinary bytes to Ghostty.
 
+## Backend boundary
+
+`CreateBackend` is `(options: BackendOptions) => Operation<TerminalBackend>`.
+The default `createGhosttyBackend` acquires the existing Ghostty WASM engine as
+an Effection resource and releases it with its scope, including late acquisition
+and initialization failure. Its returned functions close over that instance and
+reject use after release. The async session bridge owns a child scope, inheriting
+the Effection caller when present, and explicitly closes it after transport drain.
+The factory is explicit per session; there is no global backend registry.
+
+`write` and `resize` return one `BackendUpdate`: a detached screen snapshot and
+terminal effects. These operations, input encoding, and reads cannot suspend.
+That keeps each ordinary byte segment and its resulting screen atomic relative
+to registered OSC boundaries. Effects are values; session-owned queues deliver
+PTY responses without blocking parsing. Session clocks and revision numbering
+remain above the emulator boundary.
+
+Live PTY sessions, local appIO sessions and replay consume the same contract.
+The backend owns VT semantics; the shared output pipeline owns metadata pairing
+and freshness. Replay consumes snapshots but does not deliver terminal effects.
+Trace identity checks reject a different emulator/version before processing
+recorded output. Existing Ghostty traces retain their artifact hash check.
+
 ## Session resource tree
 
 ```text

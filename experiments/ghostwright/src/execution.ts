@@ -383,7 +383,8 @@ export function* captureOperation(
 /** Cancellation waits for bounded acquisition and closes even a late launch. */
 export function useSession(options: TerminalLaunchOptions): Operation<TerminalSession> {
 	return resource(function* (provide) {
-		const launching = TerminalSession.launch(options).then(
+		const owner = yield* useScope();
+		const launching = TerminalSession.launch(options, owner).then(
 			(session) => ({ ok: true as const, session }),
 			(cause) => ({ ok: false as const, cause }),
 		);
