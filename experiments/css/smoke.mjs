@@ -117,6 +117,48 @@ assert.ok(
 );
 warned.release();
 
+// light-dark() survives compilation (branches canonicalized) and resolves
+// against the environment's color scheme at computed-value time.
+const schemeSheet = compile('.card { color: light-dark(white, black) }', 2);
+const schemeTree = [{ tag: 'card', classes: ['card'] }];
+const schemeParents = [NO_PARENT];
+assertColor(
+	colorOf(
+		schemeSheet.compute(schemeTree, {
+			parents: schemeParents,
+			target: 0,
+			env: { ...env, colorScheme: 'light' },
+		}),
+	),
+	{
+		expected: '#fff',
+		label: 'light-dark under a light scheme',
+	},
+);
+assertColor(
+	colorOf(
+		schemeSheet.compute(schemeTree, {
+			parents: schemeParents,
+			target: 0,
+			env: { ...env, colorScheme: 'dark' },
+		}),
+	),
+	{
+		expected: '#000',
+		label: 'light-dark under a dark scheme',
+	},
+);
+// A malformed call is invalid at computed-value time: the declaration drops.
+const malformedScheme = compile('.card { color: blue }', 2);
+const malformedNode = { tag: 'card', classes: ['card'], style: 'color: light-dark(#fff)' };
+assert.strictEqual(
+	colorOf(malformedScheme.compute([malformedNode], { parents: schemeParents, target: 0, env })),
+	null,
+	'malformed light-dark must drop the declaration',
+);
+schemeSheet.release();
+malformedScheme.release();
+
 // Disposable protocol: release is synchronous, so `using` works via
 // Symbol.dispose and `await using` via Symbol.asyncDispose. (The `using`
 // syntax itself is exercised in smoke.using.mjs on Node 24+/bun.)

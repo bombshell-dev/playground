@@ -8,7 +8,7 @@ use crate::conditions::{
     ContainerAncestor, ContainerType, eval_container_list, eval_media_list, eval_supports_list,
 };
 use crate::selectors::parse_selector_list;
-use crate::values::resolve_vars;
+use crate::values::{resolve_light_dark, resolve_vars};
 use bombshell_css_core::{CompiledStylesheet, ContainerQuery, Declaration, Origin, TreeSnapshot};
 use rustc_hash::FxHashMap as HashMap;
 
@@ -222,10 +222,6 @@ impl<'ir> Stylesheet<'ir> {
             .iter()
             .map(|d| &d.message["selector could not be matched at runtime: ".len()..])
     }
-
-    fn layer_rank(&self, layer: Option<&[String]>) -> u32 {
-        layer_rank(self.layer_order, layer)
-    }
 }
 
 
@@ -385,6 +381,10 @@ pub fn compute_tree<'ir>(
         // var() substitution is part of computing the value: descendants
         // inherit computed values, not raw `var()` text.
         resolve_vars_in_map(&mut map);
+        // `light-dark()` resolves at computed-value time, after var()
+        // substitution (a custom property may carry it into the using
+        // declaration) and before descendants inherit the value.
+        resolve_light_dark_in_map(&mut map, env.color_scheme);
         maps.push(Some(map));
     }
 
@@ -416,6 +416,38 @@ fn resolve_vars_in_map(map: &mut StyleMap<'_>) {
                 match resolve_vars(value, map) {
                     Some(resolved) => {
                         map.insert(name, Cow::Owned(resolved));
+                    }
+                    None => {
+                        // Invalid at computed-value time.
+                        map.remove(name.as_ref());
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Resolve `light-dark()` in every non-custom color declaration against the
+/// environment's color scheme. Resolution is scoped to the color properties
+/// the compiler canonicalizes; custom properties substitute verbatim and
+/// resolve at the using declaration. A malformed call drops the
+/// declaration, like a failed `var()` resolution.
+fn resolve_light_dark_in_map(map: &mut StyleMap<'_>, scheme: bombshell_css_core::ColorScheme) {
+    let names: Vec<Cow<'_, str>> = map.keys().cloned().collect();
+    for name in names {
+        if name.starts_with("--") {
+            continue;
+        }
+        if !bombshell_css_core::is_color_property(name.as_ref()) {
+            continue;
+        }
+        if let Some(value) = map.get(name.as_ref()) {
+            if value.contains("light-dark(") {
+                match resolve_light_dark(value, scheme) {
+                    Some(resolved) => {
+                        if resolved != value.as_ref() {
+                            map.insert(name, Cow::Owned(resolved));
+                        }
                     }
                     None => {
                         // Invalid at computed-value time.

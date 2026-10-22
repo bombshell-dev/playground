@@ -221,6 +221,13 @@ pub struct Declaration {
     pub important: bool,
 }
 
+/// Whether `name` takes `<color>` values. Both the compiler's color
+/// canonicalization and the runtime's `light-dark()` resolution key off this
+/// predicate, so it lives here next to the declaration type.
+pub fn is_color_property(name: &str) -> bool {
+    name == "color" || name.ends_with("-color")
+}
+
 /// A preserved `@keyframes` block.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct KeyframesRule {

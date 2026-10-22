@@ -1,4 +1,5 @@
-//! `var()` substitution against resolved custom properties.
+//! `var()` substitution against resolved custom properties, and
+//! `light-dark()` resolution against the environment's color scheme.
 //!
 //! Values are canonical CSS text; substitution walks the token stream so
 //! strings and nested functions are handled correctly. Cycles resolve to
@@ -6,6 +7,7 @@
 //! caller falls back to inheritance).
 
 use bombshell_css_core::tokens::write_token;
+use bombshell_css_core::ColorScheme;
 use cssparser::{Parser as CssParser, ParserInput, Token};
 
 use crate::cascade::StyleMap;
@@ -31,10 +33,11 @@ fn resolve_value(
     if depth > 32 {
         return None;
     }
-    if !value.contains("var(") {
-        return Some(value.to_string());
-    }
 
+    // Every value this function returns is canonical: the token walk
+    // re-serializes numbers and whitespace even when no `var(` remains
+    // (custom-property values arrive verbatim and must still come out
+    // canonical — the conformance corpus pins that).
     let mut input = ParserInput::new(value);
     let mut parser = CssParser::new(&mut input);
     let mut out = String::new();
@@ -220,6 +223,180 @@ fn write_tokens(
                     let _ = parser.parse_nested_block(
                         |parser| -> Result<(), cssparser::ParseError<'_, ()>> {
                             write_tokens(parser, out, custom, resolving, depth);
+                            Ok(())
+                        },
+                    );
+                    out.push(')');
+                }
+                other => write_token(out, &other),
+            },
+            Err(_) => break,
+        }
+    }
+}
+
+/// Resolve every `light-dark(light, dark)` in a color value against the
+/// environment's color scheme, returning the computed value. `None` marks
+/// the value invalid at computed-value time (a malformed call — anything
+/// other than exactly two arguments).
+///
+/// Runs after `var()` substitution: a custom property may carry
+/// `light-dark()` verbatim into the using declaration. Branches are emitted
+/// verbatim — the compiler canonicalized stylesheet branches, and inline
+/// styles pass through like every other inline value.
+pub fn resolve_light_dark(value: &str, scheme: ColorScheme) -> Option<String> {
+    if !value.contains("light-dark(") {
+        return Some(value.to_string());
+    }
+    let mut input = ParserInput::new(value);
+    let mut parser = CssParser::new(&mut input);
+    let mut out = String::with_capacity(value.len());
+    write_light_dark_tokens(&mut parser, &mut out, scheme)?;
+    Some(out)
+}
+
+/// Token walk that rewrites `light-dark()` functions in place; other
+/// functions and parens recurse without interpretation. `None` marks a
+/// malformed `light-dark()` anywhere in the value.
+fn write_light_dark_tokens(
+    parser: &mut CssParser<'_, '_>,
+    out: &mut String,
+    scheme: ColorScheme,
+) -> Option<()> {
+    let mut malformed = false;
+    loop {
+        match parser.next_including_whitespace() {
+            Ok(token) => match token {
+                Token::Function(name) if name.eq_ignore_ascii_case("light-dark") => {
+                    match parse_light_dark_args(parser) {
+                        Some((light, dark)) => {
+                            out.push_str(match scheme {
+                                ColorScheme::Light => light.trim(),
+                                ColorScheme::Dark => dark.trim(),
+                            });
+                        }
+                        None => malformed = true,
+                    }
+                }
+                Token::Function(name) => {
+                    out.push_str(name);
+                    out.push('(');
+                    let _ = parser.parse_nested_block(
+                        |parser| -> Result<(), cssparser::ParseError<'_, ()>> {
+                            if write_light_dark_tokens(parser, out, scheme).is_none() {
+                                malformed = true;
+                            }
+                            Ok(())
+                        },
+                    );
+                    out.push(')');
+                }
+                Token::ParenthesisBlock => {
+                    out.push('(');
+                    let _ = parser.parse_nested_block(
+                        |parser| -> Result<(), cssparser::ParseError<'_, ()>> {
+                            if write_light_dark_tokens(parser, out, scheme).is_none() {
+                                malformed = true;
+                            }
+                            Ok(())
+                        },
+                    );
+                    out.push(')');
+                }
+                other => write_token(out, &other),
+            },
+            Err(_) => break,
+        }
+    }
+    if malformed {
+        return None;
+    }
+    Some(())
+}
+
+/// Read the two color arguments of `light-dark(...)`. The contents are
+/// serialized verbatim; a second top-level comma, an empty branch, or a
+/// non-paren block makes the call malformed.
+fn parse_light_dark_args(parser: &mut CssParser<'_, '_>) -> Option<(String, String)> {
+    let mut light = String::new();
+    let mut dark = String::new();
+    let mut seen_comma = false;
+    let mut malformed = false;
+    let _ = parser.parse_nested_block(|parser| -> Result<(), cssparser::ParseError<'_, ()>> {
+        loop {
+            match parser.next_including_whitespace() {
+                Ok(token) => match token {
+                    Token::Comma => {
+                        if seen_comma {
+                            malformed = true;
+                        }
+                        seen_comma = true;
+                    }
+                    Token::Function(name) => {
+                        let branch = if seen_comma { &mut dark } else { &mut light };
+                        branch.push_str(name);
+                        branch.push('(');
+                        let _ = parser.parse_nested_block(
+                            |parser| -> Result<(), cssparser::ParseError<'_, ()>> {
+                                write_branch_tokens(parser, branch);
+                                Ok(())
+                            },
+                        );
+                        branch.push(')');
+                    }
+                    Token::ParenthesisBlock => {
+                        let branch = if seen_comma { &mut dark } else { &mut light };
+                        branch.push('(');
+                        let _ = parser.parse_nested_block(
+                            |parser| -> Result<(), cssparser::ParseError<'_, ()>> {
+                                write_branch_tokens(parser, branch);
+                                Ok(())
+                            },
+                        );
+                        branch.push(')');
+                    }
+                    // Square/curly blocks cannot appear inside a color.
+                    Token::SquareBracketBlock | Token::CurlyBracketBlock => {
+                        malformed = true;
+                    }
+                    other => {
+                        let branch = if seen_comma { &mut dark } else { &mut light };
+                        write_token(branch, &other);
+                    }
+                },
+                Err(_) => break,
+            }
+        }
+        Ok(())
+    });
+    if malformed || !seen_comma || light.trim().is_empty() || dark.trim().is_empty() {
+        return None;
+    }
+    Some((light, dark))
+}
+
+/// Verbatim token serialization for `light-dark()` branches: no `var()`
+/// resolution (substitution already ran) and no rewriting.
+fn write_branch_tokens(parser: &mut CssParser<'_, '_>, out: &mut String) {
+    loop {
+        match parser.next_including_whitespace() {
+            Ok(token) => match token {
+                Token::Function(name) => {
+                    out.push_str(name);
+                    out.push('(');
+                    let _ = parser.parse_nested_block(
+                        |parser| -> Result<(), cssparser::ParseError<'_, ()>> {
+                            write_branch_tokens(parser, out);
+                            Ok(())
+                        },
+                    );
+                    out.push(')');
+                }
+                Token::ParenthesisBlock => {
+                    out.push('(');
+                    let _ = parser.parse_nested_block(
+                        |parser| -> Result<(), cssparser::ParseError<'_, ()>> {
+                            write_branch_tokens(parser, out);
                             Ok(())
                         },
                     );

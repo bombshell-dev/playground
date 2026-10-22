@@ -642,6 +642,100 @@ fn dark_scheme_and_state_via_nesting() {
         ..Default::default()
     };
     let s = compute(std::slice::from_ref(&&sheet), &t, 0, &env).unwrap();
-    // :hover and dark-mode rules both match; dark rule is later in source order.
+    // Both rules match, but `:hover` carries higher specificity (0,2,0 vs
+    // 0,1,0), so the hover rule's plain `white` wins regardless of what the
+    // dark rule's `light-dark()` would resolve to.
     assert_eq!(get(&s, "color"), "#fff");
+}
+
+#[test]
+fn light_dark_resolves_against_the_color_scheme() {
+    let case = stylesheet(".card { color: light-dark(white, black) }");
+    let sheet = case.sheet();
+    let mut n = node("card");
+    n.classes = vec!["card".into()];
+    let t = tree(vec![n], vec![NO_PARENT]);
+
+    let light = Environment::default();
+    let s = compute(std::slice::from_ref(&&sheet), &t, 0, &light).unwrap();
+    assert_eq!(get(&s, "color"), "#fff");
+
+    let dark = Environment {
+        color_scheme: bombshell_css_core::ColorScheme::Dark,
+        ..Default::default()
+    };
+    let s = compute(std::slice::from_ref(&&sheet), &t, 0, &dark).unwrap();
+    assert_eq!(get(&s, "color"), "#000");
+}
+
+#[test]
+fn light_dark_resolves_through_var_substitution() {
+    // A custom property carries `light-dark()` verbatim (custom property
+    // values are not canonicalized); the using declaration resolves it at
+    // computed-value time, picking the dark branch as authored.
+    let case = stylesheet(":root { --panel: light-dark(white, black) } .card { color: var(--panel) }");
+    let sheet = case.sheet();
+    let t = tree(
+        vec![node("root"), {
+            let mut n = node("card");
+            n.classes = vec!["card".into()];
+            n
+        }],
+        vec![NO_PARENT, 0],
+    );
+    let dark = Environment {
+        color_scheme: bombshell_css_core::ColorScheme::Dark,
+        ..Default::default()
+    };
+    let s = compute(std::slice::from_ref(&&sheet), &t, 1, &dark).unwrap();
+    assert_eq!(get(&s, "color"), "black");
+}
+
+#[test]
+fn light_dark_inherits_as_a_computed_value() {
+    // Descendants inherit the resolved branch, not the raw function text.
+    let case = stylesheet(".card { color: light-dark(#123456, #654321) }");
+    let sheet = case.sheet();
+    let t = tree(
+        vec![{
+            let mut n = node("card");
+            n.classes = vec!["card".into()];
+            n
+        }, node("title")],
+        vec![NO_PARENT, 0],
+    );
+    let dark = Environment {
+        color_scheme: bombshell_css_core::ColorScheme::Dark,
+        ..Default::default()
+    };
+    let s = compute(std::slice::from_ref(&&sheet), &t, 1, &dark).unwrap();
+    assert_eq!(get(&s, "color"), "#654321");
+}
+
+#[test]
+fn malformed_light_dark_drops_the_declaration() {
+    // Inline styles pass through un-canonicalized, so a malformed call only
+    // surfaces at computed-value time; it drops the declaration like a
+    // failed var() resolution.
+    let case = stylesheet(".card { color: blue }");
+    let sheet = case.sheet();
+    let mut n = node("card");
+    n.classes = vec!["card".into()];
+    n.style = Some("color: light-dark(#fff)".into());
+    let t = tree(vec![n], vec![NO_PARENT]);
+    let s = compute(std::slice::from_ref(&&sheet), &t, 0, &Environment::default()).unwrap();
+    assert_eq!(s.get("color"), None, "malformed light-dark must drop");
+}
+
+#[test]
+fn light_dark_stays_verbatim_outside_color_properties() {
+    // Resolution is scoped to the color properties the compiler
+    // canonicalizes; other properties keep the value as authored.
+    let case = stylesheet(".card { border: light-dark(#fff, #000) }");
+    let sheet = case.sheet();
+    let mut n = node("card");
+    n.classes = vec!["card".into()];
+    let t = tree(vec![n], vec![NO_PARENT]);
+    let s = compute(std::slice::from_ref(&&sheet), &t, 0, &Environment::default()).unwrap();
+    assert_eq!(get(&s, "border"), "light-dark(#fff, #000)");
 }

@@ -6,7 +6,9 @@
 //! leading/trailing zeros (`0.2` → `.2`), and color-property values are
 //! validated (a color is a single component: keyword, hash, or function)
 //! so invalid declarations report through the recovery paths like they used
-//! to.
+//! to. `light-dark(a, b)` is preserved (branches canonicalized) for the
+//! runtime, which resolves it against the color scheme at computed-value
+//! time.
 
 use bombshell_css_core::Diagnostic;
 use bombshell_css_core::tokens::write_token;
@@ -30,28 +32,26 @@ pub(crate) fn canonicalize(name: &str, value: &str) -> Result<String, Diagnostic
         _ => {}
     }
 
-    if name == "color" || name.ends_with("-color") {
-        // `light-dark(a, b)` resolves to its light branch at compile time
-        // (the previous front-end's printer behavior).
-        let value = match resolve_light_dark(value) {
-            Some(light) => light,
-            None => value.to_string(),
-        };
-
-        validate_color(&value)?;
-
-        // The shortest representation wins; ties go to hex (the previous
-        // front-end's printer behavior: `red` stays, `yellow` → `#ff0`).
-        let trimmed = value.trim();
-        if let Some(hex) = named_color(trimmed.to_ascii_lowercase().as_str()) {
-            return Ok(if trimmed.len() < hex.len() {
-                trimmed.to_ascii_lowercase()
-            } else {
-                hex.to_string()
-            });
+    if bombshell_css_core::is_color_property(name) {
+        // `light-dark(a, b)` survives to the runtime, which resolves it
+        // against the environment's color scheme at computed-value time.
+        // Both branches are validated and canonicalized here so the IR only
+        // ever carries canonical color text.
+        if is_light_dark_value(value) {
+            let Some((light, dark)) = split_light_dark(value) else {
+                return Err(invalid_color(value));
+            };
+            validate_color(light.trim())?;
+            validate_color(dark.trim())?;
+            return Ok(minify_value(&format!(
+                "light-dark({}, {})",
+                canonical_color(light.trim()),
+                canonical_color(dark.trim()),
+            )));
         }
 
-        return Ok(minify_value(&value));
+        validate_color(value)?;
+        return Ok(canonical_color(value));
     }
 
     if name == "font-weight" {
@@ -65,12 +65,51 @@ pub(crate) fn canonicalize(name: &str, value: &str) -> Result<String, Diagnostic
     Ok(minify_value(value))
 }
 
-/// `light-dark(a, b)` → its first argument.
-fn resolve_light_dark(value: &str) -> Option<String> {
+/// Canonical color text: the shortest representation wins and ties go to
+/// hex (the previous front-end's printer behavior: `red` stays, `yellow` →
+/// `#ff0`).
+fn canonical_color(value: &str) -> String {
     let trimmed = value.trim();
-    let rest = trimmed.strip_prefix("light-dark(")?;
-    let rest = rest.strip_suffix(')')?;
+    if let Some(hex) = named_color(trimmed.to_ascii_lowercase().as_str()) {
+        return if trimmed.len() < hex.len() {
+            trimmed.to_ascii_lowercase()
+        } else {
+            hex.to_string()
+        };
+    }
+    minify_value(trimmed)
+}
 
+/// The shared diagnostic for a color value that does not parse.
+fn invalid_color(value: &str) -> Diagnostic {
+    Diagnostic::warning(
+        "declaration",
+        {
+            let mut message = String::from("invalid color value `");
+            message.push_str(value);
+            message.push('`');
+            message
+        },
+    )
+}
+
+/// `light-dark(a, b)` → its two branches, split at the top-level comma.
+/// Function names are case-insensitive; anything that is not exactly the
+/// two-argument form returns `None` (the caller reports it invalid).
+fn split_light_dark(value: &str) -> Option<(String, String)> {
+    let trimmed = value.trim();
+    if !trimmed[..trimmed.len().min("light-dark(".len())]
+        .eq_ignore_ascii_case("light-dark(")
+    {
+        return None;
+    }
+    let rest = &trimmed["light-dark(".len()..];
+    if !rest.ends_with(')') {
+        return None;
+    }
+    let rest = &rest[..rest.len() - 1];
+
+    let mut split: Option<usize> = None;
     let mut depth = 0usize;
     let mut quote: Option<u8> = None;
     for (i, &b) in rest.as_bytes().iter().enumerate() {
@@ -81,13 +120,30 @@ fn resolve_light_dark(value: &str) -> Option<String> {
                 b'"' | b'\'' => quote = Some(b),
                 b'(' => depth += 1,
                 b')' => depth = depth.saturating_sub(1),
-                b',' if depth == 0 => return Some(rest[..i].trim().to_string()),
+                b',' if depth == 0 => {
+                    if split.is_some() {
+                        // A second top-level comma is not the two-argument
+                        // form.
+                        return None;
+                    }
+                    split = Some(i);
+                }
                 _ => {}
             },
         }
     }
 
-    None
+    let comma = split?;
+    let (light, dark) = (&rest[..comma], &rest[comma + 1..]);
+    Some((light.trim().to_string(), dark.trim().to_string()))
+}
+
+/// Whether the value is a `light-dark(...)` function call (case-insensitive
+/// name, balanced parens).
+fn is_light_dark_value(value: &str) -> bool {
+    let trimmed = value.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    lower.starts_with("light-dark(") && trimmed.ends_with(')')
 }
 
 /// A color value is one component: a keyword, a hash, or a balanced
@@ -169,15 +225,7 @@ fn validate_color(value: &str) -> Result<(), Diagnostic> {
     if valid {
         Ok(())
     } else {
-        Err(Diagnostic::warning(
-            "declaration",
-            {
-                let mut message = String::from("invalid color value `");
-                message.push_str(value);
-                message.push('`');
-                message
-            },
-        ))
+        Err(invalid_color(value))
     }
 }
 

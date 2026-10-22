@@ -123,3 +123,46 @@ fn ir_round_trips_through_compiler() {
     assert_eq!(decoded.rules.len(), 2);
     assert_eq!(decoded.rules[1].selector, ".a:hover");
 }
+
+#[test]
+fn preserves_light_dark_for_the_runtime() {
+    // The compiler no longer folds to the light branch: both branches are
+    // validated and canonicalized, and resolution happens against the
+    // environment's color scheme at computed-value time.
+    let sheet = compile_ok(".card { color: light-dark(white, black) }");
+    assert_eq!(sheet.rules[0].declarations[0].value, "light-dark(#fff, #000)");
+}
+
+#[test]
+fn canonicalizes_light_dark_branches_independently() {
+    // Case-insensitive function name; each branch canonicalizes like a
+    // standalone color value.
+    let sheet = compile_ok(".card { border-color: LIGHT-DARK( #ffffff , yellow ) }");
+    assert_eq!(
+        sheet.rules[0].declarations[0].value,
+        "light-dark(#ffffff, #ff0)"
+    );
+}
+
+#[test]
+fn rejects_malformed_light_dark() {
+    for css in [
+        ".card { color: light-dark(#fff) }",
+        ".card { color: light-dark(#fff, #000, #888) }",
+        ".card { color: light-dark(#fff, nope) }",
+    ] {
+        let out = compile(css, Origin::Author, Default::default());
+        let sheet = out.sheet.expect("recovered sheet");
+        assert!(
+            out.diagnostics
+                .iter()
+                .any(|d| d.message.contains("invalid color value")),
+            "missing diagnostic for {css}: {:?}",
+            out.diagnostics
+        );
+        assert!(
+            sheet.rules.iter().all(|rule| rule.declarations.is_empty()),
+            "declaration survived for {css}"
+        );
+    }
+}
