@@ -12,6 +12,22 @@ export {
 	HTMLTextAreaElement,
 	HTMLTemplateElement,
 	HTMLSlotElement,
+	HTMLButtonElement,
+	HTMLFormElement,
+	HTMLLabelElement,
+	HTMLFieldSetElement,
+	HTMLLegendElement,
+	HTMLSelectElement,
+	HTMLOptionElement,
+	HTMLOptGroupElement,
+	HTMLDataListElement,
+	HTMLSelectedContentElement,
+	HTMLOutputElement,
+	HTMLProgressElement,
+	HTMLMeterElement,
+	HTMLDetailsElement,
+	HTMLSummaryElement,
+	HTMLDialogElement,
 	TextControlElement,
 	HTML_NAMESPACE,
 	SVG_NAMESPACE,
@@ -34,3 +50,10 @@ export { CustomElementRegistry } from './custom-elements.ts';
 export type { CustomElementConstructor } from './custom-elements.ts';
 export { TreeWalker, NodeFilter } from './traversal.ts';
 export type { NodeFilterCallback } from './traversal.ts';
+
+export { FormData } from './form-elements.ts';
+export type { ValidityState } from './forms.ts';
+
+export { DOMTokenList } from './tokens.ts';
+
+export type { ShadowRootInit, HTMLSerializationOptions } from './dom.ts';

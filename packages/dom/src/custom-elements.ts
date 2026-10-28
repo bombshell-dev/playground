@@ -27,14 +27,41 @@ interface CustomState {
 type Reaction = () => void;
 const customStates = new WeakMap<Element, CustomState>();
 const reactionQueues = new WeakMap<Element, Reaction[]>();
-const scopes: Element[][] = [];
-let pending: Element[] = [];
+interface ReactionScope {
+	scopes: Element[][];
+	pending: Element[];
+	scheduled: boolean;
+}
+const environments = new WeakMap<Document, ReactionScope>();
+function environment(document: Document): ReactionScope {
+	let state = environments.get(document);
+	if (!state) {
+		state = { scopes: [], pending: [], scheduled: false };
+		environments.set(document, state);
+	}
+	return state;
+}
 
 function enqueue(element: Element, options: { reaction: Reaction; schedule?: boolean }): void {
 	let queue = reactionQueues.get(element);
 	if (!queue) reactionQueues.set(element, (queue = []));
 	queue.push(options.reaction);
-	if (options.schedule !== false) (scopes.at(-1) ?? pending).push(element);
+	if (options.schedule !== false) {
+		const document = element.ownerDocument;
+		const state = environment(document);
+		const scope = state.scopes.at(-1);
+		if (scope) scope.push(element);
+		else {
+			state.pending.push(element);
+			if (!state.scheduled) {
+				state.scheduled = true;
+				queueMicrotask(() => {
+					state.scheduled = false;
+					flushReactions(document);
+				});
+			}
+		}
+	}
 }
 function invoke(elements: readonly Element[]): void {
 	for (const element of elements) {
@@ -45,27 +72,39 @@ function invoke(elements: readonly Element[]): void {
 			try {
 				reaction?.();
 			} catch (error) {
-				element.ownerDocument.reportError(error);
+				try {
+					element.ownerDocument.reportError(error);
+				} catch (reportingError) {
+					queueMicrotask(() => {
+						throw reportingError;
+					});
+				}
 			}
 		}
 	}
 }
 /** @internal Complete one DOM operation before invoking its custom-element reactions. */
-export function withReactions<T>(operation: () => T): T {
+export function withReactions<T>(documents: Document | readonly Document[], operation: () => T): T {
 	const queue: Element[] = [];
-	scopes.push(queue);
+	const states = [...new Set(Array.isArray(documents) ? documents : [documents])].map(environment);
+	for (const state of states) state.scopes.push(queue);
 	try {
 		return operation();
 	} finally {
-		scopes.pop();
+		for (const state of states) state.scopes.pop();
 		invoke(queue);
 	}
 }
-/** @internal Drain pending reactions; nested DOM operations get independent queues. */
-export function flushReactions(): void {
-	if (scopes.length) return;
-	const queue = pending;
-	pending = [];
+/** @internal Parsing joins its caller's mutation scope, or owns one for direct parser calls. */
+export function withParsingReactions<T>(document: Document, operation: () => T): T {
+	return environment(document).scopes.length ? operation() : withReactions(document, operation);
+}
+/** @internal Drain only this document's backup reactions. */
+export function flushReactions(document: Document): void {
+	const state = environment(document);
+	if (state.scopes.length) return;
+	const queue = state.pending;
+	state.pending = [];
 	invoke(queue);
 }
 /** @internal Defer construction until the enclosing mutation has finished. */
@@ -192,7 +231,7 @@ export class CustomElementRegistry {
 		};
 	}
 	define(name: string, constructor: CustomElementConstructor): void {
-		withReactions(() => {
+		withReactions(this.#document, () => {
 			if (!validName(name)) throw new DOMException('Invalid custom element name', 'SyntaxError');
 			if (this.#definitions.has(name) || this.#constructors.has(constructor) || this.#defining)
 				throw new DOMException('Definition already registered or running', 'NotSupportedError');
@@ -269,7 +308,7 @@ export class CustomElementRegistry {
 		}
 	}
 	upgrade(root: Node): void {
-		withReactions(() => this.#enqueueUpgrades(root));
+		withReactions(this.#document, () => this.#enqueueUpgrades(root));
 	}
 	#enqueueUpgrades(root: Node): void {
 		const visit = (node: Node): void => {

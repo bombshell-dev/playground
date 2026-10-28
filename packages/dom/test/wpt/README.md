@@ -6,17 +6,23 @@ These files are unmodified source copies from `web-platform-tests/wpt`, commit
 - [`dom/events/AddEventListenerOptions-once.any.js`](https://github.com/web-platform-tests/wpt/blob/b4b303c8dca22989c43e2d76fce199c36d4b77a7/dom/events/AddEventListenerOptions-once.any.js)
 - [`dom/events/AddEventListenerOptions-passive.any.js`](https://github.com/web-platform-tests/wpt/blob/b4b303c8dca22989c43e2d76fce199c36d4b77a7/dom/events/AddEventListenerOptions-passive.any.js)
 - [`dom/events/AddEventListenerOptions-signal.any.js`](https://github.com/web-platform-tests/wpt/blob/b4b303c8dca22989c43e2d76fce199c36d4b77a7/dom/events/AddEventListenerOptions-signal.any.js)
+- [`html/semantics/forms/the-option-element/option-selected.html`](https://github.com/web-platform-tests/wpt/blob/b4b303c8dca22989c43e2d76fce199c36d4b77a7/html/semantics/forms/the-option-element/option-selected.html)
 
 Copyright © web-platform-tests contributors. The upstream BSD 3-Clause license
 is retained in [LICENSE.txt](./LICENSE.txt). The `.txt` suffix keeps fixtures
 outside TypeScript compilation and formatting; it does not change their bytes.
 
-`../wpt-events.test.ts` executes every case in these three files inside a Node VM
+`../wpt-events.test.ts` executes every case in the three event files inside a Node VM
 context. A minimal adapter maps `test`, `async_test`, and their assertions to
 Vitest. It supplies this package's Event/EventTarget and Node's native abort
 constructors. Errors reported by listeners are checked explicitly so swallowed
 assertions cannot create false passes. TypeError is supplied from the same realm
 as the implementation so constructor assertions test the intended exception.
+
+`../wpt-options.test.ts` extracts the inline script from the unchanged option HTML
+fixture and executes all three selectedness/dirtiness tests against this package's
+Document in a separate VM context. It supplies `test` and `assert_equals`; the
+fixture itself has no dependency on layout or native browser globals.
 
 There are no skipped cases in these files. This is a selected upstream run,
 not a run of the complete WPT harness or browser suite. Browser document/window

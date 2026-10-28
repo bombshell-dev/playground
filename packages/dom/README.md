@@ -65,7 +65,7 @@ dispatch.keyup({ key: 'Tab' });
 
 Event names preserve case. Capture, target, bubbling, cancellation, listener snapshots, once/passive/signal options, listener objects, and shadow retargeting are exercised by unit tests and selected upstream WPT cases. Listener exceptions are reported without escaping dispatch. The default error reporter queues an uncaught exception; hosts can provide `reportError`.
 
-`element.dispatchEvent()` delivers a synthetic event. It does not move focus, edit text, or perform browser default actions. `Dispatch` is the explicit host-input boundary and implements logical Tab navigation; its dispatched events are still untrusted. See [focus and controls](docs/focus-and-controls.md).
+`element.dispatchEvent()` delivers a synthetic event. Synthetic keyboard and focus events do not run host input actions. Following HTML activation semantics, an uncanceled `MouseEvent("click")` can activate controls; `element.click()` provides that operation. `Dispatch` is the explicit host-input boundary for logical navigation, text editing, keyboard activation and option selection; all generated events remain untrusted. See [focus and controls](docs/focus-and-controls.md).
 
 ## Two independent selection systems
 
@@ -104,6 +104,40 @@ root.append(prompt);
 Each environment has an explicit `document.HTMLElement` base and registry. Autonomous custom elements support direct construction and identity-preserving upgrades, observed attributes, connection/disconnection/adoption callbacks, and reentrancy. Parsing is opt-in; scripts remain inert. Template contents are separate, inert trees. Shadow roots and slots compose events and focus without a rendering engine.
 
 `parse5` is the only production dependency. The separate `@bomb.sh/dom/parsing` entry uses its HTML tokenizer/tree builder, then creates nodes in this implementation. The core entry does not load it. No LinkeDOM runtime, second DOM hierarchy, framework, browser process, or worker is required.
+
+## Interactive HTML and terminal elements
+
+Forms, buttons, labels, fieldsets, inputs, textareas, selects/options, output,
+progress/meter, details/summary and dialogs have specialized classes and tested
+state transitions. See [forms and element extensions](docs/forms-and-elements.md)
+for examples and limits, and [interactive standards](docs/interactive-standards.md)
+for browser comparisons and known differences.
+
+Arbitrary names still work without registration. To give a terminal element
+application behavior, register its factory explicitly on each document:
+
+```ts
+import { Document, Element } from '@bomb.sh/dom';
+
+class Box extends Element {
+	constructor(document: Document) {
+		super('box', document);
+	}
+	status = 'ready';
+}
+declare module '@bomb.sh/dom' {
+	interface Elements {
+		box: Box;
+	}
+}
+document.registerElement('box', (owner) => new Box(owner));
+document.createElement('box').status; // string, with a real Box instance
+```
+
+Declaration merging is a TypeScript contract: install the factory in every
+application document that relies on that declaration. Registration affects future
+creation, cloning and parsing; it does not upgrade existing nodes. Hyphenated
+custom elements use `document.customElements` and its lifecycle model.
 
 ## Development
 

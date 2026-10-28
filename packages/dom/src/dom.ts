@@ -1,4 +1,8 @@
-import { EventTarget, Event, type Event as DOMEvent } from './events.ts';
+import { EventTarget, Event, MouseEvent, type Event as DOMEvent } from './events.ts';
+import { defineFormElements } from './form-elements.ts';
+import { DOMTokenList } from './tokens.ts';
+import { defineValueElements, cloneValueElementState } from './value-elements.ts';
+import { defineInteractiveElements, activateInteractive } from './interactive-elements.ts';
 import {
 	notifyBeforeRemove,
 	notifyInsert,
@@ -13,6 +17,7 @@ import {
 	customAttribute,
 	customAdopted,
 	flushReactions,
+	enqueueUpgrade,
 	withReactions,
 	type CustomElementConstructor,
 } from './custom-elements.ts';
@@ -23,9 +28,33 @@ import {
 	cloneTextControlState,
 	syncTextControlDefault,
 	TextControlState,
+	InputControlState,
+	sanitizeInputValue,
+	inputValidity,
+	inputValueMode,
+	inputValueAsNumber,
+	inputValueFromNumber,
+	inputValueAsDate,
+	inputValueFromDate,
+	stepInputValue,
+	supportsReadOnly,
+	textLengthValidity,
 	type SelectionDirection,
 	type SelectionMode,
 } from './controls.ts';
+import {
+	formOwner,
+	formTree,
+	labelsFor,
+	isDisabled,
+	inDatalist,
+	registerControl,
+	validityFor,
+	validationMessageFor,
+	setControlValidity,
+	validateControl,
+	type ValidityState,
+} from './forms.ts';
 
 export const HTML_NAMESPACE = 'http://www.w3.org/1999/xhtml';
 export const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
@@ -58,8 +87,16 @@ export interface Invalidation {
 }
 /** Options for a document with no implicit root or process globals. */
 export interface MarkupParser {
-	parse(context: Element | ShadowRoot, markup: string): DocumentFragment;
-	serialize(node: Node): string;
+	parse(
+		context: Element | ShadowRoot,
+		markup: string,
+		options?: { declarativeShadowRoots?: boolean },
+	): DocumentFragment;
+	serialize(node: Node, options?: HTMLSerializationOptions): string;
+}
+export interface HTMLSerializationOptions {
+	serializableShadowRoots?: boolean;
+	shadowRoots?: readonly ShadowRoot[];
 }
 export interface DocumentOptions {
 	onInvalidate?: (change: Invalidation) => void;
@@ -71,6 +108,22 @@ export interface Elements {
 	textarea: HTMLTextAreaElement;
 	template: HTMLTemplateElement;
 	slot: HTMLSlotElement;
+	button: HTMLButtonElement;
+	form: HTMLFormElement;
+	label: HTMLLabelElement;
+	fieldset: HTMLFieldSetElement;
+	legend: HTMLLegendElement;
+	select: HTMLSelectElement;
+	option: HTMLOptionElement;
+	optgroup: HTMLOptGroupElement;
+	datalist: HTMLDataListElement;
+	selectedcontent: HTMLSelectedContentElement;
+	output: HTMLOutputElement;
+	progress: HTMLProgressElement;
+	meter: HTMLMeterElement;
+	details: HTMLDetailsElement;
+	summary: HTMLSummaryElement;
+	dialog: HTMLDialogElement;
 }
 
 /** Base of the single in-memory node hierarchy. Collections are live read-only array views. */
@@ -160,7 +213,9 @@ export abstract class Node extends EventTarget {
 		return this.insertBefore(node, null);
 	}
 	insertBefore<T extends Node>(node: T, anchor: Node | null): T {
-		return withReactions(() => this.#insertBefore(node, anchor));
+		return withReactions(reactionDocuments(this.document, [node]), () =>
+			this.#insertBefore(node, anchor),
+		);
 	}
 	#insertBefore<T extends Node>(node: T, anchor: Node | null, suppressObservers = false): T {
 		validateInsertion(this, node, anchor);
@@ -206,7 +261,7 @@ export abstract class Node extends EventTarget {
 		return node;
 	}
 	removeChild<T extends Node>(node: T): T {
-		return withReactions(() => this.#removeChild(node));
+		return withReactions(this.document, () => this.#removeChild(node));
 	}
 	#removeChild<T extends Node>(node: T, suppressObservers = false): T {
 		const children = state(this).children;
@@ -234,7 +289,9 @@ export abstract class Node extends EventTarget {
 		return node;
 	}
 	replaceChild<T extends Node>(node: Node, child: T): T {
-		return withReactions(() => this.#replaceChild(node, child));
+		return withReactions(reactionDocuments(this.document, [node]), () =>
+			this.#replaceChild(node, child),
+		);
 	}
 	#replaceChild<T extends Node>(node: Node, child: T): T {
 		if (child.parentNode !== this) throw new DOMException('Node is not a child', 'NotFoundError');
@@ -265,7 +322,7 @@ export abstract class Node extends EventTarget {
 		if (node.parentNode) node.parentNode.#removeChild(node);
 	}
 	append(...nodes: (Node | string)[]): void {
-		withReactions(() => this.#append(nodes));
+		withReactions(reactionDocuments(this.document, nodes), () => this.#append(nodes));
 	}
 	#append(nodes: readonly (Node | string)[]): void {
 		validateSequence(this, nodes);
@@ -281,7 +338,7 @@ export abstract class Node extends EventTarget {
 		}
 	}
 	prepend(...nodes: (Node | string)[]): void {
-		withReactions(() => this.#prepend(nodes));
+		withReactions(reactionDocuments(this.document, nodes), () => this.#prepend(nodes));
 	}
 	#prepend(nodes: readonly (Node | string)[]): void {
 		validateSequence(this, nodes);
@@ -295,7 +352,7 @@ export abstract class Node extends EventTarget {
 		this.#insertBefore(fragment, this.firstChild);
 	}
 	replaceChildren(...nodes: (Node | string)[]): void {
-		withReactions(() => this.#replaceChildren(nodes));
+		withReactions(reactionDocuments(this.document, nodes), () => this.#replaceChildren(nodes));
 	}
 	#replaceChildren(nodes: readonly (Node | string)[]): void {
 		const converted = nodes.map((node) =>
@@ -326,7 +383,7 @@ export abstract class Node extends EventTarget {
 			});
 	}
 	before(...nodes: (Node | string)[]): void {
-		withReactions(() => this.#before(nodes));
+		withReactions(reactionDocuments(this.document, nodes), () => this.#before(nodes));
 	}
 	#before(nodes: readonly (Node | string)[]): void {
 		const parent = this.parentNode;
@@ -344,7 +401,7 @@ export abstract class Node extends EventTarget {
 		parent.#insertBefore(fragment, previous ? previous.nextSibling : parent.firstChild);
 	}
 	after(...nodes: (Node | string)[]): void {
-		withReactions(() => this.#after(nodes));
+		withReactions(reactionDocuments(this.document, nodes), () => this.#after(nodes));
 	}
 	#after(nodes: readonly (Node | string)[]): void {
 		const parent = this.parentNode;
@@ -362,7 +419,7 @@ export abstract class Node extends EventTarget {
 		parent.#insertBefore(fragment, anchor);
 	}
 	replaceWith(...nodes: (Node | string)[]): void {
-		withReactions(() => this.#replaceWith(nodes));
+		withReactions(reactionDocuments(this.document, nodes), () => this.#replaceWith(nodes));
 	}
 	#replaceWith(nodes: readonly (Node | string)[]): void {
 		const parent = this.parentNode;
@@ -383,7 +440,7 @@ export abstract class Node extends EventTarget {
 		else parent.#insertBefore(fragment, anchor);
 	}
 	cloneNode(deep = false): Node {
-		return clone(this, this.document, deep);
+		return withReactions(this.document, () => clone(this, this.document, deep));
 	}
 	protected override getEventParent(_event: DOMEvent): EventTarget | null {
 		return getAssignedSlot(this) ?? this.parentNode;
@@ -476,6 +533,7 @@ export class Document extends Node {
 	#selectionQueued = false;
 	#parser: MarkupParser | null = null;
 	#templateOwner: Document | null = null;
+	readonly #elementFactories = new Map<string, (document: Document) => Element>();
 	constructor(options: DocumentOptions | (() => void) = {}) {
 		super(null);
 		this.#options = typeof options === 'function' ? { onInvalidate: options } : options;
@@ -504,11 +562,44 @@ export class Document extends Node {
 		validateName(localName);
 		const custom = this.customElements.create(localName);
 		if (custom) return custom;
+		const factory = this.#elementFactories.get(localName);
+		if (factory) {
+			const element = factory(this);
+			if (
+				!(element instanceof Element) ||
+				element.ownerDocument !== this ||
+				element.localName !== localName ||
+				element.namespaceURI !== HTML_NAMESPACE ||
+				element.parentNode
+			)
+				throw new DOMException(
+					'Element factory returned an incompatible node',
+					'NotSupportedError',
+				);
+			return element;
+		}
 		if (localName === 'template') return new HTMLTemplateElement(this);
 		if (localName === 'slot') return new HTMLSlotElement(this);
 		if (localName === 'input') return new HTMLInputElement(this);
 		if (localName === 'textarea') return new HTMLTextAreaElement(this);
+		const Constructor = Object.hasOwn(specializedElements, localName)
+			? specializedElements[localName]
+			: undefined;
+		if (Constructor) return new Constructor(this);
 		return new Element(localName, this);
+	}
+	/** Register an explicit document-local factory for terminal element names. */
+	registerElement(name: string, factory: (document: Document) => Element): void {
+		const normalized = String(name).toLowerCase();
+		validateName(normalized);
+		if (
+			normalized.includes('-') ||
+			['input', 'textarea', 'template', 'slot'].includes(normalized) ||
+			Object.hasOwn(specializedElements, normalized) ||
+			this.#elementFactories.has(normalized)
+		)
+			throw new DOMException('Element name is reserved or already registered', 'NotSupportedError');
+		this.#elementFactories.set(normalized, factory);
 	}
 	createElementNS(namespace: string | null, name: string): Element {
 		const parts = qualifiedName(namespace, name);
@@ -539,7 +630,7 @@ export class Document extends Node {
 		return new Attr(parts.localName, this, parts);
 	}
 	adoptNode<T extends Node>(node: T): T {
-		return withReactions(() => this.#adoptNode(node));
+		return withReactions(reactionDocuments(this, [node]), () => this.#adoptNode(node));
 	}
 	#adoptNode<T extends Node>(node: T): T {
 		if (node instanceof Document || node instanceof ShadowRoot)
@@ -547,13 +638,13 @@ export class Document extends Node {
 		if (node instanceof Attr) node.ownerElement?.removeAttributeNode(node);
 		this.detachNode(node);
 		adopt(node, this);
-		flushReactions();
+		flushReactions(this);
 		return node;
 	}
 	importNode<T extends Node>(node: T, deep = false): Node {
 		if (node instanceof Document || node instanceof ShadowRoot)
 			throw new DOMException('Cannot import this node', 'NotSupportedError');
-		return clone(node, this, deep);
+		return withReactions(this, () => clone(node, this, deep));
 	}
 	getElementById(id: string): Element | null {
 		return descendants(this).find((node) => node.id === id) ?? null;
@@ -651,6 +742,8 @@ export class Element extends Node {
 	readonly prefix: string | null;
 	readonly #attributes: Attr[] = [];
 	readonly #attributeView = readonlyCollection(() => this.#attributes);
+	#clickInProgress = false;
+	#classList: DOMTokenList | null = null;
 
 	constructor(name: string, document: Document, options: Partial<NamespaceName> = {}) {
 		super(document);
@@ -688,11 +781,87 @@ export class Element extends Node {
 			this instanceof HTMLTemplateElement ? this.content : this,
 		);
 	}
+	getHTML(options: HTMLSerializationOptions = {}): string {
+		return this.ownerDocument.markupParser.serialize(
+			this instanceof HTMLTemplateElement ? this.content : this,
+			options,
+		);
+	}
 	set innerHTML(value: string) {
-		withReactions(() => {
+		withReactions(this.ownerDocument, () => {
 			const fragment = this.ownerDocument.markupParser.parse(this, String(value));
 			(this instanceof HTMLTemplateElement ? this.content : this).replaceChildren(fragment);
 		});
+	}
+	/** Parse HTML including declarative shadow roots; scripts remain inert. */
+	setHTMLUnsafe(value: string): void {
+		withReactions(this.ownerDocument, () => {
+			const fragment = this.ownerDocument.markupParser.parse(this, String(value), {
+				declarativeShadowRoots: true,
+			});
+			(this instanceof HTMLTemplateElement ? this.content : this).replaceChildren(fragment);
+		});
+	}
+	get hidden(): boolean {
+		return this.hasAttribute('hidden');
+	}
+	set hidden(value: boolean) {
+		this.toggleAttribute('hidden', Boolean(value));
+	}
+	get inert(): boolean {
+		return this.hasAttribute('inert');
+	}
+	set inert(value: boolean) {
+		this.toggleAttribute('inert', Boolean(value));
+	}
+	get autofocus(): boolean {
+		return this.hasAttribute('autofocus');
+	}
+	set autofocus(value: boolean) {
+		this.toggleAttribute('autofocus', Boolean(value));
+	}
+	get contentEditable(): string {
+		const value = this.getAttribute('contenteditable')?.toLowerCase();
+		return value === '' || value === 'true'
+			? 'true'
+			: value === 'false' || value === 'plaintext-only'
+				? value
+				: 'inherit';
+	}
+	set contentEditable(value: string) {
+		const normalized = String(value).toLowerCase();
+		if (!['true', 'false', 'plaintext-only', 'inherit'].includes(normalized))
+			throw new DOMException('Invalid editable state', 'SyntaxError');
+		if (normalized === 'inherit') this.removeAttribute('contenteditable');
+		else this.setAttribute('contenteditable', normalized);
+	}
+	get isContentEditable(): boolean {
+		return this.contentEditable === 'inherit'
+			? (this.parentElement?.isContentEditable ?? false)
+			: this.contentEditable !== 'false';
+	}
+	click(): void {
+		if (this.#clickInProgress || this.activationDisabled()) return;
+		this.#clickInProgress = true;
+		try {
+			this.dispatchEvent(
+				new MouseEvent('click', { bubbles: true, cancelable: true, composed: true }),
+			);
+		} finally {
+			this.#clickInProgress = false;
+		}
+	}
+	protected override hasActivationBehavior(): boolean {
+		return (
+			this.namespaceURI === HTML_NAMESPACE &&
+			['input', 'button', 'label', 'summary'].includes(this.localName)
+		);
+	}
+	protected activationDisabled(): boolean {
+		return false;
+	}
+	protected override activationBehavior(_event: Event, target: EventTarget | null): void {
+		activateInteractive(this, target);
 	}
 	get slot(): string {
 		return this.getAttribute('slot') ?? '';
@@ -723,6 +892,9 @@ export class Element extends Node {
 	}
 	get className(): string {
 		return this.getAttribute('class') ?? '';
+	}
+	get classList(): DOMTokenList {
+		return (this.#classList ??= new DOMTokenList(this, 'class'));
 	}
 	set className(value: string) {
 		this.setAttribute('class', value);
@@ -841,13 +1013,30 @@ export class Element extends Node {
 			attr.ownerElement === this ? attr.value : null,
 			attr.namespaceURI,
 		);
-		flushReactions();
+		flushReactions(this.ownerDocument);
 	}
-	attachShadow(options: { mode: 'open' | 'closed'; delegatesFocus?: boolean }): ShadowRoot {
-		if (shadowRoots.get(this))
-			throw new DOMException('Shadow root already attached', 'NotSupportedError');
+	attachShadow(options: ShadowRootInit): ShadowRoot {
+		if (
+			!['open', 'closed'].includes(options.mode) ||
+			(options.slotAssignment !== undefined &&
+				!['named', 'manual'].includes(options.slotAssignment))
+		)
+			// oxlint-disable-next-line bombshell-dev/no-generic-error -- Web IDL enum conversion throws TypeError.
+			throw new TypeError('Invalid shadow root options');
+		if (this.namespaceURI !== HTML_NAMESPACE)
+			throw new DOMException('Shadow hosts must be HTML elements', 'NotSupportedError');
+		const existing = shadowRoots.get(this);
+		if (existing) {
+			if (!declarativeRoots.has(existing) || existing.mode !== options.mode)
+				throw new DOMException('Shadow root already attached', 'NotSupportedError');
+			declarativeRoots.delete(existing);
+			existing.replaceChildren();
+			return existing;
+		}
 		const root = new ShadowRoot(this, options);
 		shadowRoots.set(this, root);
+		this.notifyHost();
+		this.ownerDocument.focusManager.revalidate();
 		return root;
 	}
 	get shadowRoot(): ShadowRoot | null {
@@ -1000,22 +1189,52 @@ export class DocumentFragment extends Node {
 }
 
 /** A shadow tree owned by its host document. */
+export interface ShadowRootInit {
+	mode: 'open' | 'closed';
+	delegatesFocus?: boolean;
+	slotAssignment?: 'named' | 'manual';
+	clonable?: boolean;
+	serializable?: boolean;
+}
+const declarativeRoots = new WeakSet<ShadowRoot>();
+/** @internal Preserve declarative-root hydration semantics without exposing mutable state. */
+export function markDeclarativeShadowRoot(root: ShadowRoot): void {
+	declarativeRoots.add(root);
+}
 export class ShadowRoot extends DocumentFragment {
 	readonly host: Element;
 	readonly mode: 'open' | 'closed';
 	readonly delegatesFocus: boolean;
-	constructor(host: Element, options: { mode: 'open' | 'closed'; delegatesFocus?: boolean }) {
+	readonly slotAssignment: 'named' | 'manual';
+	readonly clonable: boolean;
+	readonly serializable: boolean;
+	constructor(host: Element, options: ShadowRootInit) {
 		super(host.ownerDocument);
 		this.host = host;
 		this.mode = options.mode;
 		this.delegatesFocus = options.delegatesFocus ?? false;
+		this.slotAssignment = options.slotAssignment ?? 'named';
+		this.clonable = Boolean(options.clonable);
+		this.serializable = Boolean(options.serializable);
 	}
 	get innerHTML(): string {
 		return this.host.ownerDocument.markupParser.serialize(this);
 	}
+	getHTML(options: HTMLSerializationOptions = {}): string {
+		return this.host.ownerDocument.markupParser.serialize(this, options);
+	}
 	set innerHTML(value: string) {
-		withReactions(() =>
+		withReactions(this.host.ownerDocument, () =>
 			this.replaceChildren(this.host.ownerDocument.markupParser.parse(this, String(value))),
+		);
+	}
+	setHTMLUnsafe(value: string): void {
+		withReactions(this.host.ownerDocument, () =>
+			this.replaceChildren(
+				this.host.ownerDocument.markupParser.parse(this, String(value), {
+					declarativeShadowRoots: true,
+				}),
+			),
 		);
 	}
 	get activeElement(): Element | null {
@@ -1045,7 +1264,7 @@ function adopt(node: Node, owner: Document): void {
 }
 function connectionChanged(node: Node, connected: boolean): void {
 	if (!connected || node.isConnected) customConnection(node, connected);
-	flushReactions();
+	if (node.ownerDocument) flushReactions(node.ownerDocument);
 }
 // oxlint-disable-next-line bombshell-dev/max-params -- Internal DOM cloning algorithm arguments.
 function clone(node: Node, owner: Document, deep: boolean): Node {
@@ -1054,14 +1273,30 @@ function clone(node: Node, owner: Document, deep: boolean): Node {
 	else if (node instanceof ShadowRoot)
 		throw new DOMException('Cannot clone a shadow root', 'NotSupportedError');
 	else if (node instanceof Element) {
-		const element = owner.createElementNS(
-			node.namespaceURI,
-			node.prefix ? `${node.prefix}:${node.localName}` : node.localName,
-		);
+		const customCandidate = node.namespaceURI === HTML_NAMESPACE && node.localName.includes('-');
+		const element = customCandidate
+			? new Element(node.localName, owner, { namespaceURI: node.namespaceURI, prefix: node.prefix })
+			: owner.createElementNS(
+					node.namespaceURI,
+					node.prefix ? `${node.prefix}:${node.localName}` : node.localName,
+				);
+		if (customCandidate && owner.customElements.get(node.localName)) enqueueUpgrade(element);
 		for (const attr of node.attributes) element.setAttributeNodeNS(cloneAttribute(attr, owner));
 		if (deep && node instanceof HTMLTemplateElement && element instanceof HTMLTemplateElement)
 			for (const child of node.content.childNodes)
 				element.content.appendChild(clone(child, element.content.ownerDocument ?? owner, true));
+		const shadow = getShadowRoot(node);
+		if (shadow?.clonable) {
+			const copiedShadow = element.attachShadow({
+				mode: shadow.mode,
+				delegatesFocus: shadow.delegatesFocus,
+				slotAssignment: shadow.slotAssignment,
+				clonable: true,
+				serializable: shadow.serializable,
+			});
+			if (declarativeRoots.has(shadow)) declarativeRoots.add(copiedShadow);
+			for (const child of shadow.childNodes) copiedShadow.appendChild(clone(child, owner, true));
+		}
 		copy = element;
 	} else if (node instanceof Text) copy = owner.createTextNode(node.data);
 	else if (node instanceof Comment) copy = owner.createComment(node.data);
@@ -1070,7 +1305,10 @@ function clone(node: Node, owner: Document, deep: boolean): Node {
 	if (deep)
 		for (const child of node.childNodes)
 			copy.appendChild(clone(child, copy instanceof Document ? copy : owner, true));
-	if (node instanceof Element && copy instanceof Element) cloneTextControlState(node, copy);
+	if (node instanceof Element && copy instanceof Element) {
+		cloneTextControlState(node, copy);
+		cloneValueElementState(node, copy);
+	}
 	return copy;
 }
 function cloneAttribute(attr: Attr, owner: Document): Attr {
@@ -1097,7 +1335,7 @@ export function getShadowRoot(element: Element): ShadowRoot | null {
 	return shadowRoots.get(element) ?? null;
 }
 
-/** Editable text control algorithms shared by supported input/textarea elements. */
+/** Shared text editing, form association, and constraint APIs. */
 export abstract class TextControlElement extends Element {
 	protected abstract readonly control: TextControlState;
 	get value(): string {
@@ -1105,6 +1343,72 @@ export abstract class TextControlElement extends Element {
 	}
 	set value(value: string) {
 		this.control.value = value;
+	}
+	get name(): string {
+		return this.getAttribute('name') ?? '';
+	}
+	set name(value: string) {
+		this.setAttribute('name', value);
+	}
+	get disabled(): boolean {
+		return this.hasAttribute('disabled');
+	}
+	set disabled(value: boolean) {
+		this.toggleAttribute('disabled', Boolean(value));
+	}
+	get readOnly(): boolean {
+		return this.hasAttribute('readonly');
+	}
+	set readOnly(value: boolean) {
+		this.toggleAttribute('readonly', Boolean(value));
+	}
+	get required(): boolean {
+		return this.hasAttribute('required');
+	}
+	set required(value: boolean) {
+		this.toggleAttribute('required', Boolean(value));
+	}
+	get placeholder(): string {
+		return this.getAttribute('placeholder') ?? '';
+	}
+	set placeholder(value: string) {
+		this.setAttribute('placeholder', value);
+	}
+	get minLength(): number {
+		return this.#lengthAttribute('minlength');
+	}
+	set minLength(value: number) {
+		this.#setLengthAttribute('minlength', value);
+	}
+	get maxLength(): number {
+		return this.#lengthAttribute('maxlength');
+	}
+	set maxLength(value: number) {
+		this.#setLengthAttribute('maxlength', value);
+	}
+	get form(): HTMLFormElement | null {
+		return formOwner(this);
+	}
+	get labels(): readonly Element[] | null {
+		return labelsFor(this);
+	}
+	get validity(): ValidityState {
+		return validityFor(this);
+	}
+	get validationMessage(): string {
+		return validationMessageFor(this);
+	}
+	get willValidate(): boolean {
+		return !isDisabled(this) && !this.readOnly && !inDatalist(this);
+	}
+	checkValidity(): boolean {
+		return validateControl(this);
+	}
+	reportValidity(): boolean {
+		return validateControl(this, true);
+	}
+	setCustomValidity(message: string): void {
+		setControlValidity(this, message);
 	}
 	get selectionStart(): number | null {
 		return this.control.selectionStart;
@@ -1145,10 +1449,22 @@ export abstract class TextControlElement extends Element {
 	): void {
 		this.control.setRangeText(replacement, { start, end, selectionMode });
 	}
+	#lengthAttribute(name: string): number {
+		const raw = this.getAttribute(name);
+		if (raw === null || !/^\s*\+?\d+/.test(raw)) return -1;
+		const parsed = Number.parseInt(raw, 10);
+		return parsed <= 2147483647 ? parsed : -1;
+	}
+	#setLengthAttribute(name: string, value: number): void {
+		const length = Number(value) | 0;
+		if (length < 0) throw new DOMException('A length cannot be negative', 'IndexSizeError');
+		this.setAttribute(name, String(length));
+	}
 }
-/** Input text values and selection, without browser form submission or validation. */
+/** Input values, checkedness, constraints, selection, and activation. */
 export class HTMLInputElement extends TextControlElement {
 	protected readonly control: TextControlState;
+	readonly #input: InputControlState;
 	constructor(document: Document) {
 		super('input', document);
 		this.control = new TextControlState({
@@ -1156,6 +1472,26 @@ export class HTMLInputElement extends TextControlElement {
 			multiline: false,
 			defaultValue: () => this.defaultValue,
 			supportsSelection: () => ['text', 'search', 'url', 'tel', 'password'].includes(this.type),
+			sanitize: (value) => sanitizeInputValue(this, value),
+		});
+		this.#input = new InputControlState(this, this.control);
+		registerControl(this, {
+			reset: () => this.#input.reset(),
+			validity: () => inputValidity(this),
+			willValidate: () => this.willValidate,
+			value: () => this.value,
+			entries: (submitter) => {
+				if (!this.name || isDisabled(this) || ['reset', 'button', 'file'].includes(this.type))
+					return [];
+				if (['checkbox', 'radio'].includes(this.type) && !this.checked) return [];
+				if (['submit', 'image'].includes(this.type) && submitter !== this) return [];
+				return this.type === 'image'
+					? [
+							[`${this.name}.x`, '0'],
+							[`${this.name}.y`, '0'],
+						]
+					: [[this.name, this.value]];
+			},
 		});
 	}
 	get type(): string {
@@ -1190,20 +1526,164 @@ export class HTMLInputElement extends TextControlElement {
 	set type(value: string) {
 		this.setAttribute('type', value);
 	}
+	override get value(): string {
+		const mode = inputValueMode(this.type);
+		return mode === 'default/on'
+			? (this.getAttribute('value') ?? 'on')
+			: mode === 'default'
+				? this.defaultValue
+				: mode === 'filename'
+					? ''
+					: this.control.value;
+	}
+	override set value(value: string) {
+		const mode = inputValueMode(this.type);
+		const string = value == null ? '' : String(value);
+		if (mode === 'filename') {
+			if (string)
+				throw new DOMException(
+					'A file input can only be cleared programmatically',
+					'InvalidStateError',
+				);
+			this.control.value = '';
+		} else if (mode === 'default' || mode === 'default/on') this.defaultValue = string;
+		else this.control.value = string;
+	}
 	get defaultValue(): string {
 		return this.getAttribute('value') ?? '';
 	}
 	set defaultValue(value: string) {
 		this.setAttribute('value', value);
 	}
-	get disabled(): boolean {
-		return this.hasAttribute('disabled');
+	get checked(): boolean {
+		return this.#input.checked;
 	}
-	set disabled(value: boolean) {
-		this.toggleAttribute('disabled', Boolean(value));
+	set checked(value: boolean) {
+		this.#input.checked = value;
+	}
+	get defaultChecked(): boolean {
+		return this.hasAttribute('checked');
+	}
+	set defaultChecked(value: boolean) {
+		this.toggleAttribute('checked', Boolean(value));
+	}
+	get indeterminate(): boolean {
+		return this.#input.indeterminate;
+	}
+	set indeterminate(value: boolean) {
+		this.#input.indeterminate = value;
+	}
+	get multiple(): boolean {
+		return this.hasAttribute('multiple');
+	}
+	set multiple(value: boolean) {
+		this.toggleAttribute('multiple', Boolean(value));
+	}
+	get formNoValidate(): boolean {
+		return this.hasAttribute('formnovalidate');
+	}
+	set formNoValidate(value: boolean) {
+		this.toggleAttribute('formnovalidate', Boolean(value));
+	}
+	get formMethod(): string {
+		if (!this.hasAttribute('formmethod')) return '';
+		const value = this.getAttribute('formmethod')?.toLowerCase();
+		return value === 'post' || value === 'dialog' ? value : 'get';
+	}
+	set formMethod(value: string) {
+		this.setAttribute('formmethod', value);
+	}
+	get min(): string {
+		return this.getAttribute('min') ?? '';
+	}
+	set min(value: string) {
+		this.setAttribute('min', value);
+	}
+	get max(): string {
+		return this.getAttribute('max') ?? '';
+	}
+	set max(value: string) {
+		this.setAttribute('max', value);
+	}
+	get step(): string {
+		return this.getAttribute('step') ?? '';
+	}
+	set step(value: string) {
+		this.setAttribute('step', value);
+	}
+	get pattern(): string {
+		return this.getAttribute('pattern') ?? '';
+	}
+	set pattern(value: string) {
+		this.setAttribute('pattern', value);
+	}
+	get valueAsNumber(): number {
+		return inputValueAsNumber(this.type, this.value);
+	}
+	set valueAsNumber(value: number) {
+		this.value = inputValueFromNumber(this.type, Number(value));
+	}
+	get valueAsDate(): Date | null {
+		return inputValueAsDate(this.type, this.value);
+	}
+	set valueAsDate(value: Date | null) {
+		this.value = inputValueFromDate(this.type, value);
+	}
+	stepUp(amount = 1): void {
+		stepInputValue(this, amount);
+	}
+	stepDown(amount = 1): void {
+		stepInputValue(this, -amount);
+	}
+	get list(): HTMLDataListElement | null {
+		const id = this.getAttribute('list');
+		if (
+			!id ||
+			[
+				'hidden',
+				'password',
+				'checkbox',
+				'radio',
+				'file',
+				'submit',
+				'image',
+				'reset',
+				'button',
+			].includes(this.type)
+		)
+			return null;
+		const candidate = formTree(this.getRootNode()).find((element) => element.id === id);
+		return candidate instanceof HTMLDataListElement ? candidate : null;
+	}
+	override get labels(): readonly Element[] | null {
+		return this.type === 'hidden' ? null : labelsFor(this);
+	}
+	override get willValidate(): boolean {
+		return (
+			!isDisabled(this) &&
+			!inDatalist(this) &&
+			!['hidden', 'reset', 'button'].includes(this.type) &&
+			!(this.readOnly && supportsReadOnly(this.type))
+		);
+	}
+	protected override activationDisabled(): boolean {
+		return isDisabled(this);
+	}
+	protected override legacyPreActivationBehavior(): (() => void) | null {
+		return this.#input.preActivate();
+	}
+	protected override activationBehavior(_event: Event): void {
+		const changed = this.#input.completeActivation();
+		if (['checkbox', 'radio'].includes(this.type) && !this.isConnected) return;
+		if (!['checkbox', 'radio'].includes(this.type) && isDisabled(this)) return;
+		if (['checkbox', 'radio'].includes(this.type) && changed) {
+			this.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+			this.dispatchEvent(new Event('change', { bubbles: true }));
+		} else if (['submit', 'image'].includes(this.type)) this.form?.requestSubmit(this);
+		else if (this.type === 'reset') this.form?.reset();
 	}
 }
-/** Multiline text values and selection. */
+/** Multiline text values, selection, form association, and constraints. */
 export class HTMLTextAreaElement extends TextControlElement {
 	protected readonly control: TextControlState;
 	constructor(document: Document) {
@@ -1213,6 +1693,22 @@ export class HTMLTextAreaElement extends TextControlElement {
 			multiline: true,
 			defaultValue: () => this.defaultValue,
 		});
+		registerControl(this, {
+			reset: () => this.control.reset(),
+			validity: () => ({
+				valueMissing: this.required && !this.readOnly && !this.value,
+				...textLengthValidity(this, this.value),
+			}),
+			willValidate: () => this.willValidate,
+			value: () => this.value,
+			entries: () => (this.name && !isDisabled(this) ? [[this.name, this.value]] : []),
+		});
+	}
+	get type(): 'textarea' {
+		return 'textarea';
+	}
+	get textLength(): number {
+		return this.value.length;
 	}
 	get defaultValue(): string {
 		return this.textContent ?? '';
@@ -1221,11 +1717,8 @@ export class HTMLTextAreaElement extends TextControlElement {
 		this.textContent = value;
 		syncTextControlDefault(this);
 	}
-	get disabled(): boolean {
-		return this.hasAttribute('disabled');
-	}
-	set disabled(value: boolean) {
-		this.toggleAttribute('disabled', Boolean(value));
+	override get labels(): readonly Element[] {
+		return labelsFor(this);
 	}
 }
 
@@ -1236,7 +1729,42 @@ export class HTMLTemplateElement extends Element {
 		super('template', document);
 		this.content = document.templateOwnerDocument.createDocumentFragment();
 	}
+	get shadowRootMode(): string {
+		const mode = this.getAttribute('shadowrootmode')?.toLowerCase();
+		return mode === 'open' || mode === 'closed' ? mode : '';
+	}
+	set shadowRootMode(value: string) {
+		this.setAttribute('shadowrootmode', value);
+	}
+	get shadowRootSlotAssignment(): string {
+		return this.getAttribute('shadowrootslotassignment')?.toLowerCase() === 'manual'
+			? 'manual'
+			: 'named';
+	}
+	set shadowRootSlotAssignment(value: string) {
+		this.setAttribute('shadowrootslotassignment', value);
+	}
+	get shadowRootDelegatesFocus(): boolean {
+		return this.hasAttribute('shadowrootdelegatesfocus');
+	}
+	set shadowRootDelegatesFocus(value: boolean) {
+		this.toggleAttribute('shadowrootdelegatesfocus', Boolean(value));
+	}
+	get shadowRootClonable(): boolean {
+		return this.hasAttribute('shadowrootclonable');
+	}
+	set shadowRootClonable(value: boolean) {
+		this.toggleAttribute('shadowrootclonable', Boolean(value));
+	}
+	get shadowRootSerializable(): boolean {
+		return this.hasAttribute('shadowrootserializable');
+	}
+	set shadowRootSerializable(value: boolean) {
+		this.toggleAttribute('shadowrootserializable', Boolean(value));
+	}
 }
+const manualSlotNodes = new WeakMap<HTMLSlotElement, readonly WeakRef<Element | Text>[]>();
+const manualSlots = new WeakMap<Element | Text, WeakRef<HTMLSlotElement>>();
 /** Named slot distribution without rendering or hit testing. */
 export class HTMLSlotElement extends Element {
 	constructor(document: Document) {
@@ -1252,7 +1780,12 @@ export class HTMLSlotElement extends Element {
 		const root = this.getRootNode();
 		let nodes: readonly Node[] =
 			root instanceof ShadowRoot
-				? root.host.childNodes.filter((node) => getAssignedSlot(node) === this)
+				? root.slotAssignment === 'manual'
+					? (manualSlotNodes.get(this) ?? []).flatMap((ref) => {
+							const node = ref.deref();
+							return node && getAssignedSlot(node) === this ? [node] : [];
+						})
+					: root.host.childNodes.filter((node) => getAssignedSlot(node) === this)
 				: [];
 		if (options.flatten) {
 			if (!nodes.length)
@@ -1268,6 +1801,38 @@ export class HTMLSlotElement extends Element {
 			this.assignedNodes(options).filter((node): node is Element => node instanceof Element),
 		);
 	}
+	assign(...nodes: (Element | Text)[]): void {
+		if (nodes.some((node) => !(node instanceof Element || node instanceof Text)))
+			// oxlint-disable-next-line bombshell-dev/no-generic-error -- Web IDL rejects nodes outside the slottable union.
+			throw new TypeError('Only elements and text nodes are slottable');
+		const changed = new Set<HTMLSlotElement>([this]);
+		for (const node of nodes) {
+			const previous = manualSlots.get(node)?.deref();
+			if (previous) changed.add(previous);
+		}
+		const before = new Map([...changed].map((slot) => [slot, slot.assignedNodes()]));
+		for (const ref of manualSlotNodes.get(this) ?? []) {
+			const node = ref.deref();
+			if (node && manualSlots.get(node)?.deref() === this) manualSlots.delete(node);
+		}
+		const unique = [...new Set(nodes)];
+		for (const node of unique) {
+			manualSlots.set(node, new WeakRef(this));
+		}
+		manualSlotNodes.set(
+			this,
+			unique.map((node) => new WeakRef(node)),
+		);
+		for (const slot of changed) {
+			updateSlots(slot);
+			const previous = before.get(slot) ?? [];
+			const next = slot.assignedNodes();
+			if (previous.length !== next.length || previous.some((node, index) => node !== next[index])) {
+				slot.notifyHost();
+				slot.ownerDocument.focusManager.revalidate();
+			}
+		}
+	}
 }
 /** @internal Resolve slot assignment including closed roots. */
 export function getAssignedSlot(node: Node): HTMLSlotElement | null {
@@ -1275,6 +1840,10 @@ export function getAssignedSlot(node: Node): HTMLSlotElement | null {
 		return null;
 	const root = getShadowRoot(node.parentNode);
 	if (!root) return null;
+	if (root.slotAssignment === 'manual') {
+		const slot = manualSlots.get(node)?.deref();
+		return slot?.getRootNode() === root ? slot : null;
+	}
 	const name = node instanceof Element ? node.slot : '';
 	return (
 		descendants(root).find(
@@ -1323,7 +1892,7 @@ function visibleAssignedSlot(node: Node): HTMLSlotElement | null {
 	return root instanceof ShadowRoot && root.mode === 'closed' ? null : slot;
 }
 
-function readonlyCollection<T>(read: () => readonly T[]): readonly T[] {
+export function readonlyCollection<T>(read: () => readonly T[]): readonly T[] {
 	const snapshot = (): readonly T[] => Object.freeze([...read()]);
 	const reject = (): false => false;
 	return new Proxy<T[]>([], {
@@ -1386,4 +1955,69 @@ function validateSequence(
 	]);
 	if ([...final].filter((node) => node instanceof Element).length > 1)
 		throw new DOMException('Multiple document elements', 'HierarchyRequestError');
+}
+
+export const {
+	HTMLFormElement,
+	HTMLButtonElement,
+	HTMLLabelElement,
+	HTMLFieldSetElement,
+	HTMLLegendElement,
+} = defineFormElements(Element);
+export type HTMLFormElement = InstanceType<typeof HTMLFormElement>;
+export type HTMLButtonElement = InstanceType<typeof HTMLButtonElement>;
+export type HTMLLabelElement = InstanceType<typeof HTMLLabelElement>;
+export type HTMLFieldSetElement = InstanceType<typeof HTMLFieldSetElement>;
+export type HTMLLegendElement = InstanceType<typeof HTMLLegendElement>;
+export const {
+	HTMLSelectElement,
+	HTMLOptionElement,
+	HTMLOptGroupElement,
+	HTMLDataListElement,
+	HTMLSelectedContentElement,
+	HTMLOutputElement,
+	HTMLProgressElement,
+	HTMLMeterElement,
+} = defineValueElements(Element);
+export type HTMLSelectElement = InstanceType<typeof HTMLSelectElement>;
+export type HTMLOptionElement = InstanceType<typeof HTMLOptionElement>;
+export type HTMLOptGroupElement = InstanceType<typeof HTMLOptGroupElement>;
+export type HTMLDataListElement = InstanceType<typeof HTMLDataListElement>;
+export type HTMLSelectedContentElement = InstanceType<typeof HTMLSelectedContentElement>;
+export type HTMLOutputElement = InstanceType<typeof HTMLOutputElement>;
+export type HTMLProgressElement = InstanceType<typeof HTMLProgressElement>;
+export type HTMLMeterElement = InstanceType<typeof HTMLMeterElement>;
+export const { HTMLDetailsElement, HTMLSummaryElement, HTMLDialogElement } =
+	defineInteractiveElements(Element);
+export type HTMLDetailsElement = InstanceType<typeof HTMLDetailsElement>;
+export type HTMLSummaryElement = InstanceType<typeof HTMLSummaryElement>;
+export type HTMLDialogElement = InstanceType<typeof HTMLDialogElement>;
+const specializedElements: Readonly<
+	Record<string, (new (document: Document) => Element) | undefined>
+> = {
+	button: HTMLButtonElement,
+	form: HTMLFormElement,
+	label: HTMLLabelElement,
+	fieldset: HTMLFieldSetElement,
+	legend: HTMLLegendElement,
+	select: HTMLSelectElement,
+	option: HTMLOptionElement,
+	optgroup: HTMLOptGroupElement,
+	datalist: HTMLDataListElement,
+	selectedcontent: HTMLSelectedContentElement,
+	output: HTMLOutputElement,
+	progress: HTMLProgressElement,
+	meter: HTMLMeterElement,
+	details: HTMLDetailsElement,
+	summary: HTMLSummaryElement,
+	dialog: HTMLDialogElement,
+};
+
+function reactionDocuments(document: Document, nodes: readonly (Node | string)[]): Document[] {
+	return [
+		document,
+		...nodes.flatMap((node) =>
+			typeof node === 'string' || !node.ownerDocument ? [] : [node.ownerDocument],
+		),
+	];
 }

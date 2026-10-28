@@ -48,3 +48,18 @@ Baseline text and attribute nodes inherited unrestricted child insertion; the DO
 The baseline dispatch implementation established capture/target/bubble order, event-path snapshots, registration identity, and the target-capture stop boundary. DOM listener exceptions are reported rather than synchronously escaping `dispatchEvent`; `stopImmediatePropagation` sets both stop flags. Registration options, abort handling, composed-path behavior, and interactive focus require additional implementation beyond that baseline.
 
 Setting character data to the same string may avoid a rendered frame, but standard mutation records remain distinct from frame invalidation. The same distinction applies to explicitly observed detached nodes.
+
+## Interactive HTML milestone
+
+The new form, choice/value, disclosure/dialog, activation and editing algorithms
+are original implementations checked against the current WHATWG HTML standard.
+Three unchanged pinned option WPT cases supplement the event subset; their source
+and license are recorded in [test/wpt](../test/wpt/README.md). Development browser
+comparisons, standards conflicts and explicit interoperability choices are in
+[interactive standards](interactive-standards.md). They cover controls plus manual
+slots, declarative hydration, serialization and custom-element cloning. No browser
+or upstream DOM implementation is used at runtime.
+
+The package additionally permits arbitrary HTML terminal names as shadow hosts
+and document-local element factories. These extensions and the bounded reaction
+queue ownership model are described in [forms and elements](forms-and-elements.md).

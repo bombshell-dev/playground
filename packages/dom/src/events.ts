@@ -1,3 +1,5 @@
+import type { Element } from './dom.ts';
+
 export interface EventInit {
 	bubbles?: boolean;
 	cancelable?: boolean;
@@ -147,6 +149,106 @@ export class CustomEvent<T = unknown> extends Event {
 	constructor(type: string, options: CustomEventInit<T> = {}) {
 		super(type, options);
 		this.detail = options.detail === undefined ? null : options.detail;
+	}
+}
+
+export interface MouseEventInit extends EventInit {
+	button?: number;
+	buttons?: number;
+	clientX?: number;
+	clientY?: number;
+	screenX?: number;
+	screenY?: number;
+	ctrlKey?: boolean;
+	shiftKey?: boolean;
+	altKey?: boolean;
+	metaKey?: boolean;
+	relatedTarget?: EventTarget | null;
+}
+
+/** Pointer data supplied by a host; no hit testing or coordinate calculation. */
+export class MouseEvent extends Event {
+	readonly button: number;
+	readonly buttons: number;
+	readonly clientX: number;
+	readonly clientY: number;
+	readonly screenX: number;
+	readonly screenY: number;
+	readonly ctrlKey: boolean;
+	readonly shiftKey: boolean;
+	readonly altKey: boolean;
+	readonly metaKey: boolean;
+	constructor(type: string, options: MouseEventInit = {}) {
+		super(type, options);
+		this.button = Number(options.button ?? 0);
+		this.buttons = Number(options.buttons ?? 0);
+		this.clientX = Number(options.clientX ?? 0);
+		this.clientY = Number(options.clientY ?? 0);
+		this.screenX = Number(options.screenX ?? 0);
+		this.screenY = Number(options.screenY ?? 0);
+		this.ctrlKey = Boolean(options.ctrlKey);
+		this.shiftKey = Boolean(options.shiftKey);
+		this.altKey = Boolean(options.altKey);
+		this.metaKey = Boolean(options.metaKey);
+		stateOf(this).relatedTarget = options.relatedTarget ?? null;
+	}
+	get relatedTarget(): EventTarget | null {
+		return stateOf(this).relatedTarget;
+	}
+}
+
+export interface InputEventInit extends EventInit {
+	data?: string | null;
+	inputType?: string;
+	isComposing?: boolean;
+}
+export class InputEvent extends Event {
+	readonly data: string | null;
+	readonly inputType: string;
+	readonly isComposing: boolean;
+	constructor(type: string, options: InputEventInit = {}) {
+		super(type, options);
+		this.data = options.data == null ? null : String(options.data);
+		this.inputType = String(options.inputType ?? '');
+		this.isComposing = Boolean(options.isComposing);
+	}
+}
+
+export interface ToggleEventInit extends EventInit {
+	oldState?: string;
+	newState?: string;
+	source?: Element | null;
+}
+export class ToggleEvent extends Event {
+	readonly oldState: string;
+	readonly newState: string;
+	readonly source: Element | null;
+	constructor(type: string, options: ToggleEventInit = {}) {
+		super(type, options);
+		this.oldState = String(options.oldState ?? '');
+		this.newState = String(options.newState ?? '');
+		this.source = options.source ?? null;
+	}
+}
+
+export interface SubmitEventInit extends EventInit {
+	submitter?: Element | null;
+}
+export class SubmitEvent extends Event {
+	readonly submitter: Element | null;
+	constructor(type: string, options: SubmitEventInit = {}) {
+		super(type, options);
+		this.submitter = options.submitter ?? null;
+	}
+}
+export interface FormDataEventInit extends EventInit {
+	formData: globalThis.FormData;
+}
+export class FormDataEvent extends Event {
+	readonly formData: globalThis.FormData;
+	constructor(type: string, options: FormDataEventInit) {
+		super(type, options);
+		this.formData = options.formData;
 	}
 }
 
@@ -350,6 +452,9 @@ export class EventTarget {
 		state.target = this;
 		const originalRelatedTarget = state.relatedTarget;
 		let clearTargets = false;
+		let activationTarget: EventTarget | null = null;
+		let activationEventTarget: EventTarget | null = null;
+		let rollback: (() => void) | null = null;
 		try {
 			const visited = new Set<EventTarget>();
 			for (
@@ -373,6 +478,15 @@ export class EventTarget {
 				});
 			}
 			const terminal = state.path.at(-1);
+			if (event instanceof MouseEvent && event.type === 'click') {
+				const activationEntry = state.path.find(
+					(entry, index) =>
+						(index === 0 || event.bubbles) && entry.invocationTarget.hasActivationBehavior(),
+				);
+				activationTarget = activationEntry?.invocationTarget ?? null;
+				activationEventTarget = activationEntry?.target ?? null;
+				rollback = activationTarget?.legacyPreActivationBehavior() ?? null;
+			}
 			clearTargets = Boolean(
 				terminal?.target?.isEventTargetInShadowTree() ||
 				terminal?.relatedTarget?.isEventTargetInShadowTree(),
@@ -381,7 +495,6 @@ export class EventTarget {
 			for (const entry of state.path) {
 				if (entry.atTarget || event.bubbles) this.#invoke({ event, entry, capture: false });
 			}
-			return !state.canceled;
 		} finally {
 			state.phase = Event.NONE;
 			state.currentTarget = null;
@@ -395,7 +508,19 @@ export class EventTarget {
 				state.relatedTarget = null;
 			}
 		}
+		if (state.canceled) rollback?.();
+		else activationTarget?.activationBehavior(event, activationEventTarget);
+		return !state.canceled;
 	}
+
+	/** HTML subclasses opt in to click activation; ordinary event targets have none. */
+	protected hasActivationBehavior(): boolean {
+		return false;
+	}
+	protected legacyPreActivationBehavior(): (() => void) | null {
+		return null;
+	}
+	protected activationBehavior(_event: Event, _target: EventTarget | null): void {}
 
 	/** Tree subclasses supply their event parent; plain targets have no parent. */
 	protected getEventParent(_event: Event): EventTarget | null {

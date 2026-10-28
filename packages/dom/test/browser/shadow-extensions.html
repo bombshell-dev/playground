@@ -1,0 +1,212 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Shadow extension browser differential</title>
+<pre id="results">Running</pre>
+<script type="module">
+	const results = [];
+	window.addEventListener('error', (event) => {
+		results.push({ name: 'fixture exception', passed: false, actual: event.message });
+		document.getElementById('results').textContent = JSON.stringify(results, null, 2);
+	});
+	function check(name, actual, expected) {
+		results.push({
+			name,
+			passed: JSON.stringify(actual) === JSON.stringify(expected),
+			actual,
+			expected,
+		});
+		document.getElementById('results').textContent = JSON.stringify(results, null, 2);
+	}
+	function throws(callback) {
+		try {
+			callback();
+			return null;
+		} catch (error) {
+			return error.name;
+		}
+	}
+	{
+		const host = document.createElement('div');
+		const shadow = host.attachShadow({ mode: 'open', clonable: true, delegatesFocus: true });
+		const span = document.createElement('span');
+		span.append(document.createElement('input'));
+		shadow.append(span);
+		host.append('light');
+		const copy = host.cloneNode(false);
+		check(
+			'shallow host clone deeply copies clonable shadow',
+			[
+				copy.childNodes.length,
+				copy.shadowRoot.firstChild.firstChild.localName,
+				copy.shadowRoot.delegatesFocus,
+				copy.shadowRoot.firstChild !== span,
+			],
+			[0, 'input', true, true],
+		);
+	}
+	{
+		let host = document.createElement('div');
+		const markup =
+			'<template shadowrootmode="open" shadowrootclonable shadowrootserializable><span>shadow</span></template>light';
+		host.innerHTML = markup;
+		check(
+			'innerHTML keeps declarative templates inert',
+			[host.shadowRoot, host.firstChild.localName],
+			[null, 'template'],
+		);
+		host.setHTMLUnsafe(markup);
+		check(
+			'direct fragment template does not attach to the context element',
+			[host.shadowRoot, host.firstChild.localName],
+			[null, 'template'],
+		);
+		const outer = document.createElement('div');
+		outer.setHTMLUnsafe(`<section>${markup}</section>`);
+		host = outer.firstElementChild;
+		const root = host.shadowRoot;
+		check(
+			'setHTMLUnsafe attaches a descendant declarative root',
+			[root.textContent, host.textContent, root.clonable, root.serializable],
+			['shadow', 'light', true, true],
+		);
+		const rejected = throws(() => host.attachShadow({ mode: 'closed' }));
+		const same = host.attachShadow({ mode: 'open', clonable: false, serializable: false });
+		check(
+			'declarative hydration preserves root identity and flags',
+			[
+				rejected,
+				same === root,
+				root.childNodes.length,
+				root.clonable,
+				root.serializable,
+				throws(() => host.attachShadow({ mode: 'open' })),
+			],
+			['NotSupportedError', true, 0, true, true, 'NotSupportedError'],
+		);
+	}
+	{
+		const host = document.createElement('div');
+		const shadow = host.attachShadow({
+			mode: 'closed',
+			serializable: true,
+			clonable: true,
+			delegatesFocus: true,
+			slotAssignment: 'manual',
+		});
+		shadow.append('secret');
+		host.append('light');
+		check(
+			'closed root serialization opt-in',
+			[
+				host.shadowRoot,
+				host.getHTML(),
+				host.getHTML({ serializableShadowRoots: true }),
+				host.getHTML({ shadowRoots: [shadow] }),
+			],
+			[
+				null,
+				'light',
+				'<template shadowrootmode="closed" shadowrootdelegatesfocus="" shadowrootserializable="" shadowrootslotassignment="manual" shadowrootclonable="">secret</template>light',
+				'<template shadowrootmode="closed" shadowrootdelegatesfocus="" shadowrootserializable="" shadowrootslotassignment="manual" shadowrootclonable="">secret</template>light',
+			],
+		);
+	}
+	{
+		const observed = [];
+		class CloneShadow extends HTMLElement {
+			constructor() {
+				super();
+				observed.push([this.id, this.textContent, this.shadowRoot?.textContent ?? null]);
+				if (!this.shadowRoot) this.attachShadow({ mode: 'open', clonable: true });
+			}
+		}
+		customElements.define('x-clone-shadow-probe', CloneShadow);
+		const source = document.createElement('x-clone-shadow-probe');
+		source.id = 'source';
+		source.append('light');
+		source.shadowRoot.append('shadow');
+		observed.length = 0;
+		const copy = source.cloneNode(true);
+		check(
+			'custom clone constructors observe the completed cloned tree',
+			[observed, copy instanceof CloneShadow, copy.shadowRoot.textContent],
+			[[['source', 'light', 'shadow']], true, 'shadow'],
+		);
+	}
+	{
+		const host = document.body.appendChild(document.createElement('div'));
+		const calls = [];
+		class ParsedShadow extends HTMLElement {
+			constructor() {
+				super();
+				calls.push([this.id, this.textContent, this.isConnected]);
+			}
+		}
+		customElements.define('x-shadow-parsed-probe', ParsedShadow);
+		host.setHTMLUnsafe(
+			'<section><template shadowrootmode="open"><x-shadow-parsed-probe id="inner">value</x-shadow-parsed-probe></template>light</section>',
+		);
+		check('declarative shadow custom constructors see completed connected content', calls, [
+			['inner', 'value', true],
+		]);
+	}
+	{
+		const host = document.createElement('div');
+		const shadow = host.attachShadow({ mode: 'open', slotAssignment: 'manual' });
+		const first = document.createElement('slot');
+		const second = document.createElement('slot');
+		shadow.append(first, second);
+		const a = document.createElement('span');
+		const b = document.createTextNode('b');
+		host.append(a, b);
+		first.assign(b, a, b);
+		const initial = first.assignedNodes().map((node) => (node === a ? 'a' : 'b'));
+		second.assign(a);
+		const transferred = first.assignedNodes().map((node) => (node === a ? 'a' : 'b'));
+		a.remove();
+		const detached = second.assignedNodes().length;
+		host.append(a);
+		check(
+			'manual assignment order, transfer, and reconnection',
+			[initial, transferred, detached, second.assignedNodes()[0] === a],
+			[['b', 'a'], ['b'], 0, true],
+		);
+		check(
+			'invalid manual slottables fail before mutation',
+			[
+				throws(() => second.assign(a, document.createComment('invalid'))),
+				second.assignedNodes()[0] === a,
+			],
+			['TypeError', true],
+		);
+	}
+	{
+		const host = document.body.appendChild(document.createElement('div'));
+		const shadow = host.attachShadow({ mode: 'open', slotAssignment: 'manual' });
+		const slot = shadow.appendChild(document.createElement('slot'));
+		const child = host.appendChild(document.createElement('span'));
+		slot.assign(child);
+		await Promise.resolve();
+		let changed = 0;
+		slot.addEventListener('slotchange', () => changed++);
+		slot.remove();
+		const assigned = slot.assignedNodes().length;
+		await Promise.resolve();
+		check(
+			'removed manual slot loses assignment and signals the change',
+			[assigned, changed],
+			[0, 1],
+		);
+	}
+	{
+		const template = document.createElement('template');
+		const initial = template.shadowRootSlotAssignment;
+		template.setAttribute('shadowrootslotassignment', 'invalid');
+		check(
+			'template slot assignment reflection defaults',
+			[initial, template.shadowRootSlotAssignment],
+			['named', 'named'],
+		);
+	}
+	document.getElementById('results').textContent = JSON.stringify(results, null, 2);
+</script>
