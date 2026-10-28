@@ -1,0 +1,24 @@
+{
+	"name": "@examples/dom-realm",
+	"private": true,
+	"license": "MIT",
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"typecheck": "tsgo --noEmit -p tsconfig.json",
+		"format": "bsh format",
+		"format:check": "bsh format --check",
+		"lint": "bsh lint"
+	},
+	"dependencies": {
+		"@bomb.sh/dom": "workspace:*",
+		"esbuild": "^0.27.0"
+	},
+	"devDependencies": {
+		"@bomb.sh/tools": "^0.6.1",
+		"@types/node": "^22",
+		"@typescript/native-preview": "7.0.0-dev.20260623.1"
+	}
+}
