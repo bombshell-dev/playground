@@ -1,0 +1,118 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Custom element browser differential</title>
+<pre id="results">Running</pre>
+<script type="module">
+	// Independently written browser counterparts of components.test.ts.
+	const results = [];
+	function check(name, actual, expected) {
+		results.push({
+			name,
+			passed: JSON.stringify(actual) === JSON.stringify(expected),
+			actual,
+			expected,
+		});
+	}
+	{
+		const calls = [];
+		class Parsed extends HTMLElement {
+			static observedAttributes = ['value'];
+			constructor() {
+				super();
+				calls.push(['construct', this.getAttribute('value'), this.textContent, this.isConnected]);
+			}
+			attributeChangedCallback(_name, old, value) {
+				calls.push(['attribute', old, value]);
+			}
+			connectedCallback() {
+				calls.push(['connected', this.textContent]);
+			}
+		}
+		customElements.define('x-parsed', Parsed);
+		const detached = document.createElement('div');
+		detached.innerHTML = '<x-parsed value="one">detached</x-parsed>';
+		check(
+			'detached fragment construction',
+			[...calls],
+			[
+				['construct', 'one', 'detached', false],
+				['attribute', null, 'one'],
+			],
+		);
+		calls.length = 0;
+		const connected = document.body.appendChild(document.createElement('div'));
+		connected.innerHTML = '<x-parsed value="two">connected</x-parsed>';
+		check(
+			'connected fragment construction',
+			[...calls],
+			[
+				['construct', 'two', 'connected', true],
+				['attribute', null, 'two'],
+				['connected', 'connected'],
+			],
+		);
+		calls.length = 0;
+		const template = document.createElement('template');
+		template.innerHTML = '<x-parsed value="three">inert</x-parsed>';
+		check('inert template fragment', [...calls], []);
+	}
+	{
+		const calls = [];
+		const existing = document.createElement('x-existing');
+		existing.setAttribute('value', 'before');
+		document.body.appendChild(existing);
+		class Existing extends HTMLElement {
+			static observedAttributes = ['value'];
+			constructor() {
+				super();
+				calls.push('construct start');
+				this.setAttribute('value', 'after');
+				calls.push('construct end');
+			}
+			attributeChangedCallback(_name, old, value) {
+				calls.push(`${old}:${value}`);
+			}
+			connectedCallback() {
+				calls.push('connected');
+			}
+		}
+		customElements.define('x-existing', Existing);
+		check('pre-upgrade attribute snapshot', calls, [
+			'construct start',
+			'construct end',
+			'null:before',
+			'connected',
+		]);
+	}
+	{
+		const calls = [];
+		const existing = document.createElement('x-nested');
+		existing.setAttribute('first', 'one');
+		existing.setAttribute('second', 'two');
+		document.body.appendChild(existing);
+		class Nested extends HTMLElement {
+			static observedAttributes = ['first', 'second'];
+			attributeChangedCallback(name, _old, value) {
+				calls.push(`${name}:${value}`);
+				if (name === 'first') {
+					this.setAttribute('second', 'changed');
+					calls.push('first:return');
+				}
+			}
+			connectedCallback() {
+				calls.push('connected');
+			}
+		}
+		customElements.define('x-nested', Nested);
+		check('reentrant per-element reaction queue', calls, [
+			'first:one',
+			'second:two',
+			'connected',
+			'second:changed',
+			'first:return',
+		]);
+	}
+	const output = document.getElementById('results');
+	output.dataset.passed = String(results.every((result) => result.passed));
+	output.textContent = JSON.stringify({ userAgent: navigator.userAgent, results }, null, 2);
+</script>

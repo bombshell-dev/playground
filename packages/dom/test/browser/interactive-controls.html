@@ -1,0 +1,226 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Interactive control browser differential</title>
+<pre id="results">Running</pre>
+<script type="module">
+	// Independently written counterparts of value-elements.test.ts and form controls tests.
+	const results = [];
+	function check(name, actual, expected) {
+		results.push({
+			name,
+			passed: JSON.stringify(actual) === JSON.stringify(expected),
+			actual,
+			expected,
+		});
+	}
+	function selectFixture() {
+		const form = document.createElement('form');
+		const select = document.createElement('select');
+		const options = ['a', 'b', 'c'].map((value) => {
+			const option = document.createElement('option');
+			option.value = value;
+			option.text = value.toUpperCase();
+			return option;
+		});
+		select.append(...options);
+		form.append(select);
+		document.body.append(form);
+		return { form, select, options };
+	}
+	{
+		const { select, options } = selectFixture();
+		const actual = [select.selectedIndex, options[0].defaultSelected];
+		select.value = 'missing';
+		actual.push(select.selectedIndex);
+		options[0].selected = false;
+		actual.push(select.selectedIndex);
+		// Chrome short-circuits a no-op selected=false setter. The current HTML
+		// algorithm asks for reset unconditionally; our core follows that algorithm.
+		check('Chrome no-op false selectedness after an explicit empty selection', actual, [
+			0,
+			false,
+			-1,
+			-1,
+		]);
+		results.at(-1).packageExpected = [0, false, -1, 0];
+		results.at(-1).knownDifference =
+			'HTML selected setter unconditionally asks for a reset; Chrome skips a no-op setter.';
+	}
+	{
+		const { form, select, options } = selectFixture();
+		options[1].defaultSelected = true;
+		options[2].selected = true;
+		options[2].defaultSelected = true;
+		options[2].defaultSelected = false;
+		const actual = [select.value, options[1].defaultSelected];
+		form.reset();
+		actual.push(select.value);
+		options[2].defaultSelected = true;
+		actual.push(select.value);
+		check('dirty options and form reset', actual, ['c', true, 'b', 'c']);
+	}
+	{
+		const { select, options } = selectFixture();
+		options[0].setAttribute('selected', '');
+		options[1].selected = true;
+		options[0].setAttribute('selected', 'changed');
+		check('changing an existing selected attribute value', select.selectedIndex, 1);
+		options[0].label = '';
+		check('empty label attribute is reflected', options[0].label, '');
+	}
+	{
+		const input = document.createElement('input');
+		input.type = 'checkbox';
+		input.indeterminate = true;
+		document.body.append(input);
+		const actual = [];
+		input.addEventListener('click', (event) => {
+			actual.push(['click', input.checked, input.indeterminate]);
+			event.preventDefault();
+		});
+		input.addEventListener('input', () => actual.push('input'));
+		input.addEventListener('change', () => actual.push('change'));
+		input.click();
+		actual.push(['after', input.checked, input.indeterminate]);
+		check('canceled checkbox activation restores pre-click state', actual, [
+			['click', true, false],
+			['after', false, true],
+		]);
+	}
+	{
+		const input = document.createElement('input');
+		input.type = 'checkbox';
+		document.body.append(input);
+		input.dispatchEvent(new Event('click', { bubbles: true }));
+		const actual = [input.checked];
+		input.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		actual.push(input.checked);
+		check('MouseEvent activation differs from plain Event dispatch', actual, [false, true]);
+	}
+	{
+		const input = document.createElement('input');
+		input.type = 'checkbox';
+		input.indeterminate = true;
+		check('checkbox cloning preserves indeterminate state', input.cloneNode().indeterminate, true);
+		input.addEventListener('click', (event) => event.preventDefault());
+		input.click();
+		input.setAttribute('checked', '');
+		check('canceled checkbox activation leaves checkedness dirty', input.checked, false);
+	}
+	{
+		const form = document.createElement('form');
+		const previous = document.createElement('input');
+		const current = document.createElement('input');
+		for (const input of [previous, current]) {
+			input.type = 'radio';
+			input.name = 'group';
+		}
+		previous.checked = true;
+		form.append(previous, current);
+		document.body.append(form);
+		current.addEventListener('click', (event) => {
+			previous.name = 'different';
+			event.preventDefault();
+		});
+		current.click();
+		check(
+			'Chrome canceled radio activation after a peer changes groups',
+			[previous.checked, current.checked],
+			[false, true],
+		);
+		results.at(-1).packageExpected = [false, false];
+		results.at(-1).knownDifference =
+			'HTML legacy-canceled activation unchecks the activated radio when its previous peer left the group.';
+	}
+	{
+		const input = document.createElement('input');
+		input.type = 'number';
+		input.min = '0.1';
+		input.step = '0.2';
+		input.value = '0.2';
+		input.stepUp(2);
+		const actual = [input.value];
+		input.value = '0.5';
+		input.stepUp(-1);
+		actual.push(input.value);
+		check('numeric stepping with a mismatched value and signed step count', actual, ['0.5', '0.3']);
+	}
+	{
+		const output = document.createElement('output');
+		const form = document.createElement('form');
+		form.append(output);
+		output.textContent = 'initial';
+		output.value = 'computed';
+		output.defaultValue = 'replacement';
+		const actual = [output.value, output.defaultValue];
+		form.reset();
+		actual.push(output.value);
+		output.textContent = 'pristine';
+		actual.push(output.defaultValue);
+		check('output default-value mode and reset', actual, [
+			'computed',
+			'replacement',
+			'replacement',
+			'pristine',
+		]);
+	}
+	{
+		const progress = document.createElement('progress');
+		const actual = [progress.position, progress.max];
+		progress.max = 10;
+		progress.value = 20;
+		actual.push(progress.value, progress.getAttribute('value'));
+		progress.max = 0;
+		actual.push(progress.max);
+		check('progress numeric reflection', actual, [-1, 1, 10, '20', 10]);
+		const meter = document.createElement('meter');
+		meter.min = 10;
+		meter.max = 20;
+		meter.value = 100;
+		meter.low = 15;
+		meter.high = 12;
+		meter.optimum = -5;
+		check(
+			'ordered meter bounds',
+			[meter.value, meter.low, meter.high, meter.optimum],
+			[20, 15, 15, 10],
+		);
+	}
+	{
+		const { select, options } = selectFixture();
+		const button = document.createElement('button');
+		const content = document.createElement('selectedcontent');
+		button.append(content);
+		select.prepend(button);
+		const actual = [content.textContent];
+		select.value = 'b';
+		actual.push(content.textContent);
+		options[1].textContent = 'changed';
+		actual.push(content.textContent);
+		await Promise.resolve();
+		actual.push(content.textContent);
+		select.selectedIndex = -1;
+		actual.push(content.textContent);
+		check('selectedcontent cloning and option text mutation timing', actual, [
+			'A',
+			'B',
+			'B',
+			'B',
+			'',
+		]);
+	}
+	{
+		const { select, options } = selectFixture();
+		const content = document.createElement('selectedcontent');
+		const button = document.createElement('button');
+		button.append(content);
+		select.prepend(button);
+		const actual = [content.textContent];
+		options[0].remove();
+		actual.push(content.textContent);
+		await Promise.resolve();
+		actual.push(content.textContent);
+		check('selectedcontent removal update timing', actual, ['A', 'A', 'B']);
+	}
+	document.getElementById('results').textContent = JSON.stringify(results, null, 2);
+</script>
